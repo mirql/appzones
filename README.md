@@ -94,6 +94,11 @@ just test-vm     # NixOS VM test with Hyprland (~6 min, needs /dev/kvm)
 See [CONTRIBUTING.md](CONTRIBUTING.md). Found a way out of a zone? Please
 report it privately: [SECURITY.md](SECURITY.md).
 
+## Authors
+
+- Askar Amirov ([@askaramirov](https://github.com/askaramirov))
+- Saif H ([@Saifeldin-H](https://github.com/Saifeldin-H))
+
 ## License
 
 MIT

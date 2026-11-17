@@ -12,3 +12,6 @@
   `SINCE` (the package version in nix/package.nix is separate).
 - `zone_mount_helper.py` runs as root through sudo. It clears every
   `ZONES_*` variable before importing anything; keep it that way.
+- `main` takes only squash merges through a PR. Put the co-author trailer in
+  the merge commit's message (`gh pr merge --squash --body ...`), or it is
+  lost: `Co-authored-by: Saif H <249896858+Saifeldin-H@users.noreply.github.com>`.
