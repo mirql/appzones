@@ -120,6 +120,7 @@ Then `appzones check` and `appzones apps` (rewrites the launcher entries).
 [zones.agents]
 colour   = "#cba6f7"
 network  = "internet"                                  # explicit: never inherit "host" from [defaults]
+netbird  = false                                       # nor the NetBird mesh
 binds    = [{ path = "~/src/my-app", mode = "rw" }]   # this project only
 packages = ["nodejs", "git"]                           # nixpkgs attributes on PATH
 nix_ld   = true                                        # prebuilt binaries (npm, pip) run
