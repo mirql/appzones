@@ -1,6 +1,11 @@
-# appzones
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/appzones-dark.svg">
+    <img alt="appzones." src="assets/logo/appzones-light.svg" width="420">
+  </picture>
+</p>
 
-**Long-lived sandboxes for your desktop apps, dev tools and AI agents on Linux.**
+<p align="center"><b>Long-lived sandboxes for your desktop apps, dev tools and AI agents on Linux.</b></p>
 
 An app zone is a place your apps live in: `daily` for messengers, `work`
 for Slack and the work browser, `untrusted` for links you don't trust,
