@@ -687,6 +687,15 @@ pkgs.testers.runNixOSTest {
         rc, out = helper("mount td x /home/alice/proj")
         assert rc != 0 and "symlink" in out, out
         u("rm ~/.local/share/appzones/td/mnt && mv ~/.local/share/appzones/td/mnt.real ~/.local/share/appzones/td/mnt")
+        # the state directory itself a symlink: mount, umount and umount-all refuse it
+        u("mv ~/.local/share/appzones ~/.local/share/appzones.real && ln -s appzones.real ~/.local/share/appzones")
+        try:
+            for args in ("mount td x /home/alice/proj", "umount td x", "umount-all td"):
+                rc, out = helper(args)
+                assert rc != 0 and "symlink" in out, (args, out)
+        finally:
+            u("rm ~/.local/share/appzones && mv ~/.local/share/appzones.real ~/.local/share/appzones")
+        print("PASS  the helper refuses a symlinked ~/.local/share/appzones (mount, umount, umount-all)")
         machine.succeed("! findmnt -rn -o TARGET | grep -q 'zones/td/mnt'")
         print("PASS  the helper refuses a target outside zones/*/mnt (symlinks), bad names, unreachable sources")
         rc, out = u(f"{HELPER} umount-all td 2>&1", check=False)

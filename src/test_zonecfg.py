@@ -179,6 +179,25 @@ class ZonecfgTest(unittest.TestCase):
                 os.environ.pop(k, None)
             # it also cleared this test's own APPZONES_* settings; tearDown and the next setUp redo them
 
+    def test_mount_helper_state_dir(self):
+        """The helper's mnt dir: ~/.local/share/appzones; the pre-0.6 ~/.local/share/zones only while the
+        new one does not exist (as zone.py chooses). Refusing a symlink there is the VM test's job."""
+        sys.path.insert(0, str(HERE))
+        import zone_mount_helper as h
+        c = h.Caller.__new__(h.Caller)  # __init__ needs root; only the home matters here
+        c.home = str(self.home)
+        new, old = self.home / ".local/share/appzones", self.home / ".local/share/zones"
+        self.assertEqual(c.mnt_dir("ta"), f"{new}/ta/mnt")
+        old.mkdir(parents=True)
+        self.assertEqual(c.mnt_dir("ta"), f"{old}/ta/mnt")
+        new.symlink_to(old)  # a symlink counts as there: chosen, and then refused by open_owned
+        self.assertEqual(c.mnt_dir("ta"), f"{new}/ta/mnt")
+        new.unlink()
+        new.mkdir()
+        self.assertEqual(c.mnt_dir("ta"), f"{new}/ta/mnt")
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            c.mnt_dir("../x")
+
     def test_hyprland_zones_lua_is_a_copy(self):
         """contrib/hyprland/zones.lua (pre-0.6 name) is appzones.lua's code, past each file's header comment."""
         def code(name):
