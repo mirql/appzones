@@ -12,6 +12,10 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
   <a href="#install"><img alt="NixOS flake and module" src="https://img.shields.io/badge/NixOS-flake%20%2B%20module-5277C3?logo=nixos&logoColor=white"></a>
   <a href="docs/guide.md"><img alt="Wayland" src="https://img.shields.io/badge/Wayland-wp__security__context__v1-FFBC00"></a>
+  <br>
+  <a href="https://github.com/mirql/appzones/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/mirql/appzones"></a>
+  <a href="https://github.com/mirql/appzones/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/mirql/appzones"></a>
+  <a href="https://coderabbit.ai"><img alt="CodeRabbit reviews" src="https://img.shields.io/coderabbit/prs/github/mirql/appzones?labelColor=171717&color=FF570A&label=CodeRabbit%20reviews"></a>
 </p>
 
 An app zone is a place your apps live in: `daily` for messengers, `work`
