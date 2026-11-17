@@ -17,7 +17,7 @@ updated, and credit you in the advisory unless you prefer otherwise.
 
 - reading or writing host files outside a zone's home and binds, or
   getting around the never-list (symlinks, races, mount tricks);
-- abusing `zones-mount-helper` (the root step of `appzones mount`), or the
+- abusing `appzones-mount-helper` (the root step of `appzones mount`), or the
   sudo rule the module installs;
 - reaching what the network deny list should refuse (LAN, host loopback,
   tailnets, another zone) with `network = "internet"`;

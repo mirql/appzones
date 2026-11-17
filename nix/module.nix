@@ -4,7 +4,7 @@
 # appzones@NAME.service (one long-lived sandbox per zone, in appzones.slice) and
 # appzones-autostart.service (at login: launcher entries, zones with
 # autostart = true). The zones themselves are declared in
-# ~/.config/zones/zones.toml, which this module never generates.
+# ~/.config/appzones/zones.toml, which this module never generates.
 {
   config,
   lib,
@@ -26,7 +26,7 @@ in
       # built with the system's own nixpkgs
       default = pkgs.callPackage ./package.nix { };
       defaultText = lib.literalExpression "pkgs.callPackage ./package.nix { }";
-      description = "The appzones package (zone, zone-init, zone-wayland).";
+      description = "The appzones package (appzones, zone-init, zone-wayland).";
     };
 
     mountHelper = lib.mkOption {
@@ -34,10 +34,10 @@ in
       default = true;
       description = ''
         `appzones mount`: a sudo rule that lets `user` (every member of
-        `users` when user is null) run exactly the zones mount helper as
+        `users` when user is null) run exactly the appzones mount helper as
         root without a password. The helper only mounts a directory the
         caller can read (never-list checked) at
-        ~/.local/share/zones/ZONE/mnt/NAME (docs/guide.md "Runtime mounts").
+        ~/.local/share/appzones/ZONE/mnt/NAME (docs/guide.md "Runtime mounts").
       '';
     };
 
@@ -62,7 +62,7 @@ in
         Host paths no bind or runtime mount may be, contain or be inside,
         on top of the built-in never-list (~/.ssh, ~/.gnupg, /run/secrets,
         shell and session config, ...). Absolute, or `~/` for the home.
-        Written to /etc/zones/denied-paths.
+        Written to /etc/appzones/denied-paths.
       '';
     };
 
@@ -91,7 +91,7 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.package ];
 
-    environment.etc."zones/denied-paths" = lib.mkIf (cfg.deniedPaths != [ ]) {
+    environment.etc."appzones/denied-paths" = lib.mkIf (cfg.deniedPaths != [ ]) {
       text = lib.concatLines cfg.deniedPaths;
     };
 
@@ -116,10 +116,14 @@ in
     ];
 
     # Launcher entries "App (zone)" live in
-    # ~/.local/share/zones/launcher/share/applications (`appzones apps`), not in
+    # ~/.local/share/appzones/launcher/share/applications (`appzones apps`), not in
     # ~/.local/share/applications (often managed by dotfiles). A profile adds
-    # its share/ to XDG_DATA_DIRS (as flatpak's exports do).
-    environment.profiles = [ "$HOME/.local/share/zones/launcher" ];
+    # its share/ to XDG_DATA_DIRS (as flatpak's exports do). The pre-0.6
+    # ~/.local/share/zones is listed too: it stays in use until appzones moves it.
+    environment.profiles = [
+      "$HOME/.local/share/appzones/launcher"
+      "$HOME/.local/share/zones/launcher"
+    ];
 
     systemd.user.slices.appzones = {
       description = "App zones";
@@ -128,16 +132,16 @@ in
 
     systemd.user.services."appzones@" = {
       description = "App zone %i";
-      documentation = [ "file://${cfg.package}/share/zones/zones.example.toml" ];
+      documentation = [ "file://${cfg.package}/share/appzones/zones.example.toml" ];
       # Stops with the session (the compositor gone: every Wayland client is
       # dead anyway); autostart brings the autostart zones back with it.
       partOf = [ "graphical-session.target" ];
       after = [ "graphical-session.target" ];
       unitConfig = onlyUser;
       environment = {
-        ZONES_NETBIRD_IFACE = cfg.netbirdInterface;
+        APPZONES_NETBIRD_IFACE = cfg.netbirdInterface;
       }
-      // lib.optionalAttrs (cfg.dnsServer != null) { ZONES_DNS_HOST = cfg.dnsServer; };
+      // lib.optionalAttrs (cfg.dnsServer != null) { APPZONES_DNS_HOST = cfg.dnsServer; };
       serviceConfig = {
         Type = "notify";
         NotifyAccess = "main";
@@ -159,7 +163,11 @@ in
       after = [ "graphical-session.target" ];
       partOf = [ "graphical-session.target" ];
       unitConfig = onlyUser // {
-        ConditionPathExists = "%h/.config/zones/zones.toml";
+        # "|": either (the second is the pre-0.6 place, still read)
+        ConditionPathExists = [
+          "|%h/.config/appzones/zones.toml"
+          "|%h/.config/zones/zones.toml"
+        ];
       };
       serviceConfig = {
         Type = "oneshot";

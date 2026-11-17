@@ -5,6 +5,25 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.6.0
+
+- **Everything is named appzones now**, not only the command:
+  `~/.config/appzones/zones.toml`, `~/.local/share/appzones/` (zone homes),
+  `/etc/appzones/denied-paths`, `/run/user/UID/appzones/`, `$APPZONES_*`,
+  `appzones-mount-helper`, `contrib/hyprland/appzones.lua`, launcher entries
+  `appzones-APP-ZONE.desktop`. The window tag `zone:NAME`, `zones.toml` and
+  `$ZONE` inside a zone keep their names: they name a zone, not the tool.
+- **Upgrading** (docs/guide.md "Upgrading from 0.5"): `appzones stop --all`
+  after the switch. The next `appzones` command moves `~/.local/share/zones`
+  to `~/.local/share/appzones` (a rename, only when no zone runs and nothing
+  is mounted there). The old config file is read, with a warning saying how to
+  move it. Update backups or impermanence lists that name the old paths.
+- Still read in 0.6, removed later: `$ZONES_*`, `~/.config/zones/zones.toml`,
+  `/etc/zones/denied-paths`, `contrib/hyprland/zones.lua` (it loads
+  appzones.lua). The never-list refuses binds of the old and the new paths.
+- `just release VERSION`: tags a release and publishes its CHANGELOG section
+  as the GitHub release notes.
+
 ## 0.5.0
 
 - **Renamed the command** `zone` to `appzones` (`appzones run daily

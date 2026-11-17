@@ -14,7 +14,7 @@
                                            --wait: CMD gets this stdin/stdout/stderr (pipes
                                            or files, never a tty) and its exit code is ours.
                                            Without --wait, `run` watches the app for a few
-                                           seconds ($ZONES_RUN_CHECK, 0: not at all) and, if
+                                           seconds ($APPZONES_RUN_CHECK, 0: not at all) and, if
                                            it exits with an error, prints its last output.
     appzones shell ZONE                    an interactive shell inside (pty in the zone)
     appzones ps ZONE | logs ZONE [-f]      processes in the zone | its journal (-f: follow)
@@ -37,7 +37,8 @@ Internal (systemd and the supervisor):
     appzones _netsetup RULES INFO -- CMD   load nft RULES in this netns, open INFO as fd 3, exec CMD
     appzones _autostart                    write launcher entries, start zones with autostart = true
 
-Config: ~/.config/zones/zones.toml ($ZONES_CONFIG). State: ~/.local/share/zones.
+Config: ~/.config/appzones/zones.toml ($APPZONES_CONFIG). State: ~/.local/share/appzones.
+Before 0.6: ~/.config/zones and ~/.local/share/zones (read, and moved; see migrate_state).
 Guide: docs/guide.md.
 """
 from __future__ import annotations
@@ -70,24 +71,36 @@ UID, GID = os.getuid(), os.getgid()
 HOME = Path.home()
 USER = os.environ.get("USER") or os.environ.get("LOGNAME") or "user"
 HOST_RT = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{UID}"))
-RT = HOST_RT / "zones"
-STATE = Path(os.environ.get("ZONES_STATE", HOME / ".local/share/zones"))
-CONFIG = Path(os.environ.get("ZONES_CONFIG", HOME / ".config/zones/zones.toml"))
+RT = HOST_RT / "appzones"
+LEGACY_STATE = HOME / ".local/share/zones"  # before 0.6; moved by migrate_state
+
+
+def default_state() -> Path:
+    """~/.local/share/appzones, or the pre-0.6 directory while it has not been
+    moved yet. Moves nothing (main() does, through migrate_state)."""
+    new = HOME / ".local/share/appzones"
+    if not os.path.lexists(new) and os.path.lexists(LEGACY_STATE):
+        return LEGACY_STATE
+    return new
+
+
+STATE = Path(zonecfg.env("STATE") or default_state())
+CONFIG, LEGACY_CONFIG = zonecfg.config_path(HOME)
 LAUNCHER = STATE / "launcher/share/applications"
 DNS_ADDR = "169.254.53.53"
 ZRT = f"/run/user/{UID}"  # the zone's own XDG_RUNTIME_DIR (a fresh tmpfs)
-MOUNT_HELPER = os.environ.get("ZONES_MOUNT_HELPER") or str(HERE / "zones-mount-helper")
-SUDO = os.environ.get("ZONES_SUDO") or "/run/wrappers/bin/sudo"
+MOUNT_HELPER = zonecfg.env("MOUNT_HELPER") or str(HERE / "appzones-mount-helper")
+SUDO = zonecfg.env("SUDO") or "/run/wrappers/bin/sudo"
 # netbird = true: the mesh is the network of this interface (NetBird's
 # default name is wt0; the NixOS module's netbirdInterface sets it).
-NETBIRD_IFACE = os.environ.get("ZONES_NETBIRD_IFACE") or "wt0"
+NETBIRD_IFACE = zonecfg.env("NETBIRD_IFACE") or "wt0"
 TMP_DAYS = {"tmp": 14, "var-tmp": 30}  # tmp = "disk": unused this long, removed at zone start
 PALETTE = ["#a6e3a1", "#89b4fa", "#f38ba8", "#f9e2af", "#cba6f7", "#94e2d5", "#fab387", "#f5c2e7",
            "#74c7ec", "#eba0ac", "#b4befe", "#89dceb"]
 
 
 def tool(name: str) -> str:
-    p = os.environ.get("ZONES_BIN_" + name.upper().replace("-", "_")) or shutil.which(name)
+    p = zonecfg.env("BIN_" + name.upper().replace("-", "_")) or shutil.which(name)
     if not p:
         die(f"{name} not found on PATH")
     return p
@@ -124,7 +137,7 @@ def settings_hash(z: zonecfg.Zone) -> str:
 
 
 def use_systemd() -> bool:
-    return os.environ.get("ZONES_SUPERVISOR", "systemd") == "systemd"
+    return (zonecfg.env("SUPERVISOR") or "systemd") == "systemd"
 
 
 def systemctl(*args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -218,8 +231,8 @@ def resolv_conf(s: dict) -> str:
     if s["network"] == "host":
         if s["dns"] == "public":
             return "nameserver 1.1.1.1\n"
-        if os.environ.get("ZONES_DNS_HOST"):
-            return f"nameserver {os.environ['ZONES_DNS_HOST']}\n"
+        if zonecfg.env("DNS_HOST"):
+            return f"nameserver {zonecfg.env('DNS_HOST')}\n"
         try:
             return Path("/etc/resolv.conf").read_text()
         except OSError:
@@ -228,11 +241,11 @@ def resolv_conf(s: dict) -> str:
 
 
 def host_resolver(resolv: str = "/etc/resolv.conf") -> str:
-    """The resolver for dns = "host": $ZONES_DNS_HOST (the module's dnsServer),
+    """The resolver for dns = "host": $APPZONES_DNS_HOST (the module's dnsServer),
     else the first nameserver in the host's resolv.conf (systemd-resolved's
     127.0.0.53, dnsmasq's 127.0.0.1, a LAN resolver, ...)."""
-    if os.environ.get("ZONES_DNS_HOST"):
-        return os.environ["ZONES_DNS_HOST"]
+    if zonecfg.env("DNS_HOST"):
+        return zonecfg.env("DNS_HOST")
     try:
         for line in Path(resolv).read_text().splitlines():
             parts = line.split()
@@ -508,7 +521,7 @@ def clean_old(root: Path, days: int) -> int:
 
 
 def prepare_tmp(zdir: Path) -> None:
-    """tmp = "disk": ~/.local/share/zones/<zone>/{tmp,var-tmp}, 0700, cleaned (TMP_DAYS)."""
+    """tmp = "disk": ~/.local/share/appzones/<zone>/{tmp,var-tmp}, 0700, cleaned (TMP_DAYS)."""
     for sub, days in TMP_DAYS.items():
         d = zdir / sub
         d.mkdir(mode=0o700, exist_ok=True)
@@ -519,7 +532,7 @@ def prepare_tmp(zdir: Path) -> None:
 
 
 def host_mounts(zone: str) -> list[str]:
-    """Names mounted under ~/.local/share/zones/ZONE/mnt (host view)."""
+    """Names mounted under ~/.local/share/appzones/ZONE/mnt (host view)."""
     pre = str(STATE / zone / "mnt") + "/"
     out = []
     try:
@@ -737,7 +750,7 @@ def dbus_rules(z: zonecfg.Zone) -> list[str]:
     rules += [f"--own=org.mozilla.{moz_remoting_name(z.name, a)}.*" for a in MOZ_APPS]
     rules += [f"--talk={n}" for n in z.settings["dbus"].get("talk", [])]
     rules += [f"--own={n}" for n in z.settings["dbus"].get("own", [])]
-    if os.environ.get("ZONES_DBUS_LOG"):
+    if zonecfg.env("DBUS_LOG"):
         rules.append("--log")
     return rules
 
@@ -1193,7 +1206,7 @@ def watch(name: str, pid: int, argv: list[str], bus: str, app: str | None) -> in
     a hint for a refused bus name. An app that hands over to a running
     instance exits 0: that is quiet."""
     try:
-        secs = float(os.environ.get("ZONES_RUN_CHECK", "2.5"))
+        secs = float(zonecfg.env("RUN_CHECK") or "2.5")
     except ValueError:
         secs = 2.5
     end, st = time.time() + secs, None
@@ -1341,7 +1354,7 @@ binds     = []
 """
 
 
-NEW_FILE = """# ~/.config/zones/zones.toml (written by `appzones new`; reference: appzones docs/guide.md)
+NEW_FILE = """# ~/.config/appzones/zones.toml (written by `appzones new`; reference: appzones docs/guide.md)
 version = 1
 """
 
@@ -1457,11 +1470,11 @@ def find_desktop(name: str) -> dict:
 
 def apps() -> int:
     """Launcher entries "App (zone)", one per app x zone. They go to
-    ~/.local/share/zones/launcher/share/applications (on XDG_DATA_DIRS through
+    ~/.local/share/appzones/launcher/share/applications (on XDG_DATA_DIRS through
     the NixOS module); host entries are never hidden."""
     cfg = load_cfg(quiet=True)
     LAUNCHER.mkdir(parents=True, exist_ok=True)
-    for old in LAUNCHER.glob("zone-*.desktop"):
+    for old in [*LAUNCHER.glob("appzones-*.desktop"), *LAUNCHER.glob("zone-*.desktop")]:  # zone-*: before 0.6
         old.unlink()
     n = 0
     for aid, a in cfg.apps.items():
@@ -1478,7 +1491,7 @@ def apps() -> int:
             for k in ("Categories", "MimeType", "StartupNotify"):
                 if host.get(k):
                     lines.append(f"{k}={host[k]}")
-            (LAUNCHER / f"zone-{aid}-{zn}.desktop").write_text("\n".join(lines) + "\n")
+            (LAUNCHER / f"appzones-{aid}-{zn}.desktop").write_text("\n".join(lines) + "\n")
             n += 1
     print(f"{n} launcher entries in {LAUNCHER}")
     return 0
@@ -1573,7 +1586,7 @@ def helper_failed(r: subprocess.CompletedProcess, what: str):
     if "password is required" in err or "not allowed" in err or "may not run sudo" in err:
         die(f"{what}: sudo refused the mount helper ({err.splitlines()[-1]}). It needs the NixOS module's sudo "
             f"rule (programs.appzones.mountHelper = true, for programs.appzones.user) and a rebuilt system")
-    die(f"{what}: {err.removeprefix('zones-mount-helper: ') or r.returncode}")
+    die(f"{what}: {err.removeprefix('appzones-mount-helper: ') or r.returncode}")
 
 
 def mount(name: str, path: str, ro: bool, as_name: str | None) -> int:
@@ -1658,11 +1671,77 @@ def mounts(name: str) -> int:
     return 0
 
 
+# ── upgrading from before 0.6 ──────────────────────────────────────────────
+def supervisors() -> list[str]:
+    """Command lines of this user's zone supervisors (any appzones version),
+    other than this process."""
+    out = []
+    for d in Path("/proc").iterdir():
+        if not d.name.isdigit() or int(d.name) == os.getpid():
+            continue
+        try:
+            if d.stat().st_uid != UID:
+                continue
+            argv = (d / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if b"_supervise" in argv and any(a.endswith(b"zone.py") for a in argv):
+            out.append(b" ".join(argv).decode(errors="replace"))
+    return out
+
+
+def mounted_below(path: Path) -> bool:
+    try:
+        points = [line.split()[4] for line in open("/proc/self/mountinfo")]
+    except OSError:
+        return True  # cannot tell: do not move
+    p = str(path)
+    return any(m == p or m.startswith(p + "/") for m in points)
+
+
+def migrate_state() -> None:
+    """Before 0.6 the state (zone homes, launcher entries, tmp = "disk") was
+    ~/.local/share/zones. It is moved, once, by a rename, to
+    ~/.local/share/appzones when no zone runs and nothing is mounted below
+    it; until then appzones (and the mount helper) keep using it. The config
+    is never moved (often a dotfiles manager's link): a warning says how."""
+    global STATE, LAUNCHER
+    if LEGACY_CONFIG:
+        warn(f"reading {LEGACY_CONFIG}: since 0.6 it belongs in ~/.config/appzones/zones.toml "
+             "(mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/)")
+    running = supervisors()
+    if any("/libexec/zones/" in r for r in running):
+        warn("zones started by appzones before 0.6 are running and this version does not see them: "
+             "`appzones stop --all`, then start them again")
+    if zonecfg.env("STATE"):
+        return
+    new = HOME / ".local/share/appzones"
+    if STATE != LEGACY_STATE:
+        if os.path.lexists(LEGACY_STATE) and os.path.lexists(new):
+            warn(f"{LEGACY_STATE} is no longer used (since 0.6 {new} is): move what you still need from it, "
+                 "then remove it")
+        return
+    if running or mounted_below(LEGACY_STATE):
+        warn(f"{LEGACY_STATE} moves to {new} once no zone runs (appzones stop --all)")
+        return
+    try:
+        os.rename(LEGACY_STATE, new)
+    except OSError as e:
+        if not os.path.lexists(new):  # another appzones may have moved it just now
+            warn(f"could not move {LEGACY_STATE} to {new}: {e.strerror or e}; using it where it is")
+            return
+    else:
+        warn(f"moved {LEGACY_STATE} to {new} (appzones 0.6)")
+    STATE, LAUNCHER = new, new / "launcher/share/applications"
+
+
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help", "help"):
         print(__doc__)
         return 0 if argv else 2
     cmd, rest = argv[0], argv[1:]
+    if cmd == "_autostart" or not (cmd.startswith("_") or cmd == "active"):
+        migrate_state()
 
     def one() -> str:
         if not rest:

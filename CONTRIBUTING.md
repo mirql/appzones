@@ -25,6 +25,7 @@ just build           # the package; runs the unit tests too
 just test-vm         # NixOS VM test with Hyprland (~6 min, needs /dev/kvm)
 just fmt             # format the Nix files
 just demo            # re-record docs/demo-*.gif in a VM, when the CLI output changes
+just release X.Y.Z   # after the version's PR is merged: tag it, publish its CHANGELOG section
 ```
 
 **Never test on your live desktop session**: no zone units, windows or
@@ -45,7 +46,7 @@ VM test.
 | `tests/vm.nix` | the NixOS VM test |
 | `tests/demo.nix`, `tests/demo-record.py` | the README's terminal demos, recorded in a VM (`just demo`) |
 | `assets/concept/concept.py` | the README's concept animation (writes `concept-{dark,light}.svg`) |
-| `contrib/hyprland/zones.lua` | window tags and border colours for Hyprland |
+| `contrib/hyprland/appzones.lua` | window tags and border colours for Hyprland |
 | `docs/guide.md`, `examples/zones.toml` | user docs and the full example |
 
 ## Rules for changes
@@ -61,7 +62,7 @@ VM test.
 - **Never-lists** (paths, D-Bus names, environment) only grow by default.
   Removing an entry needs an explicit reason in the PR.
 - **`zone_mount_helper.py` runs as root.** Keep it small, keep it
-  clearing every `ZONES_*` variable before it imports anything, and
+  clearing every `APPZONES_*` and `ZONES_*` variable before it imports anything, and
   explain in the PR why a caller still cannot abuse it.
 - **Docs.** If behaviour changes, update `docs/guide.md` in the same PR.
   Add a line under "Unreleased" in [CHANGELOG.md](CHANGELOG.md).

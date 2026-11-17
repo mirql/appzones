@@ -21,7 +21,8 @@
 #     (systemd1 refused, the portal answers with the zone's app id);
 #   - Wayland: the zone's client sees no screencopy or data-control, its
 #     window gets the tag zone:NAME and the zone colour
-#     (contrib/hyprland/zones.lua, next to another window.open_early handler), a
+#     (contrib/hyprland/appzones.lua, loaded through the pre-0.6 zones.lua,
+#     next to another window.open_early handler), a
 #     host window gets none; an app launched from its launcher entry too;
 #   - single-instance GTK apps on the zone's own bus (bus = "zone"): Thunar
 #     (with programs.thunar: its names are activatable on the host bus)
@@ -60,7 +61,8 @@
 }:
 let
   inherit (pkgs) hyprland;
-  zonesLua = ../contrib/hyprland/zones.lua;
+  # the pre-0.6 name, which loads appzones.lua from the same directory: both are tested
+  zonesLua = "${../contrib/hyprland}/zones.lua";
 
   # a desktop config usually has its own window.open_early handlers; keep
   # one here so the test shows both run.
@@ -405,9 +407,15 @@ pkgs.testers.runNixOSTest {
         print(json.dumps(cs, indent=1))
         return next(c for c in cs if title in (c.get("initialTitle"), c.get("title")))
 
-    # ── setup: alice's files, zones.toml, host secrets that must stay out
+    # ── setup: alice's files, zones.toml, host secrets that must stay out.
+    # The home is laid out as appzones 0.5 left it (~/.config/zones,
+    # ~/.local/share/zones): the first subtest upgrades it.
     machine.succeed("install -d -o alice -g users /home/alice/.config/zones /home/alice/.ssh /home/alice/Shared")
     machine.succeed("install -o alice -g users -m 644 ${zonesToml} /home/alice/.config/zones/zones.toml")
+    machine.succeed("chown alice:users /home/alice/.config")  # install -d made it root's
+    u("mkdir -p ~/.local/share/zones/ta/home ~/.local/share/zones/launcher/share/applications "
+      "&& echo kept >~/.local/share/zones/ta/home/from-0.5 "
+      "&& touch ~/.local/share/zones/launcher/share/applications/zone-old-ta.desktop")
     machine.succeed("echo secret >/home/alice/.ssh/id_test; chown alice /home/alice/.ssh/id_test")
     machine.succeed("mkdir -p /srv/code && echo secret >/srv/code/secret")
     out = u("systemctl --user show-environment")
@@ -419,11 +427,36 @@ pkgs.testers.runNixOSTest {
     def invocation(zone):
         return u(f"systemctl --user show appzones@{zone}.service -p InvocationID --value").strip()
 
+    with subtest("upgrade from 0.5: the state moves once no zone runs; the old config is read, with a warning"):
+        machine.succeed("test -f /etc/appzones/denied-paths && test ! -e /etc/zones")
+        # a supervisor (of any version) running: nothing moves yet
+        # (a stand-in: its command line looks like a supervisor's)
+        u("systemd-run --user --collect --unit=old-supervisor ${pkgs.python3}/bin/python3 -c "
+          "'import time; time.sleep(600)' zone.py _supervise old")
+        machine.wait_until_succeeds("pgrep -u alice -f '_supervise old'", timeout=10)
+        out = u("appzones list 2>&1")
+        print(out)
+        assert "moves to /home/alice/.local/share/appzones once no zone runs" in out, out
+        assert "reading /home/alice/.config/zones/zones.toml" in out, out
+        u("test -f ~/.local/share/zones/ta/home/from-0.5 && test ! -e ~/.local/share/appzones")
+        print("PASS  nothing moved while a zone supervisor runs")
+        u("systemctl --user stop old-supervisor")
+        machine.wait_until_fails("pgrep -u alice -f '_supervise old'", timeout=10)
+        out = u("appzones list 2>&1")
+        print(out)
+        assert "moved /home/alice/.local/share/zones to /home/alice/.local/share/appzones" in out, out
+        u("grep -qx kept ~/.local/share/appzones/ta/home/from-0.5 && test ! -e ~/.local/share/zones")
+        print("PASS  the state moved, the zone home's files with it")
+        u("mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/ && rmdir ~/.config/zones")
+        out = u("appzones list 2>&1")
+        assert "reading" not in out and "moved" not in out and "moves" not in out, out
+        print("PASS  after moving the config by hand: no more warnings")
+
     with subtest("appzones check and which"):
         print(u("appzones check"))
         assert '"internet"' in u("appzones which ta")
         print(u("appzones new tn"))  # prints a block, writes nothing
-        assert "tn" not in u("cat ~/.config/zones/zones.toml")
+        assert "tn" not in u("cat ~/.config/appzones/zones.toml")
         u("appzones list")
 
     with subtest("appzones-autostart: autostart zone, its app, launcher entries"):
@@ -432,10 +465,12 @@ pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ps tz | grep -q 'sleep 3600'"), timeout=30)
         cg = machine.succeed("cat /proc/$(pgrep -u alice -f 'sleep 3600' | head -1)/cgroup").strip()
         assert cg.endswith("/appzones.slice/appzones@tz.service"), cg
-        u("test -f ~/.local/share/zones/launcher/share/applications/zone-foot-ta.desktop")
-        print(u("cat ~/.local/share/zones/launcher/share/applications/zone-foot-ta.desktop"))
+        u("test -f ~/.local/share/appzones/launcher/share/applications/appzones-foot-ta.desktop")
+        print(u("cat ~/.local/share/appzones/launcher/share/applications/appzones-foot-ta.desktop"))
+        u("test ! -e ~/.local/share/appzones/launcher/share/applications/zone-old-ta.desktop")
+        print("PASS  launcher entries renamed, the pre-0.6 one removed")
         # the profile puts the launcher dir on XDG_DATA_DIRS of a login
-        assert "/home/alice/.local/share/zones/launcher/share" in u("echo $XDG_DATA_DIRS")
+        assert "/home/alice/.local/share/appzones/launcher/share" in u("echo $XDG_DATA_DIRS")
         u("appzones stop tz")
         u("! appzones ping tz")
 
@@ -484,7 +519,7 @@ pkgs.testers.runNixOSTest {
         assert peer6.startswith("2001:db8:"), peer6
         machine.succeed(f"curl -sS -m 5 'http://[{peer6}]/' | grep -q peer-ok")
         print(f"PASS  (control: the host reaches the IPv6 LAN peer {peer6})")
-        rules = u("cat /run/user/1000/zones/ta/nft.rules")
+        rules = u("cat /run/user/1000/appzones/ta/nft.rules")
         assert any("2001:db8:1::/64" in l and l.strip().startswith("ip6 daddr") and l.rstrip().endswith("reject")
                    for l in rules.splitlines()), rules
         refused("ta", f"curl -sS -m 5 'http://[{peer6}]/'", "IPv6 LAN peer (global address) refused")
@@ -566,13 +601,14 @@ pkgs.testers.runNixOSTest {
         assert rc != 0 and ("required file not found" in out or "No such file" in out), (rc, out)
         print("PASS  without nix_ld the same binary fails: required file not found")
         refused("tb", "test -e /lib64 || [ -n \"$NIX_LD\" ]", "tb (no nix_ld): no /lib64, no NIX_LD")
+        # the pre-0.6 variable name: still read
         rc, out = u("ZONES_NIX_LD_SHIM=/nonexistent/ld-linux-x86-64.so.2 appzones check 2>&1", check=False)
         print(out)
         assert rc != 0 and "programs.nix-ld.enable" in out, out
         print("PASS  the validator refuses nix_ld = true on a host without nix-ld")
 
     with subtest("tmp = disk: kept across a restart, on the host, old files removed"):
-        T = "/home/alice/.local/share/zones/td"
+        T = "/home/alice/.local/share/appzones/td"
         ok("td", "echo kept >/tmp/keep && echo kept2 >/var/tmp/keep2 && mkdir -p /tmp/sub && echo s >/tmp/sub/f",
            "write /tmp and /var/tmp in td")
         machine.succeed(f"grep -qx kept {T}/tmp/keep && grep -qx kept2 {T}/var-tmp/keep2")
@@ -592,7 +628,7 @@ pkgs.testers.runNixOSTest {
         refused("ta", "test -e /tmp/keep", "ta (tmp = ram) does not see it")
 
     with subtest("runtime mounts: appzones mount / umount / mounts"):
-        HELPER = machine.succeed("dirname $(readlink -f $(command -v appzones))").strip() + "/../libexec/zones/zones-mount-helper"
+        HELPER = machine.succeed("dirname $(readlink -f $(command -v appzones))").strip() + "/../libexec/appzones/appzones-mount-helper"
         u("mkdir -p ~/proj ~/rosrc && echo A >~/proj/a.txt && echo R >~/rosrc/r.txt && ln -sfn ~/.ssh ~/sshlink")
         print(u("appzones mount td ~/proj"))
         ok("td", "grep -qx A /mnt/host/proj/a.txt && echo W >/mnt/host/proj/w.txt", "mounted rw: read and write")
@@ -638,18 +674,18 @@ pkgs.testers.runNixOSTest {
         for args, why in [("mount td x /home/alice/.ssh", "refused"), ("mount td x /home/alice/sshlink", "refused"),
                           ("mount td x /srv/locked/inner", "as alice"), ("mount td ../x /home/alice/proj", "name"),
                           ("mount ../td x /home/alice/proj", "not a zone name"), ("mount td x proj", "absolute")]:
-            u("mkdir -p ~/.local/share/zones/td/mnt/x")
+            u("mkdir -p ~/.local/share/appzones/td/mnt/x")
             rc, out = helper(args)
             assert rc != 0 and why in out, (args, out)
-        u("rmdir ~/.local/share/zones/td/mnt/x")
-        u("ln -s /etc ~/.local/share/zones/td/mnt/evil")
+        u("rmdir ~/.local/share/appzones/td/mnt/x")
+        u("ln -s /etc ~/.local/share/appzones/td/mnt/evil")
         rc, out = helper("mount td evil /home/alice/proj")
         assert rc != 0 and "symlink" in out, out
-        u("rm ~/.local/share/zones/td/mnt/evil")
-        u("mv ~/.local/share/zones/td/mnt ~/.local/share/zones/td/mnt.real && ln -s /etc ~/.local/share/zones/td/mnt")
+        u("rm ~/.local/share/appzones/td/mnt/evil")
+        u("mv ~/.local/share/appzones/td/mnt ~/.local/share/appzones/td/mnt.real && ln -s /etc ~/.local/share/appzones/td/mnt")
         rc, out = helper("mount td x /home/alice/proj")
         assert rc != 0 and "symlink" in out, out
-        u("rm ~/.local/share/zones/td/mnt && mv ~/.local/share/zones/td/mnt.real ~/.local/share/zones/td/mnt")
+        u("rm ~/.local/share/appzones/td/mnt && mv ~/.local/share/appzones/td/mnt.real ~/.local/share/appzones/td/mnt")
         machine.succeed("! findmnt -rn -o TARGET | grep -q 'zones/td/mnt'")
         print("PASS  the helper refuses a target outside zones/*/mnt (symlinks), bad names, unreachable sources")
         rc, out = u(f"{HELPER} umount-all td 2>&1", check=False)
@@ -659,7 +695,7 @@ pkgs.testers.runNixOSTest {
         rc, _ = u("sudo -n true", check=False)
         assert rc != 0
         rc, out = u(f"sudo -n -u nobody {HELPER} umount-all td 2>&1", check=False)
-        assert rc != 0 and "zones-mount-helper:" not in out, out  # sudo refuses, the helper never runs
+        assert rc != 0 and "appzones-mount-helper:" not in out, out  # sudo refuses, the helper never runs
         print("PASS  the helper runs only through sudo, as root for alice; sudo allows alice nothing else")
         refused("td", f"sudo -n {HELPER} umount-all td || /run/wrappers/bin/sudo -n true",
                 "a zone cannot use sudo (no_new_privs, no wrappers)")
@@ -698,7 +734,7 @@ pkgs.testers.runNixOSTest {
 
         # from the launcher entry, as a launcher would run it (gio launch)
         u("appzones apps")
-        u(f"WAYLAND_DISPLAY={WL} gio launch ~/.local/share/zones/launcher/share/applications/zone-foot-tb.desktop")
+        u(f"WAYLAND_DISPLAY={WL} gio launch ~/.local/share/appzones/launcher/share/applications/appzones-foot-tb.desktop")
         machine.wait_until_succeeds(
             "su -l alice -c " + shlex.quote(ENV + "${hyprland}/bin/hyprctl -i 0 -j clients | jq -e '.[] | select(.tags | index(\"zone:tb\"))'"),
             timeout=60)
@@ -784,7 +820,7 @@ pkgs.testers.runNixOSTest {
         print(out)
         assert rc == 3 and "exited with status 3" in out and "early-boom" in out and "hint" not in out, out
         print("PASS  appzones run reports an app that exits early")
-        rc, _ = u("ZONES_RUN_CHECK=0 appzones run ta -- sh -c 'exit 4'", check=False)
+        rc, _ = u("APPZONES_RUN_CHECK=0 appzones run ta -- sh -c 'exit 4'", check=False)
         assert rc == 0
         assert "early-boom" in u("appzones logs ta")
         rc, out = u("timeout 3 appzones logs -f ta", check=False)
@@ -793,7 +829,7 @@ pkgs.testers.runNixOSTest {
 
         # never owned on the host bus, whatever the TOML says
         for path in ["${badOwnToml "org.freedesktop.Notifications"}", "${badOwnToml "org.xfce.Thunar"}"]:
-            rc, out = u(f"ZONES_CONFIG={path} appzones check 2>&1", check=False)
+            rc, out = u(f"APPZONES_CONFIG={path} appzones check 2>&1", check=False)
             print(out)
             assert rc != 0 and "never granted" in out, out
         print("PASS  the validator refuses org.freedesktop.Notifications and org.xfce.Thunar as host-bus own")
@@ -823,7 +859,7 @@ pkgs.testers.runNixOSTest {
     with subtest("stale config: warn, and run --restart restarts an idle zone"):
         u("appzones up tb")
         old = invocation("tb")
-        u("sed -i 's/#89b4fa/#cba6f7/' ~/.config/zones/zones.toml")
+        u("sed -i 's/#89b4fa/#cba6f7/' ~/.config/appzones/zones.toml")
         u("appzones run tb -- true 2>&1 | grep -q 'appzones restart tb'")
         print("PASS  a stale zone warns")
         # tb has a foot window from the launcher test: --restart must refuse

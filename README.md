@@ -236,7 +236,7 @@ programs.appzones = {
 ```
 
 Then copy [`examples/minimal.toml`](examples/minimal.toml) to
-`~/.config/zones/zones.toml` (or run `appzones new daily -y`) and run
+`~/.config/appzones/zones.toml` (or run `appzones new daily -y`) and run
 `appzones check`.
 
 > [!IMPORTANT]
@@ -266,10 +266,10 @@ Set up **appzones** on this NixOS machine: <https://github.com/mirql/appzones>
    stores, other disks) and put them in `programs.appzones.deniedPaths`
    (absolute, or `~/...`). If I use NetBird, set `netbirdInterface` (default `wt0`).
 4. **Ask me which zones and apps I want** (for example `daily`, `work`, `untrusted`).
-   Write `~/.config/zones/zones.toml` starting from `examples/minimal.toml` (or
+   Write `~/.config/appzones/zones.toml` starting from `examples/minimal.toml` (or
    put it where my dotfiles manage `~/.config`). Add binds only for folders I
    name; never my whole home, `~/.ssh`, or a folder where programs keep sockets.
-5. **Optional:** if I use Hyprland, load `contrib/hyprland/zones.lua` from my
+5. **Optional:** if I use Hyprland, load `contrib/hyprland/appzones.lua` from my
    Hyprland config; if I use Waybar, add the custom module from the guide ("Hyprland").
 6. **Build without switching** (`nixos-rebuild build --flake .#<host>`), then run
    `./result/sw/bin/appzones check`. Show me what you changed and what it reports.

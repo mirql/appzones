@@ -1,6 +1,6 @@
 """Tests for zonecfg and parts of zone.py. Run (in src/): python3 -B -m unittest test_zonecfg
 
-Each test builds a fake home in a temp dir (ZONES_HOME_FOR_TESTS), so nothing
+Each test builds a fake home in a temp dir (APPZONES_HOME_FOR_TESTS), so nothing
 depends on, or touches, the real home.
 """
 import contextlib
@@ -24,11 +24,11 @@ class ZonecfgTest(unittest.TestCase):
             (self.home / d).mkdir(parents=True)
         (self.home / "Docs/sshlink").symlink_to(self.home / ".ssh")
         (self.home / "dotlink").symlink_to(self.home)
-        os.environ["ZONES_HOME_FOR_TESTS"] = str(self.home)
-        os.environ["ZONES_DBUS_SERVICE_DIRS"] = ""  # no host .service files unless a test adds some
-        # the host's own denied paths (/etc/zones/denied-paths)
+        os.environ["APPZONES_HOME_FOR_TESTS"] = str(self.home)
+        os.environ["APPZONES_DBUS_SERVICE_DIRS"] = ""  # no host .service files unless a test adds some
+        # the host's own denied paths (/etc/appzones/denied-paths)
         (Path(self.tmp.name) / "denied-paths").write_text("# a host's additions\n/srv/code\n~/Secrets  # in the home\n\n")
-        os.environ["ZONES_DENIED_PATHS"] = str(Path(self.tmp.name) / "denied-paths")
+        os.environ["APPZONES_DENIED_PATHS"] = str(Path(self.tmp.name) / "denied-paths")
         # a host with nix-ld: the shim (a link into its store path) and the loader's lib dir
         t = Path(self.tmp.name)
         (t / "store/abc-nix-ld-2.0/libexec").mkdir(parents=True)
@@ -37,8 +37,8 @@ class ZonecfgTest(unittest.TestCase):
         (t / "lib64/ld-linux-x86-64.so.2").symlink_to(t / "store/abc-nix-ld-2.0/libexec/nix-ld")
         (t / "nix-ld/lib").mkdir(parents=True)
         (t / "nix-ld/lib/ld.so").write_text("")
-        os.environ["ZONES_NIX_LD_SHIM"] = str(t / "lib64/ld-linux-x86-64.so.2")
-        os.environ["ZONES_NIX_LD_LIB"] = str(t / "nix-ld/lib")
+        os.environ["APPZONES_NIX_LD_SHIM"] = str(t / "lib64/ld-linux-x86-64.so.2")
+        os.environ["APPZONES_NIX_LD_LIB"] = str(t / "nix-ld/lib")
         sys.path.insert(0, str(HERE))
         import zonecfg
         self.z = importlib.reload(zonecfg)
@@ -47,11 +47,11 @@ class ZonecfgTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
-        os.environ.pop("ZONES_HOME_FOR_TESTS", None)
-        os.environ.pop("ZONES_DBUS_SERVICE_DIRS", None)
-        os.environ.pop("ZONES_DENIED_PATHS", None)
-        os.environ.pop("ZONES_NIX_LD_SHIM", None)
-        os.environ.pop("ZONES_NIX_LD_LIB", None)
+        os.environ.pop("APPZONES_HOME_FOR_TESTS", None)
+        os.environ.pop("APPZONES_DBUS_SERVICE_DIRS", None)
+        os.environ.pop("APPZONES_DENIED_PATHS", None)
+        os.environ.pop("APPZONES_NIX_LD_SHIM", None)
+        os.environ.pop("APPZONES_NIX_LD_LIB", None)
 
     def cfg(self, text):
         p = Path(self.tmp.name) / "zones.toml"
@@ -116,16 +116,100 @@ class ZonecfgTest(unittest.TestCase):
         f.unlink()
         f.mkdir()  # unreadable as a file
         self.assertRefused(self.errs('binds = [{ path = "~/Docs/ok" }]'), "cannot read the host's denied paths")
-        os.environ["ZONES_DENIED_PATHS"] = str(Path(self.tmp.name) / "missing")  # an explicit override is required
+        os.environ["APPZONES_DENIED_PATHS"] = str(Path(self.tmp.name) / "missing")  # an explicit override is required
         self.assertRefused(self.errs('binds = [{ path = "~/Docs/ok" }]'), "does not exist")
-        os.environ.pop("ZONES_DENIED_PATHS")
-        orig = self.z.HOST_DENIED_FILE
+        os.environ.pop("APPZONES_DENIED_PATHS")
+        orig = self.z.HOST_DENIED_FILE, self.z.LEGACY_HOST_DENIED_FILE
         try:
             self.z.HOST_DENIED_FILE = str(Path(self.tmp.name) / "no-such-default")  # missing default: no additions
+            self.z.LEGACY_HOST_DENIED_FILE = str(Path(self.tmp.name) / "no-such-legacy")
             self.assertEqual(self.z.host_denied_paths(), [])
             self.assertEqual(self.errs('binds = [{ path = "~/Docs/ok" }]'), [])
+            # the pre-0.6 file (/etc/zones/denied-paths) is read when the new one is not there
+            legacy = Path(self.tmp.name) / "legacy-denied-paths"
+            legacy.write_text("/srv/legacy\n")
+            self.z.LEGACY_HOST_DENIED_FILE = str(legacy)
+            self.assertEqual(self.z.host_denied_paths(), [Path("/srv/legacy")])
+            new = Path(self.tmp.name) / "new-denied-paths"
+            new.write_text("/srv/new\n")
+            self.z.HOST_DENIED_FILE = str(new)
+            self.assertEqual(self.z.host_denied_paths(), [Path("/srv/new")])
         finally:
-            self.z.HOST_DENIED_FILE = orig
+            self.z.HOST_DENIED_FILE, self.z.LEGACY_HOST_DENIED_FILE = orig
+
+    def test_env_names(self):
+        """$APPZONES_* first; the pre-0.6 $ZONES_* still read; an empty value counts as set."""
+        for k in ("APPZONES_T_X", "ZONES_T_X"):
+            os.environ.pop(k, None)
+        try:
+            self.assertIsNone(self.z.env("T_X"))
+            self.assertFalse(self.z.has_env("T_X"))
+            os.environ["ZONES_T_X"] = "old"
+            self.assertEqual(self.z.env("T_X"), "old")
+            os.environ["APPZONES_T_X"] = ""
+            self.assertEqual(self.z.env("T_X"), "")
+            self.assertTrue(self.z.has_env("T_X"))
+        finally:
+            for k in ("APPZONES_T_X", "ZONES_T_X"):
+                os.environ.pop(k, None)
+
+    def test_config_path(self):
+        """~/.config/appzones/zones.toml; the pre-0.6 file is used only when the new one is not there."""
+        os.environ.pop("APPZONES_CONFIG", None)
+        new, old = self.home / ".config/appzones/zones.toml", self.home / ".config/zones/zones.toml"
+        self.assertEqual(self.z.config_path(self.home), (new, None))
+        old.parent.mkdir(parents=True)
+        old.write_text("")
+        self.assertEqual(self.z.config_path(self.home), (old, old))
+        new.parent.mkdir(parents=True)
+        new.write_text("")
+        self.assertEqual(self.z.config_path(self.home), (new, None))
+
+    def test_mount_helper_clears_both_prefixes(self):
+        """The root helper drops every APPZONES_* and ZONES_* variable before it imports zonecfg."""
+        os.environ["APPZONES_T_HELPER"] = os.environ["ZONES_T_HELPER"] = "x"
+        try:
+            sys.path.insert(0, str(HERE))
+            import zone_mount_helper
+            importlib.reload(zone_mount_helper)
+            self.assertNotIn("APPZONES_T_HELPER", os.environ)
+            self.assertNotIn("ZONES_T_HELPER", os.environ)
+        finally:
+            for k in ("APPZONES_T_HELPER", "ZONES_T_HELPER"):
+                os.environ.pop(k, None)
+            # it also cleared this test's own APPZONES_* settings; tearDown and the next setUp redo them
+
+    def test_state_moves_once_nothing_runs(self):
+        """The pre-0.6 ~/.local/share/zones is used until it can be moved: no supervisor, nothing mounted."""
+        legacy = self.home / ".local/share/zones"
+        (legacy / "ta/home").mkdir(parents=True)
+        (legacy / "ta/home/kept").write_text("x")
+        real_home = os.environ.get("HOME")
+        os.environ["HOME"] = str(self.home)
+        os.environ.pop("APPZONES_STATE", None)
+        try:
+            zone = self._zone_mod()
+            self.assertEqual(zone.STATE, legacy)
+            zone.supervisors = lambda: ["python3 /nix/store/x/libexec/appzones/zone.py _supervise ta"]
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                zone.migrate_state()
+            self.assertEqual(zone.STATE, legacy)
+            self.assertIn("once no zone runs", err.getvalue())
+            zone.supervisors = lambda: []
+            zone.mounted_below = lambda p: False
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                zone.migrate_state()
+            new = self.home / ".local/share/appzones"
+            self.assertEqual((zone.STATE, zone.LAUNCHER), (new, new / "launcher/share/applications"))
+            self.assertEqual((new / "ta/home/kept").read_text(), "x")
+            self.assertFalse(legacy.exists())
+            self.assertIn("moved", err.getvalue())
+        finally:
+            if real_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = real_home
+            self._zone_mod()
 
     def _zone_mod(self):
         sys.path.insert(0, str(HERE))
@@ -167,18 +251,18 @@ class ZonecfgTest(unittest.TestCase):
         zone = self._zone_mod()
         rc = Path(self.tmp.name) / "resolv.conf"
         rc.write_text("# generated\nsearch lan\nnameserver 127.0.0.1\nnameserver 192.0.2.53\n")
-        os.environ.pop("ZONES_DNS_HOST", None)
+        os.environ.pop("APPZONES_DNS_HOST", None)
         self.assertEqual(zone.host_resolver(str(rc)), "127.0.0.1")
         rc.write_text("nameserver fe80::1%eth0\n")
         self.assertEqual(zone.host_resolver(str(rc)), "fe80::1%eth0")
         rc.write_text("nameserver not-an-ip\n")
         self.assertEqual(zone.host_resolver(str(rc)), "127.0.0.53")
         self.assertEqual(zone.host_resolver(str(Path(self.tmp.name) / "none")), "127.0.0.53")
-        os.environ["ZONES_DNS_HOST"] = "192.0.2.1"
+        os.environ["APPZONES_DNS_HOST"] = "192.0.2.1"
         try:
             self.assertEqual(zone.host_resolver(str(rc)), "192.0.2.1")
         finally:
-            os.environ.pop("ZONES_DNS_HOST")
+            os.environ.pop("APPZONES_DNS_HOST")
 
     def test_readline_keeps_the_rest(self):
         """Two replies in one read: the second is not lost (appzones run --wait's exit code)."""
@@ -251,21 +335,21 @@ class ZonecfgTest(unittest.TestCase):
 
     def test_resolv_conf(self):
         zone = self._zone_mod()
-        os.environ.pop("ZONES_DNS_HOST", None)
+        os.environ.pop("APPZONES_DNS_HOST", None)
         self.assertEqual(zone.resolv_conf({"network": "internet", "dns": "public"}), f"nameserver {zone.DNS_ADDR}\n")
         self.assertEqual(zone.resolv_conf({"network": "host", "dns": "public"}), "nameserver 1.1.1.1\n")
         self.assertEqual(zone.resolv_conf({"network": "none", "dns": "host"}), "")
-        os.environ["ZONES_DNS_HOST"] = "192.0.2.53"
+        os.environ["APPZONES_DNS_HOST"] = "192.0.2.53"
         try:
             self.assertEqual(zone.resolv_conf({"network": "host", "dns": "host"}), "nameserver 192.0.2.53\n")
         finally:
-            os.environ.pop("ZONES_DNS_HOST")
+            os.environ.pop("APPZONES_DNS_HOST")
 
     def test_zone_new_concurrent(self):
         """Two `appzones new -y` at once: both zones end up in the file, which is never left half-written."""
         import subprocess
         cfgp = Path(self.tmp.name) / "conc/zones.toml"
-        env = dict(os.environ, ZONES_CONFIG=str(cfgp), HOME=str(self.home))
+        env = dict(os.environ, APPZONES_CONFIG=str(cfgp), HOME=str(self.home))
         procs = [subprocess.Popen([sys.executable, "-B", str(HERE / "zone.py"), "new", n, "-y"], env=env,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) for n in ("one", "two", "three")]
         for pr in procs:
@@ -322,12 +406,12 @@ class ZonecfgTest(unittest.TestCase):
                 p = Path(self.tmp.name) / bad
                 if bad == "a-file":
                     p.write_text("")
-                os.environ["ZONES_DBUS_SERVICE_DIRS"] = str(p)
+                os.environ["APPZONES_DBUS_SERVICE_DIRS"] = str(p)
                 try:
                     self.z = importlib.reload(self.z)
                     self.assertRefused(self.errs('dbus = { talk = ["com.example.Other"] }'), "cannot ask the session bus")
                 finally:
-                    os.environ["ZONES_DBUS_SERVICE_DIRS"] = ""
+                    os.environ["APPZONES_DBUS_SERVICE_DIRS"] = ""
 
     def test_stdio_fd_ok(self):
         zone = self._zone_mod()
@@ -424,7 +508,7 @@ class ZonecfgTest(unittest.TestCase):
 
     def test_dbus_activatable_names_from_the_bus(self):
         """The running bus's ListActivatableNames is the truth; no answer: extra grants refused."""
-        os.environ.pop("ZONES_DBUS_SERVICE_DIRS")
+        os.environ.pop("APPZONES_DBUS_SERVICE_DIRS")
         try:
             self.z = importlib.reload(self.z)
             self.z.bus_activatable_names = lambda: {"com.example.OnlyOnBus"}
@@ -436,18 +520,18 @@ class ZonecfgTest(unittest.TestCase):
             self.assertRefused(self.errs('dbus = { talk = ["com.example.Other"] }'), "cannot ask the session bus")
             self.assertEqual(self.errs(""), [])  # nothing extra asked: fine
         finally:
-            os.environ["ZONES_DBUS_SERVICE_DIRS"] = ""
+            os.environ["APPZONES_DBUS_SERVICE_DIRS"] = ""
 
     def test_dbus_unreadable_service_dir_fails_closed(self):
         d = Path(self.tmp.name) / "svc"
         d.mkdir()
         (d / "x.service").mkdir()  # unreadable as a file
-        os.environ["ZONES_DBUS_SERVICE_DIRS"] = str(d)
+        os.environ["APPZONES_DBUS_SERVICE_DIRS"] = str(d)
         try:
             self.z = importlib.reload(self.z)
             self.assertRefused(self.errs('dbus = { talk = ["com.example.Other"] }'), "cannot ask the session bus")
         finally:
-            os.environ["ZONES_DBUS_SERVICE_DIRS"] = ""
+            os.environ["APPZONES_DBUS_SERVICE_DIRS"] = ""
 
     def test_fuzz_wrong_types_are_errors_not_crashes(self):
         """Every key, every wrong type, in a zone, in [defaults] and in an app: errors, never a traceback."""
@@ -554,7 +638,7 @@ class ZonecfgTest(unittest.TestCase):
         svc = Path(self.tmp.name) / "services"
         svc.mkdir()
         (svc / "x.service").write_text("[D-BUS Service]\nName=com.example.Viewer\nExec=/bin/viewer\n")
-        os.environ["ZONES_DBUS_SERVICE_DIRS"] = str(svc)
+        os.environ["APPZONES_DBUS_SERVICE_DIRS"] = str(svc)
         try:
             self.z = importlib.reload(self.z)
             self.assertRefused(self.errs('dbus = { own = ["com.example.Viewer"] }'), "started on the host bus")
@@ -562,7 +646,7 @@ class ZonecfgTest(unittest.TestCase):
             self.assertRefused(self.errs('dbus = { talk = ["com.example.Viewer"] }'), "bus = \"zone\"")
             self.assertEqual(self.errs('dbus = { own = ["com.example.Other"] }'), [])
         finally:
-            os.environ["ZONES_DBUS_SERVICE_DIRS"] = ""
+            os.environ["APPZONES_DBUS_SERVICE_DIRS"] = ""
 
     def test_dbus_own_in_two_zones_refused(self):
         cfg = self.cfg('version = 1\n[zones.aa]\ncolour = "#112233"\ndbus = { own = ["org.example.player.*"] }\n'
@@ -591,7 +675,7 @@ class ZonecfgTest(unittest.TestCase):
 
     def test_nix_ld(self):
         self.assertEqual(self.errs("nix_ld = true"), [])
-        self.assertEqual(self.z.host_nix_ld()[1], os.environ["ZONES_NIX_LD_LIB"])
+        self.assertEqual(self.z.host_nix_ld()[1], os.environ["APPZONES_NIX_LD_LIB"])
         self.assertRefused(self.errs('nix_ld = "yes"'), "nix_ld must be true or false")
         # release 3: an older `appzones` must say "update appzones", not "unknown key"
         self.assertRefused(self.cfg('version = 1\nrequires = 2\n[zones.tt]\ncolour = "#112233"\nnix_ld = true\n')
@@ -716,7 +800,8 @@ class ZonecfgTest(unittest.TestCase):
 
     def test_binds_of_host_code_refused(self):
         # a writable bind of what the host runs at login would be a way out
-        for d in (".config/hypr", ".config/zones", ".local/share/zones/other/home", ".config/systemd"):
+        for d in (".config/hypr", ".config/appzones", ".local/share/appzones/other/home", ".config/zones",
+                  ".local/share/zones/other/home", ".config/systemd"):
             (self.home / d).mkdir(parents=True)
             with self.subTest(path=d):
                 self.assertRefused(self.errs(f'binds = [{{ path = "~/{d}" }}]'), "never enters a zone")

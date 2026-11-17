@@ -9,8 +9,10 @@ validates first) and on its own:
 
 Unknown keys are errors. Binds are checked on their realpath against the
 never-list: a bind that is, contains or is inside a denied path is refused.
-A host adds its own denied paths in /etc/zones/denied-paths (one per line;
-the NixOS module's `deniedPaths`).
+A host adds its own denied paths in /etc/appzones/denied-paths (one per
+line; the NixOS module's `deniedPaths`).
+
+Variables are $APPZONES_*; the pre-0.6 names ($ZONES_*) are still read.
 """
 from __future__ import annotations
 
@@ -26,9 +28,19 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-HOME = Path(os.environ.get("ZONES_HOME_FOR_TESTS") or Path.home())
+def env(name: str) -> str | None:
+    """$APPZONES_<name>, or the pre-0.6 $ZONES_<name> (still read, for one release)."""
+    v = os.environ.get("APPZONES_" + name)
+    return v if v is not None else os.environ.get("ZONES_" + name)
+
+
+def has_env(name: str) -> bool:
+    return "APPZONES_" + name in os.environ or "ZONES_" + name in os.environ
+
+
+HOME = Path(env("HOME_FOR_TESTS") or Path.home())
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,20}$")
-# Directories of ~/.local/share/zones that are not zones (launcher entries).
+# Directories of ~/.local/share/appzones that are not zones (launcher entries).
 RESERVED = {"launcher", "share", "bin", "lib", "etc"}
 COLOUR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -145,9 +157,9 @@ KEYS: dict[str, tuple[object, object, str]] = {
     "bus": ("host", _enum(*BUSES), "bus for commands not in [apps]: host (filtered proxy, portals) | zone (the "
                                    "zone's own bus) | none"),
     "nix_ld": (False, _bool, "generic Linux binaries run (/lib64/ld-linux-x86-64.so.2 is the host's nix-ld shim)"),
-    "tmp": ("ram", _enum("ram", "disk"), "ram (fresh tmpfs each start) | disk (~/.local/share/zones/<zone>/tmp, "
+    "tmp": ("ram", _enum("ram", "disk"), "ram (fresh tmpfs each start) | disk (~/.local/share/appzones/<zone>/tmp, "
                                          "kept; files unused for 14 days removed at start)"),
-    "home": ("", _str, "zone home; default ~/.local/share/zones/<zone>/home"),
+    "home": ("", _str, "zone home; default ~/.local/share/appzones/<zone>/home"),
     "colour": ("", _str, "#rrggbb, required, unique"),
     "force_host": (False, _bool, "allow network=host in a zone named untrusted"),
 }
@@ -164,8 +176,8 @@ SINCE = {"requires": 2, "bus": 2, "apps.bus": 2, "bus = \"zone\"": 2, "bus = \"n
 
 # nix-ld on the host (programs.nix-ld.enable): the shim at the FHS loader
 # path, and the directory with the real loader (ld.so) and its libraries.
-NIX_LD_SHIM = os.environ.get("ZONES_NIX_LD_SHIM") or "/lib64/ld-linux-x86-64.so.2"
-NIX_LD_LIB = os.environ.get("ZONES_NIX_LD_LIB") or "/run/current-system/sw/share/nix-ld/lib"
+NIX_LD_SHIM = env("NIX_LD_SHIM") or "/lib64/ld-linux-x86-64.so.2"
+NIX_LD_LIB = env("NIX_LD_LIB") or "/run/current-system/sw/share/nix-ld/lib"
 
 
 def host_nix_ld() -> tuple[str, str] | None:
@@ -187,7 +199,8 @@ def denied_paths() -> list[Path]:
            ".local/share/kwalletd", ".config/opencode",
            # anything the host runs or reads as code or config at login: a
            # writable bind of one of these is a way out of the zone
-           ".config/zones", ".local/share/zones", ".config/hypr", ".config/systemd", ".config/autostart",
+           ".config/appzones", ".local/share/appzones", ".config/zones", ".local/share/zones",  # also pre-0.6
+           ".config/hypr", ".config/systemd", ".config/autostart",
            ".config/environment.d", ".config/uwsm", ".local/share/applications", ".local/bin", ".bin",
            ".bashrc", ".bash_profile", ".profile", ".zshrc", ".zshenv", ".zprofile", ".config/fish",
            ".config/nix", ".config/git", ".gitconfig", ".config/kwalletrc"]
@@ -202,8 +215,11 @@ def denied_paths() -> list[Path]:
 
 # The host's own additions (code checkouts, secret stores, mounts), one path
 # per line, "#" comments, "~/" for the home. The mount helper (root) clears
-# every ZONES_* variable, so it always reads the real file.
-HOST_DENIED_FILE = "/etc/zones/denied-paths"
+# every APPZONES_* and ZONES_* variable, so it always reads the real file.
+# Before 0.6 the file was /etc/zones/denied-paths: read when the new one is
+# not there.
+HOST_DENIED_FILE = "/etc/appzones/denied-paths"
+LEGACY_HOST_DENIED_FILE = "/etc/zones/denied-paths"
 
 
 class DeniedPathsError(ValueError):
@@ -213,13 +229,15 @@ class DeniedPathsError(ValueError):
 def host_denied_paths() -> list[Path]:
     """The host's additions. A missing default file means none; an unreadable
     file, a missing explicit override or a bad line is an error (fail closed)."""
-    override = os.environ.get("ZONES_DENIED_PATHS")
+    override = env("DENIED_PATHS")
     path = Path(override or HOST_DENIED_FILE)
+    if not override and not os.path.lexists(path) and os.path.lexists(LEGACY_HOST_DENIED_FILE):
+        path = Path(LEGACY_HOST_DENIED_FILE)
     try:
         lines = path.read_text().splitlines()
     except FileNotFoundError:
         if override:
-            raise DeniedPathsError(f"{path} (ZONES_DENIED_PATHS) does not exist")
+            raise DeniedPathsError(f"{path} (APPZONES_DENIED_PATHS) does not exist")
         return []
     except (OSError, UnicodeDecodeError) as e:
         raise DeniedPathsError(f"{path}: cannot read the host's denied paths: {e}")
@@ -288,16 +306,16 @@ def activatable_names() -> set[str] | None:
     """Every name a host .service file provides; None if that cannot be known
     (then extra talk/own grants are refused: fail closed). Tests (and hosts
     without a session bus) name the service directories in
-    $ZONES_DBUS_SERVICE_DIRS instead."""
+    $APPZONES_DBUS_SERVICE_DIRS instead."""
     global _activatable, _activatable_known
     if _activatable_known:
         return _activatable
     _activatable_known = True
-    if "ZONES_DBUS_SERVICE_DIRS" not in os.environ:
+    if not has_env("DBUS_SERVICE_DIRS"):
         _activatable = bus_activatable_names()
         return _activatable
     names: set[str] = set()
-    for d in [Path(x) for x in os.environ["ZONES_DBUS_SERVICE_DIRS"].split(":") if x]:
+    for d in [Path(x) for x in (env("DBUS_SERVICE_DIRS") or "").split(":") if x]:
         try:  # scandir, not glob: glob hides a missing or unreadable directory
             with os.scandir(d) as it:
                 files = [Path(e.path) for e in it if e.name.endswith(".service")]
@@ -712,8 +730,22 @@ def app_for_command(cfg: Config, argv0: str) -> str | None:
             return aid
     return None
 
+def config_path(home: Path) -> tuple[Path, Path | None]:
+    """The zones.toml to use: $APPZONES_CONFIG, else ~/.config/appzones/zones.toml.
+    Second: the pre-0.6 file (~/.config/zones/zones.toml) when that is the one
+    found, so the caller can say to move it; else None. Never moved here: it
+    is often a link a dotfiles manager owns."""
+    override = env("CONFIG")
+    if override:
+        return Path(override), None
+    new, old = home / ".config/appzones/zones.toml", home / ".config/zones/zones.toml"
+    if not os.path.lexists(new) and os.path.lexists(old):
+        return old, old
+    return new, None
+
+
 def main(argv: list[str]) -> int:
-    default = Path(os.environ.get("ZONES_CONFIG", HOME / ".config/zones/zones.toml"))
+    default = config_path(HOME)[0]
     if len(argv) >= 1 and argv[0] == "check":
         cfg = load(argv[1] if len(argv) > 1 else default)
         for e in cfg.errors:

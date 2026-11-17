@@ -37,7 +37,7 @@ programs.appzones = {
 };
 ```
 
-Then write `~/.config/zones/zones.toml`: copy `examples/minimal.toml`
+Then write `~/.config/appzones/zones.toml`: copy `examples/minimal.toml`
 (works on any host), or run `appzones new NAME -y` (creates the file if there
 is none). `examples/zones.toml` shows every key; parts of it need more setup
 (`nix_ld` needs `programs.nix-ld.enable`, binds need the folders to exist).
@@ -58,16 +58,41 @@ Requirements:
 
 Zone apps get the host session's `XDG_CURRENT_DESKTOP`.
 
+### Upgrading from 0.5
+
+0.6 keeps everything under the name appzones:
+
+| before 0.6 | since 0.6 |
+|---|---|
+| `~/.config/zones/zones.toml` | `~/.config/appzones/zones.toml` |
+| `~/.local/share/zones/` (zone homes) | `~/.local/share/appzones/` |
+| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` (the module writes it) |
+| `$ZONES_*` | `$APPZONES_*` |
+| `contrib/hyprland/zones.lua` | `contrib/hyprland/appzones.lua` |
+
+- **Zone homes move by themselves**: the first `appzones` command that runs
+  while no zone runs renames `~/.local/share/zones` to
+  `~/.local/share/appzones` and says so. Until then the old directory stays
+  in use. If backups or an impermanence setup list the old path, update them.
+- **The config does not move by itself** (it is often a link your dotfiles
+  manage): `appzones` reads the old file and says to move it:
+  `mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/`.
+- **After the switch**: `appzones stop --all`, then start your zones again
+  (`appzones up NAME`, or log out and in). The first command after the stop
+  moves the zone homes.
+- The old variable names and `zones.lua` still work in 0.6 and will be
+  removed later. The window tag (`zone:NAME`) and `zones.toml` keep their names.
+
 ## Hyprland
 
-`contrib/hyprland/zones.lua` (Hyprland's Lua config) tags every window
+`contrib/hyprland/appzones.lua` (Hyprland's Lua config) tags every window
 whose process runs in a zone with `zone:NAME` and gives it the zone's
 border colour. The zone comes from the window's host-side cgroup
 (`appzones@NAME.service`), which the app cannot change, never from its title or
 class. Load it from your config:
 
 ```lua
-dofile("/path/to/appzones/contrib/hyprland/zones.lua")
+dofile("/path/to/appzones/contrib/hyprland/appzones.lua")
 ```
 
 For a bar: `appzones active --follow --json` prints Waybar custom-module JSON
@@ -116,7 +141,7 @@ appzones umount work thing         # gone again (busy: says by what; --lazy deta
 
 - **Launcher.** Every app in `[apps]` gets a launcher entry per zone, named
   `Firefox (work)`. The entries are written to
-  `~/.local/share/zones/launcher/share/applications`, which is on
+  `~/.local/share/appzones/launcher/share/applications`, which is on
   `XDG_DATA_DIRS`. The host's own entries are never hidden.
 - **Windows.** A zone window has the zone's colour as its border, and the
   Hyprland tag `zone:NAME`. Waybar shows `[work]` next to the workspaces
@@ -168,7 +193,7 @@ driver's whole ioctl surface (and CUDA's UVM) to it, so it is not done.
 
 ## Configuration reference
 
-File: `~/.config/zones/zones.toml` (`$ZONES_CONFIG` overrides it). Every
+File: `~/.config/appzones/zones.toml` (`$APPZONES_CONFIG` overrides it). Every
 key below can sit in `[defaults]` or in a `[zones.NAME]` table; a zone
 inherits from `[defaults]`, and `[defaults]` from the built-in values.
 Unknown keys are errors.
@@ -210,8 +235,8 @@ known key suggested.
 | `dbus` | `{ talk = [], own = [] }` | names on the host bus proxy added to the safe default set (see "D-Bus" below for what is refused) |
 | `bus` | `"host"` · `"zone"` · `"none"` | the session bus for a command that is not in `[apps]` (`appzones run Z -- CMD`). See "D-Bus" below |
 | `nix_ld` | `false` · `true` | generic Linux binaries run: `/lib64/ld-linux-x86-64.so.2` in the zone is the host's nix-ld shim, and `NIX_LD`, `NIX_LD_LIBRARY_PATH` are set as on the host. Refused on a host without nix-ld (`programs.nix-ld.enable`). See "Generic Linux binaries" |
-| `tmp` | `"ram"` · `"disk"` | `ram`: `/tmp` is a fresh tmpfs at every start. `disk`: `/tmp` and `/var/tmp` are `~/.local/share/zones/NAME/tmp` and `.../var-tmp` (0700): kept across restarts, readable from the host. Cleaned at each start, see "/tmp on disk" |
-| `home` | `""` | the zone's home; empty: `~/.local/share/zones/NAME/home` |
+| `tmp` | `"ram"` · `"disk"` | `ram`: `/tmp` is a fresh tmpfs at every start. `disk`: `/tmp` and `/var/tmp` are `~/.local/share/appzones/NAME/tmp` and `.../var-tmp` (0700): kept across restarts, readable from the host. Cleaned at each start, see "/tmp on disk" |
+| `home` | `""` | the zone's home; empty: `~/.local/share/appzones/NAME/home` |
 | `force_host` | `false` · `true` | allow `network = "host"` in `untrusted` |
 
 `[apps.ID]` (ID: lowercase, as zone names):
@@ -239,7 +264,7 @@ inside any of these:
   as the system bus, devices, other users' files);
 - `/run/user`, `/run/secrets`, `/var/lib/sops-nix`, `/etc/ssh`,
   `/nix/var`;
-- the host's own additions: `/etc/zones/denied-paths`, one path per line,
+- the host's own additions: `/etc/appzones/denied-paths`, one path per line,
   `~/` for the home (`programs.appzones.deniedPaths`);
 - `~/.ssh`, `~/.gnupg`, `~/.config/sops`, `~/.password-store`, the keyrings
   and kwallet;
@@ -419,8 +444,8 @@ session. A zone without `usb` has no `/dev/bus/usb`, no hidraw node and no
 
 ## /tmp on disk (`tmp = "disk"`)
 
-`/tmp` in the zone is `~/.local/share/zones/NAME/tmp`, and `/var/tmp` is
-`~/.local/share/zones/NAME/var-tmp`. Both are 0700 and survive `zone
+`/tmp` in the zone is `~/.local/share/appzones/NAME/tmp`, and `/var/tmp` is
+`~/.local/share/appzones/NAME/var-tmp`. Both are 0700 and survive `appzones
 restart` and reboots, and you can reach them from the host. The zone wrote
 everything in them, so do not open links or run files from them on the
 host without care.
@@ -458,12 +483,12 @@ left at its start and stop. To keep a folder for good, add it to `binds`.
   moment the zone sees it, and the zone cannot remount it writable, not
   even from a nested user namespace.
 
-**How.** Each zone binds `~/.local/share/zones/NAME/mnt` read-only at
+**How.** Each zone binds `~/.local/share/appzones/NAME/mnt` read-only at
 `/mnt/host`. bwrap makes the zone's mounts slaves of the host's, and
 `/home` is normally a shared mount (systemd makes `/` shared), so a mount the host makes under that
 directory appears in the zone at once, and an unmount disappears. The zone
 cannot create anything in `/mnt/host` itself. A bind mount on the host
-needs root, so `appzones` calls one helper, `zones-mount-helper`, through
+needs root, so `appzones` calls one helper, `appzones-mount-helper`, through
 `sudo -n`. The NixOS module adds a sudo rule for exactly that file, for
 `programs.appzones.user`, without a password (`mountHelper = true`).
 
@@ -483,7 +508,7 @@ What the helper accepts:
   refused. The never-list is checked on the path of that open directory,
   and the mount is made from the same descriptor (`open_tree`), so nothing
   can be swapped in between. Mounts below the source do not come along.
-- **Where.** Only `<caller's home>/.local/share/zones/ZONE/mnt/NAME`. ZONE
+- **Where.** Only `<caller's home>/.local/share/appzones/ZONE/mnt/NAME`. ZONE
   and NAME are plain names (no `/`, no `..`). The target is opened with
   `openat2(RESOLVE_NO_SYMLINKS)`, so a symlink anywhere on the path is
   refused. It must be a directory the caller owns and not already a mount

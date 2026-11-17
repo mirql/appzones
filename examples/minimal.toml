@@ -1,4 +1,4 @@
-# ~/.config/zones/zones.toml: a first configuration that works on any host
+# ~/.config/appzones/zones.toml: a first configuration that works on any host
 # with appzones installed. No binds, no nix-ld: add those when you need them
 # (examples/zones.toml shows every key; reference: docs/guide.md).
 version = 1

@@ -14,5 +14,5 @@
 - Adding a config key or value: bump `RELEASE` in `zonecfg.py`, record it in
   `SINCE` (the package version in nix/package.nix is separate).
 - `zone_mount_helper.py` runs as root through sudo. It clears every
-  `ZONES_*` variable before importing anything; keep it that way.
+  `APPZONES_*` and `ZONES_*` variable before importing anything; keep it that way.
 - `main` takes only squash merges through a PR.

@@ -264,8 +264,8 @@ let
       def u(cmd):
           return laptop.succeed("su -l alice -c " + shlex.quote(ENV + cmd))
 
-      u("install -d ~/.config/zones ~/.ssh ~/src/my-app ~/src/other-project ~/src/secret-project ~/Downloads")
-      u("install -m 644 ${zonesToml} ~/.config/zones/zones.toml")
+      u("install -d ~/.config/appzones ~/.ssh ~/src/my-app ~/src/other-project ~/src/secret-project ~/Downloads")
+      u("install -m 644 ${zonesToml} ~/.config/appzones/zones.toml")
       u("echo '-----BEGIN OPENSSH PRIVATE KEY-----' >~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519")
       u("echo '%PDF-1.7 totally an invoice' >~/Downloads/invoice.pdf")
       u("appzones check")

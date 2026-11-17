@@ -1,9 +1,9 @@
-# ~/.config/zones/zones.toml: an example with every key (reference:
+# ~/.config/appzones/zones.toml: an example with every key (reference:
 # docs/guide.md "Configuration reference").
 # Edited by hand. `appzones check` validates it. Changes apply at the next
 # `appzones restart <zone>`; `appzones run` warns when a running zone is stale, and
 # `appzones run --restart` restarts a zone with no app in it.
-# Each zone starts with a fresh home in ~/.local/share/zones/<zone>/home: no
+# Each zone starts with a fresh home in ~/.local/share/appzones/<zone>/home: no
 # app data moves in from the host, host apps stay as they are.
 version = 1
 requires = 4                   # the zones release this file needs (`appzones check` prints its own); an older
@@ -31,8 +31,8 @@ binds       = []               # { path = "~/Downloads", mode = "rw" | "ro" }; s
 dbus        = { talk = [], own = [] }   # host bus proxy: added to the safe default set; never-list refused
 bus         = "host"           # bus for commands not in [apps]: host (proxy: portals, tray) | zone (the zone's own bus) | none
 nix_ld      = false            # true: generic Linux binaries (downloaded CLIs) run, through the host's nix-ld
-tmp         = "ram"            # ram (fresh tmpfs each start) | disk (~/.local/share/zones/<zone>/tmp, kept; unused 14 days: removed)
-home        = ""               # default ~/.local/share/zones/<zone>/home
+tmp         = "ram"            # ram (fresh tmpfs each start) | disk (~/.local/share/appzones/<zone>/tmp, kept; unused 14 days: removed)
+home        = ""               # default ~/.local/share/appzones/<zone>/home
 force_host  = false            # allow network = "host" in the zone named untrusted
 
 # ── zones ───────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ links     = "zone"             # links clicked here open in this zone's browser
 devices   = ["gpu", "audio", "mic", "screencast"]
 packages  = ["slack"]
 nix_ld    = true               # prebuilt Linux binaries (agent CLIs, release downloads) run here
-tmp       = "disk"             # /tmp and /var/tmp kept across restarts, at ~/.local/share/zones/work/{tmp,var-tmp}
+tmp       = "disk"             # /tmp and /var/tmp kept across restarts, at ~/.local/share/appzones/work/{tmp,var-tmp}
 # devices = ["gpu", "audio", "mic", "screencast", "usb"]
 # usb     = ["abcd"]           # only these USB devices (by vendor id); after a replug: appzones restart work
 

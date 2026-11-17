@@ -1,16 +1,18 @@
-"""zones-mount-helper: the one step of `appzones mount` / `appzones umount` that needs root.
+"""appzones-mount-helper: the one step of `appzones mount` / `appzones umount` that needs root.
 
 Only through sudo, as the zone CLI runs it (the NixOS module's sudo rule
 allows exactly this file, for the zones user, without a password):
 
-    sudo -n zones-mount-helper mount ZONE NAME SOURCE [--ro]
-    sudo -n zones-mount-helper umount ZONE NAME [--lazy]
-    sudo -n zones-mount-helper umount-all ZONE
+    sudo -n appzones-mount-helper mount ZONE NAME SOURCE [--ro]
+    sudo -n appzones-mount-helper umount ZONE NAME [--lazy]
+    sudo -n appzones-mount-helper umount-all ZONE
 
 The only place it mounts or unmounts is
-    <the sudo caller's home>/.local/share/zones/ZONE/mnt/NAME
-which a running zone sees as /mnt/host/NAME (zone.py binds .../ZONE/mnt
-read-only at /mnt/host; a host mount below it propagates into the zone).
+    <the sudo caller's home>/.local/share/appzones/ZONE/mnt/NAME
+(or .local/share/zones, the pre-0.6 place, while .local/share/appzones does
+not exist: appzones has not moved it yet), which a running zone sees as
+/mnt/host/NAME (zone.py binds .../ZONE/mnt read-only at /mnt/host; a host
+mount below it propagates into the zone).
 
 Why a caller cannot abuse it (docs/guide.md "Runtime mounts"):
 - who: the caller is SUDO_UID (sudo sets it; the caller cannot). Never root
@@ -41,7 +43,7 @@ import stat
 import sys
 from pathlib import Path
 
-for _k in [k for k in os.environ if k.startswith("ZONES_")]:
+for _k in [k for k in os.environ if k.startswith(("APPZONES_", "ZONES_"))]:
     del os.environ[_k]  # never a test override when running as root
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import zonecfg  # noqa: E402
@@ -69,7 +71,7 @@ class MountAttr(ctypes.Structure):
 
 
 def die(msg: str, code: int = 1):
-    print(f"zones-mount-helper: {msg}", file=sys.stderr)
+    print(f"appzones-mount-helper: {msg}", file=sys.stderr)
     sys.exit(code)
 
 
@@ -102,7 +104,7 @@ def mount_points() -> list[str]:
 class Caller:
     def __init__(self):
         if os.geteuid() != 0:
-            die("run through sudo (sudo -n zones-mount-helper ...); `appzones mount` does")
+            die("run through sudo (sudo -n appzones-mount-helper ...); `appzones mount` does")
         try:
             self.uid = int(os.environ["SUDO_UID"])
         except (KeyError, ValueError):
@@ -117,7 +119,13 @@ class Caller:
     def mnt_dir(self, zone: str) -> str:
         if not zonecfg.NAME_RE.match(zone or "") or zone in zonecfg.RESERVED:
             die(f"zone {zone!r}: not a zone name")
-        return f"{self.home}/.local/share/zones/{zone}/mnt"
+        # the caller's state directory, chosen as appzones (zone.py) chooses
+        # it; either way open_owned refuses a symlink anywhere on the path and
+        # anything but a directory of the caller's at exactly that path
+        base = f"{self.home}/.local/share/appzones"
+        if not os.path.lexists(base) and os.path.lexists(f"{self.home}/.local/share/zones"):
+            base = f"{self.home}/.local/share/zones"
+        return f"{base}/{zone}/mnt"
 
     def open_owned(self, path: str) -> int:
         """path, opened without following any symlink; must be the caller's directory."""
