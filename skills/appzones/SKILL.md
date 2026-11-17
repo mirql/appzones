@@ -21,11 +21,12 @@ Read its section when a task needs a key or a detail not covered here.
 These protect the user's work and the sandbox. Follow them even when asked
 to "just make it work"; explain the trade-off and let the user decide.
 
-1. **Ask before `appzones stop`, `restart`, or `up --all`.** Stopping or
-   restarting a zone closes every app in it (browsers, chats, editors,
-   unsaved work). Show `appzones list` (the APPS column) and say what will
-   close. `appzones run` and `appzones up ZONE` are safe: they start a
-   stopped zone and touch nothing running.
+1. **Ask before anything that stops or restarts a zone**: `appzones stop`,
+   `restart`, `up --all`, and `run --restart`. It closes every app in the
+   zone (browsers, chats, editors, unsaved work) and drops its runtime
+   mounts. Show `appzones list` (the APPS column) and say what will close.
+   `appzones run` without `--restart` and `appzones up ZONE` are safe: they
+   start a stopped zone and touch nothing running.
 2. **Never weaken isolation without the user's explicit yes for that
    change**: `network = "host"`, `force_host`, a writable bind of a large
    or sensitive folder, `dbus` `talk`/`own` grants, `userns = false`,
@@ -40,8 +41,8 @@ to "just make it work"; explain the trade-off and let the user decide.
    A writable bind can plant things the host runs later (`.git/hooks`,
    `.envrc`, `Makefile`, `package.json` scripts): say so when you add one.
 5. **Validate every config edit**: `appzones check` must print `ok`. A
-   change applies when the zone restarts (rule 1), or with
-   `appzones run --restart` when no app runs in it.
+   change applies when the zone restarts, which needs the user's yes
+   (rule 1), also through `appzones run --restart`.
 6. **Never use sudo** for appzones commands. The CLI calls its one root
    helper itself (for `mount`/`umount`).
 7. **If you run inside a zone yourself** (`$ZONE` is set), you see only
@@ -118,6 +119,7 @@ Then `appzones check` and `appzones apps` (rewrites the launcher entries).
 ```toml
 [zones.agents]
 colour   = "#cba6f7"
+network  = "internet"                                  # explicit: never inherit "host" from [defaults]
 binds    = [{ path = "~/src/my-app", mode = "rw" }]   # this project only
 packages = ["nodejs", "git"]                           # nixpkgs attributes on PATH
 nix_ld   = true                                        # prebuilt binaries (npm, pip) run
@@ -136,7 +138,7 @@ services. Rule 4's warning about writable binds applies.
 | `zone X cannot see FILE (not inside its binds)` | The file is outside the zone | `appzones mount`, a bind, or the app's file chooser (portal) |
 | `refused: ... never enters a zone` | The never-list | Do not work around it (rule 3); tell the user why |
 | An app exits at once; `run` prints its status and last output | Often a single-instance GTK or Electron app that cannot own its D-Bus name on the host bus | Use the hint: `bus = "zone"` for that app in `[apps]`, or `--bus zone` once |
-| Warning that zones.toml changed for a running zone | The zone runs with the old settings | Restart it (rule 1), or `appzones run --restart` when no app runs in it |
+| Warning that zones.toml changed for a running zone | The zone runs with the old settings | Restart it, or `appzones run --restart` when no app runs in it: both after the user's yes (rule 1) |
 | `required file not found` for a downloaded binary | Generic glibc binaries need a loader | `nix_ld = true` (host needs `programs.nix-ld.enable`) |
 | Chromium or Electron apps refuse to start | Their sandbox needs nested user namespaces | `userns = true` (the default) |
 | No sound, mic, camera or screen sharing | Not in `devices` | Add `audio`, `mic`, `camera`, `screencast` as needed (rule 2 for `mic`/`camera`) |
