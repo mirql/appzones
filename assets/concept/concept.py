@@ -13,9 +13,10 @@ scripts, but CSS animations play). The story, in one loop:
 
 Every claim is one the README and the guide already make. Where
 animations don't run, the picture shows the end state: every attempt and its
-result at once. It does not stop for prefers-reduced-motion: browsers on
-Linux report that whenever GTK animations are off, and the README would then
-never move.
+result at once. With prefers-reduced-motion it still plays (browsers on Linux
+report that whenever GTK animations are off, and the README would never move),
+but nothing slides: the link fades in and out at the internet instead of
+travelling into the zone. The rest is fades and lines being drawn.
 """
 from pathlib import Path
 
@@ -117,6 +118,9 @@ def svg(theme: str) -> str:
                f"{LINK_IN + 1}%{{opacity:1;transform:translate(0,0)}}"
                f"{LINK_OUT - 1}%{{opacity:1;transform:translate(0,{UNTRUSTED[1] + 95 - ly}px)}}"
                f"{LINK_OUT}%,100%{{opacity:0;transform:translate(0,{UNTRUSTED[1] + 95 - ly}px)}}}}")
+    # with reduced motion: the same timing, without the travel
+    css.append(f"@keyframes linkstill{{0%,{LINK_IN}%{{opacity:0}}{LINK_IN + 1}%,{LINK_OUT - 1}%{{opacity:1}}"
+               f"{LINK_OUT}%,100%{{opacity:0}}}}")
     body.append(f'<g class="a link" style="animation-name:link">'
                 + rect(lx - 62, ly - 14, 124, 28, t["link"], t["link"], 1)
                 + text(lx, ly + 5, "a link", t["on"], 14, "middle", "bold")
@@ -164,7 +168,8 @@ def svg(theme: str) -> str:
     style = (f".a{{animation-duration:{LOOP}s;animation-iteration-count:infinite;"
              f"animation-timing-function:ease-in-out}}"
              + "".join(css)
-             + ".link{opacity:0}")
+             + ".link{opacity:0}"
+             + "@media (prefers-reduced-motion: reduce){.link{animation-name:linkstill!important}}")
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
             f'role="img" aria-label="A link opens in the untrusted zone. Its attempts to read ~/.ssh and '
             f'~/Documents, reach the host\'s dev server, the other zones and the LAN are refused; the internet '
