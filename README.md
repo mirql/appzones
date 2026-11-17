@@ -23,6 +23,13 @@
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 </p>
 
+> *I wanted my desktop split into **separate, sealed-off spaces**: a browser
+> for each kind of work, and a clean home for every AI tool with its own
+> configs. A VM or a container for each felt like **far too much**, so I built
+> something **lighter**.*
+>
+> — **Askar**, author of appzones
+
 An app zone is a place your apps live in: `daily` for messengers, `work`
 for Slack and the work browser, `untrusted` for links you don't trust,
 `dev` for `npm install`. Each zone has its own home, its own network rules
