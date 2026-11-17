@@ -48,6 +48,7 @@ VM test.
 | `skills/appzones/SKILL.md` | the agent skill for users' agents (keep it in step with the CLI) |
 | `assets/concept/concept.py` | the README's concept animation (writes `concept-{dark,light}.svg`) |
 | `contrib/hyprland/appzones.lua` | window tags and border colours for Hyprland |
+| `docs/index.md`, `docs/_config.yml` | the docs site, mirql.github.io/appzones (GitHub Pages builds `docs/` on main) |
 | `docs/guide.md`, `examples/zones.toml` | user docs and the full example |
 
 ## Rules for changes

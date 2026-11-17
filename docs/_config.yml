@@ -1,0 +1,38 @@
+# The docs site: https://mirql.github.io/appzones/ (GitHub Pages builds it
+# from this folder on main, with GitHub's own Jekyll: no workflow, no runner).
+title: appzones
+description: Long-lived sandboxes for your desktop apps, dev tools and AI agents on Linux.
+url: https://mirql.github.io
+baseurl: /appzones
+
+remote_theme: just-the-docs/just-the-docs@v0.12.0
+plugins:
+  - jekyll-remote-theme
+
+color_scheme: dark
+search_enabled: true
+heading_anchors: true
+aux_links:
+  GitHub: https://github.com/mirql/appzones
+  Releases: https://github.com/mirql/appzones/releases
+aux_links_new_tab: true
+back_to_top: true
+back_to_top_text: Back to top
+footer_content: 'MIT licensed. <a href="https://github.com/mirql/appzones/security/advisories/new">Report a vulnerability</a> privately.'
+gh_edit_link: true
+gh_edit_link_text: Edit this page on GitHub
+gh_edit_repository: https://github.com/mirql/appzones
+gh_edit_branch: main
+gh_edit_source: docs
+gh_edit_view_mode: edit
+
+# guide.md keeps no front matter (it reads as plain markdown on GitHub)
+defaults:
+  - scope:
+      path: guide.md
+    values:
+      title: Guide
+      nav_order: 2
+
+exclude:
+  - "*.cast"

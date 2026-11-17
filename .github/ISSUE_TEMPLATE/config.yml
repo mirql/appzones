@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Ask a question
+    url: https://github.com/mirql/appzones/discussions/categories/q-a
+    about: How to set something up, whether appzones fits your case. Ideas go to Discussions > Ideas.
   - name: Report a security vulnerability
     url: https://github.com/mirql/appzones/security/advisories/new
     about: Ways out of a zone, never-list bypasses, mount helper problems. Please report privately.
