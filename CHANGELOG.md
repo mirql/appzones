@@ -5,6 +5,11 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **An agent skill** (`skills/appzones/SKILL.md`, `npx skills add
+  mirql/appzones`): how a coding agent runs things in zones, changes the
+  config and debugs a zone, with rules (ask before stopping a zone, never
+  weaken isolation on its own).
+
 ## 0.6.0
 
 - **Everything is named appzones now**, not only the command:

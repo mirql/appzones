@@ -6,6 +6,8 @@
   helper). Nix: `nix/package.nix`, `nix/module.nix`, `tests/vm.nix`.
 - User docs: `docs/guide.md`. When behaviour or a config key changes, update
   it and `examples/zones.toml`.
+- `skills/appzones/SKILL.md` is the skill users give their own agents. When a
+  command, a flag, a config key or a path changes, update it in the same PR.
 - The README's terminal GIFs (`docs/demo-*.gif`) are recorded in a VM from
   `tests/demo.nix`. When a command's name, arguments or output there
   changes, run `just demo` and commit the new GIFs.

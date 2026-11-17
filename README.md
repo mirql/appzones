@@ -280,6 +280,19 @@ Set up **appzones** on this NixOS machine: <https://github.com/mirql/appzones>
 
 </details>
 
+### Use it with your AI agent
+
+The [appzones skill](skills/appzones/SKILL.md) teaches a coding agent
+(Claude Code, Codex, opencode, Cursor, ...) to run things in your zones, add
+zones and apps, share folders, and debug what doesn't work inside one. It
+asks before stopping a zone and never weakens isolation on its own.
+
+```bash
+npx skills add mirql/appzones
+```
+
+Or copy `skills/appzones/SKILL.md` into your agent's skills folder.
+
 ## Limits
 
 > [!WARNING]

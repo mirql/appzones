@@ -45,6 +45,7 @@ VM test.
 | `nix/package.nix`, `nix/module.nix` | the package and the NixOS module |
 | `tests/vm.nix` | the NixOS VM test |
 | `tests/demo.nix`, `tests/demo-record.py` | the README's terminal demos, recorded in a VM (`just demo`) |
+| `skills/appzones/SKILL.md` | the agent skill for users' agents (keep it in step with the CLI) |
 | `assets/concept/concept.py` | the README's concept animation (writes `concept-{dark,light}.svg`) |
 | `contrib/hyprland/appzones.lua` | window tags and border colours for Hyprland |
 | `docs/guide.md`, `examples/zones.toml` | user docs and the full example |
