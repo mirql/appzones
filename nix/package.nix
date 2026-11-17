@@ -35,6 +35,7 @@ let
   ];
   src = ../src;
   examples = ../examples;
+  hyprland = ../contrib/hyprland; # only for the unit tests (zones.lua is a copy of appzones.lua)
 in
 runCommand "appzones-${version}"
   {
@@ -71,9 +72,10 @@ runCommand "appzones-${version}"
 
     # unit tests of the validator (and parts of zone.py), against a fake home and sysfs
     work=$(mktemp -d)
-    mkdir -p $work/src $work/examples
+    mkdir -p $work/src $work/examples $work/contrib/hyprland
     cp ${src}/zonecfg.py ${src}/zone.py ${src}/zone_mount_helper.py ${src}/test_zonecfg.py $work/src/
     cp ${examples}/*.toml $work/examples/
+    cp ${hyprland}/*.lua $work/contrib/hyprland/
     (cd $work/src && HOME=$work python3 -B -m unittest -q test_zonecfg)
     python3 -B -m py_compile $lib/zone.py $lib/zone_init.py
     python3 -B -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' $lib/appzones-mount-helper

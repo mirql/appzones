@@ -21,7 +21,7 @@
 #     (systemd1 refused, the portal answers with the zone's app id);
 #   - Wayland: the zone's client sees no screencopy or data-control, its
 #     window gets the tag zone:NAME and the zone colour
-#     (contrib/hyprland/appzones.lua, loaded through the pre-0.6 zones.lua,
+#     (contrib/hyprland/appzones.lua, as its pre-0.6 copy zones.lua,
 #     next to another window.open_early handler), a
 #     host window gets none; an app launched from its launcher entry too;
 #   - single-instance GTK apps on the zone's own bus (bus = "zone"): Thunar
@@ -61,8 +61,9 @@
 }:
 let
   inherit (pkgs) hyprland;
-  # the pre-0.6 name, which loads appzones.lua from the same directory: both are tested
-  zonesLua = "${../contrib/hyprland}/zones.lua";
+  # the pre-0.6 name, copied into the store on its own as a config might do it
+  # (a copy of appzones.lua's code: test_zonecfg checks they match)
+  zonesLua = ../contrib/hyprland/zones.lua;
 
   # a desktop config usually has its own window.open_early handlers; keep
   # one here so the test shows both run.

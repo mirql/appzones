@@ -179,6 +179,15 @@ class ZonecfgTest(unittest.TestCase):
                 os.environ.pop(k, None)
             # it also cleared this test's own APPZONES_* settings; tearDown and the next setUp redo them
 
+    def test_hyprland_zones_lua_is_a_copy(self):
+        """contrib/hyprland/zones.lua (pre-0.6 name) is appzones.lua's code, past each file's header comment."""
+        def code(name):
+            lines = (HERE.parent / "contrib/hyprland" / name).read_text().splitlines()
+            while lines and lines[0].startswith("--"):
+                lines.pop(0)
+            return lines
+        self.assertEqual(code("zones.lua"), code("appzones.lua"))
+
     def test_state_moves_once_nothing_runs(self):
         """The pre-0.6 ~/.local/share/zones is used until it can be moved: no supervisor, nothing mounted."""
         legacy = self.home / ".local/share/zones"
