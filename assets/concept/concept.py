@@ -11,9 +11,11 @@ scripts, but CSS animations play). The story, in one loop:
   3. it can still reach the internet;
   4. the caption says what that means.
 
-Every claim is one the README and the guide already make. With
-prefers-reduced-motion, or where animations don't run, the picture shows
-the end state: every attempt and its result at once.
+Every claim is one the README and the guide already make. Where
+animations don't run, the picture shows the end state: every attempt and its
+result at once. It does not stop for prefers-reduced-motion: browsers on
+Linux report that whenever GTK animations are off, and the README would then
+never move.
 """
 from pathlib import Path
 
@@ -162,7 +164,7 @@ def svg(theme: str) -> str:
     style = (f".a{{animation-duration:{LOOP}s;animation-iteration-count:infinite;"
              f"animation-timing-function:ease-in-out}}"
              + "".join(css)
-             + ".link{opacity:0}@media (prefers-reduced-motion: reduce){.a{animation:none!important}}")
+             + ".link{opacity:0}")
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
             f'role="img" aria-label="A link opens in the untrusted zone. Its attempts to read ~/.ssh and '
             f'~/Documents, reach the host\'s dev server, the other zones and the LAN are refused; the internet '
