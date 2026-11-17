@@ -15,7 +15,12 @@
   <br>
   <a href="https://github.com/mirql/appzones/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/mirql/appzones"></a>
   <a href="https://github.com/mirql/appzones/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/mirql/appzones"></a>
+  <a href="https://github.com/mirql/appzones/graphs/commit-activity"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/mirql/appzones"></a>
   <a href="https://coderabbit.ai"><img alt="CodeRabbit reviews" src="https://img.shields.io/coderabbit/prs/github/mirql/appzones?labelColor=171717&color=FF570A&label=CodeRabbit%20reviews"></a>
+  <a href="CONTRIBUTING.md"><img alt="Python dependencies: 0 (standard library only)" src="https://img.shields.io/badge/Python%20dependencies-0-brightgreen?logo=python&logoColor=white"></a>
+  <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
+<a href="#contributors"><img alt="All contributors" src="https://img.shields.io/badge/all_contributors-2-orange"></a>
+<!-- ALL-CONTRIBUTORS-BADGE:END -->
 </p>
 
 An app zone is a place your apps live in: `daily` for messengers, `work`
@@ -307,10 +312,30 @@ Issues, ideas and PRs are welcome. Good places to start:
 
 Questions go to [Discussions](https://github.com/mirql/appzones/discussions).
 
-## Authors
+## Contributors
 
-- Askar Amirov ([@askaramirov](https://github.com/askaramirov))
-- Saif H ([@Saifeldin-H](https://github.com/Saifeldin-H))
+Thanks to everyone who made appzones what it is
+([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/askaramirov"><img src="https://avatars.githubusercontent.com/u/59274133?s=80" width="80px;" alt="Askar Amirov"/><br /><sub><b>Askar Amirov</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=askaramirov" title="Code">💻</a> <a href="https://github.com/mirql/appzones/commits?author=askaramirov" title="Documentation">📖</a> <a href="#design-askaramirov" title="Design">🎨</a> <a href="https://github.com/mirql/appzones/commits?author=askaramirov" title="Tests">⚠️</a> <a href="#security-askaramirov" title="Security">🛡️</a> <a href="#infra-askaramirov" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="#maintenance-askaramirov" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Saifeldin-H"><img src="https://avatars.githubusercontent.com/u/249896858?s=80" width="80px;" alt="Saif H"/><br /><sub><b>Saif H</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=Saifeldin-H" title="Documentation">📖</a> <a href="#design-Saifeldin-H" title="Design">🎨</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+Helped in a way that isn't a commit? Comment on any issue or PR:
+`@all-contributors please add @name for ideas, review` (and so on).
 
 ## License
 
