@@ -1,0 +1,896 @@
+# NixOS VM test for appzones (nix/package.nix, nix/module.nix).
+#
+# One machine runs Hyprland (nixpkgs') on the VM's virtual GPU with
+# software rendering, started on
+# tty1 by an autologin user, plus PipeWire, dbus-broker and the GTK portal.
+# A second machine ("peer", the router: 192.0.2.2 on a /30 link) serves
+# HTTP on a LAN address (192.168.1.2, refused from a zone) and on a "public"
+# one (198.51.100.2, routed, not connected: the zone's
+# internet, reached through the default route).
+#
+# Covered:
+#   - the NixOS module: zone@.service in zones.slice (Type=notify), start,
+#     stop, restart, crash (kill -9 zone-init: the unit restarts),
+#     zones-autostart (autostart zone + autostart app, launcher entries);
+#   - the CLI: list, which, run APP / run -- CMD / run --wait / run --restart
+#     on a stale zone, shell (a pty inside), new, check --probe, apps, ps;
+#   - isolation probes (zone home, ~/.ssh, /srv/code, the runtime dir,
+#     caps, no_new_privs, environment, machine-id), the network (host
+#     loopback, a tailnet-like address on the host, the LAN peer refused; the
+#     public peer reachable; nft not removable; network = none), D-Bus
+#     (systemd1 refused, the portal answers with the zone's app id);
+#   - Wayland: the zone's client sees no screencopy or data-control, its
+#     window gets the tag zone:NAME and the zone colour
+#     (contrib/hyprland/zones.lua, next to another window.open_early handler), a
+#     host window gets none; an app launched from its launcher entry too;
+#   - single-instance GTK apps on the zone's own bus (bus = "zone"): Thunar
+#     (with programs.thunar: its names are activatable on the host bus)
+#     shows a window, a second launch (`zone run ta -- thunar`, matched to
+#     [apps.thunar]) hands over to the first; gnome-text-editor and eog start;
+#     on the host bus Thunar fails and `zone run` prints its exit status, last
+#     output and the bus hint; bus = "none" leaves no bus socket at all; the
+#     validator refuses owning org.freedesktop.Notifications and org.xfce.Thunar
+#     on the host bus; `zone run` reports an app that exits early; `zone logs -f`;
+#   - Firefox in two zones at once: each owns only its zone's remote name
+#     (org.mozilla.firefox_zone_ZONE.*), and a second launch in one zone
+#     opens in that zone's Firefox, never the other's;
+#   - a browser (Firefox, headless) runs in a zone with its own sandbox:
+#     content processes under seccomp in their own user namespace;
+#   - audio: pipewire-0 and pulse/native are in a zone only with "audio";
+#   - the FHS overlay's --bind-try: a buildFHSEnv app runs inside a zone;
+#   - nix_ld (release 3): a generic glibc binary (interpreter
+#     /lib64/ld-linux-x86-64.so.2, no RPATH) runs in a zone with
+#     nix_ld = true and fails clearly without; the validator refuses
+#     nix_ld = true on a host without nix-ld;
+#   - tmp = "disk": /tmp and /var/tmp are kept across `zone restart`, are
+#     visible on the host (0700), old files are removed at start;
+#   - runtime mounts: zone mount / mounts / umount, ro is ro (also against a
+#     remount from a nested user namespace), a busy umount lists the holder,
+#     --lazy, never-list refused (also through a symlink), the root helper
+#     refuses a target outside zones/*/mnt (symlink, ..), a directory the
+#     user cannot reach, and anyone but its sudo caller; the sudo rule
+#     allows nothing else; a zone restart drops every mount.
+#
+# Run (needs /dev/kvm, ~6 min):
+#   just test-vm
+#   nix build -L .#checks.x86_64-linux.vm
+{
+  pkgs,
+  module,
+}:
+let
+  inherit (pkgs) hyprland;
+  zonesLua = ../contrib/hyprland/zones.lua;
+
+  # a desktop config usually has its own window.open_early handlers; keep
+  # one here so the test shows both run.
+  hyprConfig = pkgs.writeText "hyprland.lua" ''
+    hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "1" })
+    hl.config({
+      general = { border_size = 2 },
+      animations = { enabled = false },
+      misc = { disable_hyprland_logo = true, disable_splash_rendering = true },
+      debug = { enable_stdout_logs = true },
+    })
+    hl.on("window.open_early", function(w)
+      local f = io.open("/tmp/other-handler", "a")
+      if f then f:write(tostring(w.pid), "\n"); f:close() end
+    end)
+    dofile("${zonesLua}")
+    hl.on("hyprland.start", function()
+      -- as uwsm does: the session's environment, then
+      -- graphical-session.target (xdg-desktop-portal needs it; zone units
+      -- are PartOf it, zones-autostart is WantedBy it)
+      hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP"
+        .. " && systemctl --user start zones-test-session.target; touch /tmp/hyprland-started")
+    end)
+  '';
+
+  # A generic Linux binary, as downloaded: interpreter /lib64/ld-linux-x86-64.so.2,
+  # no RPATH. Runs only through nix-ld.
+  genericBin = pkgs.runCommand "generic-bin" { nativeBuildInputs = [ pkgs.patchelf ]; } ''
+    mkdir -p $out/bin
+    cp ${pkgs.hello}/bin/hello $out/bin/generic-hello
+    chmod +w $out/bin/generic-hello
+    patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath $out/bin/generic-hello
+  '';
+
+  fhsHello = pkgs.buildFHSEnv {
+    name = "fhs-hello";
+    runScript = pkgs.writeShellScript "fhs-hello" "echo fhs-ok";
+  };
+
+  # Drives `zone shell ZONE` through a real pty, as a terminal does: types
+  # a command, reads until the marker, exits. Prints what it read.
+  shellDriver = pkgs.writeText "shell-driver.py" ''
+    import os, pty, select, sys, time
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execvp("zone", ["zone", "shell", sys.argv[1]])
+    def read_until(marker, buf, secs):
+        end = time.time() + secs
+        while marker not in buf and time.time() < end:
+            r, _, _ = select.select([fd], [], [], 1)
+            if r:
+                try:
+                    buf += os.read(fd, 4096)
+                except OSError:
+                    break
+        return buf
+    buf = read_until(b"$ ", b"", 30)  # the zone's prompt
+    os.write(fd, b"echo ZONE_IS=$ZONE; tty; echo DONE-$((40+2))\n")
+    end = time.time() + 30
+    while b"DONE-42" not in buf and time.time() < end:
+        r, _, _ = select.select([fd], [], [], 1)
+        if r:
+            try:
+                buf += os.read(fd, 4096)
+            except OSError:
+                break
+    os.write(fd, b"exit\n")
+    time.sleep(1)
+    print(buf.decode(errors="replace"))
+  '';
+
+  zonesToml = pkgs.writeText "zones.toml" ''
+    version = 1
+    requires = 4
+    [defaults]
+    devices = []
+    [zones.ta]
+    colour = "#a6e3a1"
+    devices = ["audio"]
+    binds = [ { path = "~/Shared", mode = "rw" } ]
+    [zones.tb]
+    colour = "#89b4fa"
+    network = "none"
+    [zones.tz]
+    colour = "#f9e2af"
+    links = "zone"
+    autostart = true
+    autostart_apps = ["sleeper"]
+    [apps.foot]
+    command = ["foot"]
+    zones = ["ta", "tb"]
+    [apps.sleeper]
+    command = ["sleep", "3600"]
+    zones = ["tz"]
+    [apps.thunar]
+    command = ["thunar"]
+    zones = ["ta"]
+    bus = "zone"
+    [apps.text-editor]
+    command = ["gnome-text-editor"]
+    zones = ["ta"]
+    bus = "zone"
+    [apps.eog]
+    command = ["eog"]
+    zones = ["ta"]
+    bus = "zone"
+    [zones.tc]
+    colour = "#fab387"
+    [zones.td]
+    colour = "#94e2d5"
+    nix_ld = true
+    tmp = "disk"
+    [zones.tu]
+    colour = "#74c7ec"
+    devices = ["usb"]
+    usb = ["0627:0001"]
+    [zones.tv]
+    colour = "#f5c2e7"
+    devices = ["usb"]
+    usb = ["dead"]
+    [apps.firefox]
+    command = ["firefox"]
+    zones = ["ta", "tc"]
+  '';
+
+  # Bus names a zone must never own on the host bus.
+  badOwnToml =
+    name:
+    pkgs.writeText "zones-bad.toml" ''
+      version = 1
+      [zones.ta]
+      colour = "#a6e3a1"
+      dbus = { own = ["${name}"] }
+    '';
+in
+pkgs.testers.runNixOSTest {
+  name = "appzones";
+
+  nodes.peer =
+    { lib, ... }:
+    {
+      networking.firewall.enable = false;
+      networking.interfaces.eth1.ipv4.addresses = lib.mkForce [
+        {
+          address = "192.0.2.2";
+          prefixLength = 30;
+        }
+        {
+          address = "198.51.100.2";
+          prefixLength = 24;
+        }
+        {
+          address = "192.168.1.2";
+          prefixLength = 24;
+        }
+      ];
+      services.nginx = {
+        enable = true;
+        virtualHosts.default = {
+          default = true;
+          locations."/".return = "200 'peer-ok'";
+        };
+      };
+    };
+
+  nodes.machine =
+    { lib, ... }:
+    {
+      imports = [ module ];
+      programs.appzones = {
+        enable = true;
+        user = "alice";
+        deniedPaths = [ "/srv/code" ]; # a host's own addition: binds and mounts refuse it
+      };
+
+      virtualisation = {
+        memorySize = 4096;
+        cores = 4;
+        qemu.options = [
+          "-vga none"
+          "-device virtio-gpu-pci"
+        ];
+      };
+      hardware.graphics.enable = true;
+
+      users.users.alice = {
+        isNormalUser = true;
+        uid = 1000;
+      };
+      services.getty.autologinUser = "alice";
+      systemd.user.targets.zones-test-session = {
+        description = "Test session (stands in for uwsm's wayland-session target)";
+        bindsTo = [ "graphical-session.target" ];
+        wants = [ "graphical-session.target" ];
+        before = [ "graphical-session.target" ];
+      };
+      # Hyprland on tty1, as the autologin user (a logind seat session).
+      # It imports WAYLAND_DISPLAY and HYPRLAND_INSTANCE_SIGNATURE into the
+      # user manager, as a session manager does, so zone@.service sees them.
+      environment.loginShellInit = ''
+        if [ "$(tty)" = /dev/tty1 ] && [ "$(id -u)" = 1000 ]; then
+          exec ${hyprland}/bin/Hyprland --config ${hyprConfig} >/tmp/hyprland.log 2>&1
+        fi
+      '';
+      environment.sessionVariables.HYPRLAND_NO_CRASHREPORTER = "1";
+
+      services.pipewire = {
+        enable = true;
+        pulse.enable = true;
+      };
+      xdg.portal = {
+        enable = true;
+        extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+        config.common.default = "gtk";
+      };
+
+      # The zone's nft rules load from inside an unprivileged user namespace,
+      # where the kernel does not autoload modules: load them here (a host's own
+      # nftables firewall loads them there).
+      networking.nftables.enable = true;
+      boot.kernelModules = [
+        "nf_tables"
+        "nft_reject"
+        "nft_reject_inet"
+        "nf_reject_ipv4"
+        "nf_reject_ipv6"
+        "dummy"
+      ];
+
+      # The "internet": the default route to the peer over a /30 link (the
+      # host's connected network, refused from a zone as any LAN); the public
+      # address 198.51.100.2 is behind it, and so is the peer's LAN address
+      # (192.168.1.2, refused as a private range).
+      networking.interfaces.eth1.ipv4.addresses = lib.mkForce [
+        {
+          address = "192.0.2.1";
+          prefixLength = 30;
+        }
+      ];
+      networking.interfaces.eth1.ipv4.routes = [
+        {
+          address = "192.168.1.0";
+          prefixLength = 24;
+          via = "192.0.2.2";
+        }
+      ];
+      networking.defaultGateway = {
+        address = "192.0.2.2";
+        interface = "eth1";
+      };
+      # the measured hole: a service on a tailnet address of
+      # the host (a dummy link), and one on its loopback.
+      systemd.services.host-listeners = {
+        path = [ pkgs.iproute2 ];
+        wantedBy = [ "multi-user.target" ];
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        script = ''
+          ip link add ts0 type dummy || true
+          ip addr add 100.64.10.1/32 dev ts0 || true
+          ip link set ts0 up
+          ${pkgs.python3}/bin/python3 -m http.server --bind 127.0.0.1 8080 &
+          ${pkgs.python3}/bin/python3 -m http.server --bind 100.64.10.1 8443 &
+          ${pkgs.python3}/bin/python3 -m http.server --bind :: 8081 &
+          wait
+        '';
+      };
+
+      # /lib64/ld-linux-x86-64.so.2 is nix-ld's shim
+      programs.nix-ld.enable = true;
+      # a directory alice cannot reach, with a world-readable one inside
+      systemd.tmpfiles.rules = [
+        "d /srv/locked 0700 root root -"
+        "d /srv/locked/inner 0755 root root -"
+      ];
+
+      # Thunar's names are activatable on
+      # the host bus (thunar.service, xfconf)
+      programs.thunar.enable = true;
+
+      environment.systemPackages = with pkgs; [
+        hyprland # hyprctl on PATH (`zone active`)
+        gnome-text-editor
+        eog
+        foot
+        wayland-utils
+        firefox
+        curl
+        glib
+        systemd
+        procps
+        util-linux
+        fhsHello
+        jq
+      ];
+      fonts.enableDefaultPackages = true;
+    };
+
+  testScript = ''
+    import json, shlex
+
+    start_all()
+    peer.wait_for_unit("nginx.service")
+    machine.wait_for_unit("multi-user.target")
+    machine.wait_for_unit("host-listeners.service")
+    machine.wait_for_file("/tmp/hyprland-started", timeout=120)
+    machine.wait_for_unit("user@1000.service")
+
+    ENV = "export XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; "
+
+    def u(cmd, check=True):
+        """cmd as alice, in her login environment (no HYPRLAND_*, no WAYLAND_*)."""
+        full = "su -l alice -c " + shlex.quote(ENV + cmd)
+        if check:
+            return machine.succeed(full)
+        return machine.execute(full)
+
+    def inside(zone, cmd):
+        """(rc, output) of cmd run as a process inside the zone."""
+        return u(f"zone run --wait {zone} -- bash -c {shlex.quote(cmd)} </dev/null 2>&1", check=False)
+
+    def ok(zone, cmd, what):
+        rc, out = inside(zone, cmd)
+        assert rc == 0, f"{what}: expected success, rc={rc}: {out}"
+        print(f"PASS  {what}")
+        return out
+
+    def refused(zone, cmd, what):
+        rc, out = inside(zone, cmd)
+        assert rc != 0, f"{what}: expected failure, it worked: {out}"
+        print(f"PASS  {what}")
+
+    def hypr(args):
+        return u(f"${hyprland}/bin/hyprctl -i 0 {args}")
+
+    def clients():
+        return json.loads(hypr("-j clients"))
+
+    def window(title):
+        """The client foot opened with --title TITLE (the shell may retitle it later)."""
+        cs = clients()
+        print(json.dumps(cs, indent=1))
+        return next(c for c in cs if title in (c.get("initialTitle"), c.get("title")))
+
+    # ── setup: alice's files, zones.toml, host secrets that must stay out
+    machine.succeed("install -d -o alice -g users /home/alice/.config/zones /home/alice/.ssh /home/alice/Shared")
+    machine.succeed("install -o alice -g users -m 644 ${zonesToml} /home/alice/.config/zones/zones.toml")
+    machine.succeed("echo secret >/home/alice/.ssh/id_test; chown alice /home/alice/.ssh/id_test")
+    machine.succeed("mkdir -p /srv/code && echo secret >/srv/code/secret")
+    out = u("systemctl --user show-environment")
+    assert "WAYLAND_DISPLAY=" in out, out
+    assert "HYPRLAND_INSTANCE_SIGNATURE=" in out, out
+    WL = [l.split("=", 1)[1] for l in out.splitlines() if l.startswith("WAYLAND_DISPLAY=")][0]
+    SIG = [l.split("=", 1)[1] for l in out.splitlines() if l.startswith("HYPRLAND_INSTANCE_SIGNATURE=")][0]
+
+    def invocation(zone):
+        return u(f"systemctl --user show zone@{zone}.service -p InvocationID --value").strip()
+
+    with subtest("zone check and which"):
+        print(u("zone check"))
+        assert '"internet"' in u("zone which ta")
+        print(u("zone new tn"))  # prints a block, writes nothing
+        assert "tn" not in u("cat ~/.config/zones/zones.toml")
+        u("zone list")
+
+    with subtest("zones-autostart: autostart zone, its app, launcher entries"):
+        u("systemctl --user start zones-autostart.service")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ping tz"), timeout=60)
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ps tz | grep -q 'sleep 3600'"), timeout=30)
+        cg = machine.succeed("cat /proc/$(pgrep -u alice -f 'sleep 3600' | head -1)/cgroup").strip()
+        assert cg.endswith("/zones.slice/zone@tz.service"), cg
+        u("test -f ~/.local/share/zones/launcher/share/applications/zone-foot-ta.desktop")
+        print(u("cat ~/.local/share/zones/launcher/share/applications/zone-foot-ta.desktop"))
+        # the profile puts the launcher dir on XDG_DATA_DIRS of a login
+        assert "/home/alice/.local/share/zones/launcher/share" in u("echo $XDG_DATA_DIRS")
+        u("zone stop tz")
+        u("! zone ping tz")
+
+    with subtest("start: zone@ta.service"):
+        u("zone up ta")
+        print(u("systemctl --user status zone@ta.service --no-pager -n 20"))
+        u("systemctl --user is-active zone@ta.service")
+        print(u("zone list"))
+
+    with subtest("filesystem and process isolation"):
+        ok("ta", "touch ~/probe && test -w ~", "zone home writable")
+        machine.succeed("test ! -e /home/alice/probe")
+        print("PASS  host home does not have ~/probe")
+        refused("tb", "test -e ~/probe", "the other zone cannot see ~/probe")
+        ok("ta", "touch ~/Shared/from-zone", "rw bind writable")
+        machine.succeed("test -e /home/alice/Shared/from-zone")
+        refused("ta", "ls -d ~/.ssh", "~/.ssh absent")
+        refused("ta", "ls -d /srv/code", "/srv/code absent")
+        refused("ta", "ls /run/user/1000/systemd", "host runtime dir absent")
+        ok("ta", "[ -z \"$(ls -A /run/user/1000 | grep -v -x -e bus -e zone-bus -e wayland-0 -e pipewire-0 -e pulse -e doc)\" ]",
+           "runtime dir holds only zone sockets")
+        refused("ta", "ls /sys/fs/cgroup", "no cgroupfs")
+        refused("ta", "ls -d /nix/var", "/nix/var absent")
+        ok("ta", "grep -q 'CapEff:.0000000000000000' /proc/self/status", "capabilities empty")
+        ok("ta", "grep -q 'NoNewPrivs:.1' /proc/self/status", "no_new_privs")
+        refused("ta", "env | grep -E 'HYPRLAND|SSH_AUTH|TOKEN'", "no HYPRLAND_INSTANCE_SIGNATURE (the manager has it)")
+        host_mid = machine.succeed("cat /etc/machine-id").strip()
+        ok("ta", f"[ \"$(cat /etc/machine-id)\" != {host_mid} ]", "own machine-id")
+        ok("ta", "[ \"$(cat /proc/sys/kernel/hostname)\" = ta-zone ]", "own hostname")
+        ok("ta", "n=$(ls /proc | grep -c '^[0-9]'); [ $n -lt 8 ]", "pid namespace: zone processes only")
+        ok("ta", "fhs-hello | grep -qx fhs-ok", "an FHS app (bwrap with --bind-try ...) runs in a zone")
+
+    with subtest("network"):
+        tcp = "timeout 3 bash -c '</dev/tcp/{}/{}'"
+        ok("ta", "curl -sS -m 10 http://198.51.100.2/ | grep -q peer-ok", "internet (public peer) reachable")
+        refused("ta", tcp.format("192.168.1.2", 80), "LAN peer refused")
+        refused("ta", tcp.format("127.0.0.1", 8080), "host loopback refused")
+        refused("ta", tcp.format("100.64.10.1", 8443), "host's tailnet address refused")
+        machine.succeed("curl -sS -m 5 http://100.64.10.1:8443/ >/dev/null")
+        print("PASS  (control: the host itself reaches 100.64.10.1:8443)")
+        refused("ta", "nft flush ruleset", "nft flush refused")
+        refused("ta", "nft flush ruleset 2>/dev/null; unshare -Ur nft flush ruleset 2>/dev/null; " + tcp.format("100.64.10.1", 8443),
+                "still refused after flush attempts")
+        # a LAN with global IPv6 addresses (the test network's 2001:db8:1::/64): refused like a private one
+        peer6 = peer.succeed("ip -6 -o addr show dev eth1 scope global | awk '{print $4}' | cut -d/ -f1 | head -1").strip()
+        assert peer6.startswith("2001:db8:"), peer6
+        machine.succeed(f"curl -sS -m 5 'http://[{peer6}]/' | grep -q peer-ok")
+        print(f"PASS  (control: the host reaches the IPv6 LAN peer {peer6})")
+        rules = u("cat /run/user/1000/zones/ta/nft.rules")
+        assert any("2001:db8:1::/64" in l and l.strip().startswith("ip6 daddr") and l.rstrip().endswith("reject")
+                   for l in rules.splitlines()), rules
+        refused("ta", f"curl -sS -m 5 'http://[{peer6}]/'", "IPv6 LAN peer (global address) refused")
+        me6 = machine.succeed("ip -6 -o addr show dev eth1 scope global | awk '{print $4}' | cut -d/ -f1 | head -1").strip()
+        machine.succeed(f"curl -sS -m 5 http://192.0.2.1:8081/ >/dev/null && curl -sS -m 5 'http://[{me6}]:8081/' >/dev/null")
+        print("PASS  (control: a dual-stack listener on the host's own addresses answers the host)")
+        refused("ta", tcp.format("192.0.2.1", 8081), "the host's own IPv4 address refused")
+        refused("ta", tcp.format("192.0.2.2", 80), "the router on the host's connected network refused")
+        peer.succeed("true")
+        refused("ta", f"curl -sS -m 5 'http://[{me6}]:8081/'", "the host's own IPv6 address refused")
+        refused("tb", "curl -sS -m 5 http://198.51.100.2/", "network = none: no internet")
+        # the xdg-open shim (links = "zone") is first on PATH: never writable from inside
+        ok("tz", "test -x /run/zone/bin/xdg-open", "xdg-open shim present (links = zone)")
+        refused("tz", "touch /run/zone/bin/firefox", "xdg-open shim directory read-only")
+        # zones have no /sys/class/net; /proc/net/dev is the zone's own netns
+        ok("tb", "[ \"$(tail -n +3 /proc/net/dev | cut -d: -f1 | tr -d ' ')\" = lo ]", "network = none: only lo")
+
+    with subtest("D-Bus: filtered proxy, portal identity"):
+        refused("ta", "busctl --user call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager ListUnits",
+                "systemd1 unreachable")
+        out = ok("ta", "busctl --user list --no-pager --acquired", "bus names visible to the zone")
+        assert "org.freedesktop.systemd1" not in out, out
+        ok("ta", "gdbus call --session -d org.freedesktop.portal.Desktop -o /org/freedesktop/portal/desktop "
+                 "-m org.freedesktop.portal.Settings.ReadOne org.freedesktop.appearance color-scheme",
+           "the Settings portal answers through the proxy")
+        rc, out = inside("ta", "gdbus call --session -d org.freedesktop.portal.Desktop -o /org/freedesktop/portal/desktop "
+                               "-m org.freedesktop.portal.RemoteDesktop.CreateSession '@a{sv} {}'")
+        print(out)
+        assert rc != 0 and "AccessDenied" in out, out
+        print("PASS  RemoteDesktop portal refused by the proxy")
+        # no blanket org.mpris.MediaPlayer2.*: owning implies talking to the host's and other zones' players
+        refused("ta", "gdbus call --session -d org.freedesktop.DBus -o /org/freedesktop/DBus "
+                      "-m org.freedesktop.DBus.RequestName org.mpris.MediaPlayer2.zoneprobe 4",
+                "owning org.mpris.MediaPlayer2.* refused")
+
+    with subtest("audio only with devices = audio"):
+        ok("ta", "test -S /run/user/1000/pipewire-0 && test -S /run/user/1000/pulse/native && [ -n \"$PULSE_SERVER\" ]",
+           "ta (audio): pipewire-0 and pulse/native")
+        refused("tb", "test -e /run/user/1000/pipewire-0 || test -e /run/user/1000/pulse/native", "tb (no audio): no sockets")
+
+    with subtest("usb: only the named device, its hidraw and sysfs; none without the device"):
+        # the x86 test VM has QEMU's usb-tablet (0627:0001, HID) beside the root hub (1d6b)
+        refused("ta", "ls -d /dev/bus/usb /dev/hidraw* /sys/bus/usb 2>/dev/null | grep -q .",
+                "ta (no usb): no /dev/bus/usb, no hidraw, no /sys/bus/usb")
+        dev = machine.succeed("for d in /sys/bus/usb/devices/*; do [ \"$(cat $d/idVendor 2>/dev/null):$(cat $d/idProduct 2>/dev/null)\" = 0627:0001 ] "
+                              "&& printf '/dev/bus/usb/%03d/%03d %s\\n' $(cat $d/busnum) $(cat $d/devnum) $(readlink -f $d); done; true").split()
+        assert len(dev) == 2, dev
+        node, sysdir = dev
+        hid = machine.succeed(f"for h in /sys/class/hidraw/*; do case $(readlink -f $h/device) in {sysdir}/*) echo /dev/''${{h##*/}};; esac; done").split()
+        print(f"host: tablet at {node} ({sysdir}), hidraw {hid}")
+        u("zone up tu")
+        # a glob, not find -type c: find trusts d_type, which is bwrap's mount-point file, not the bound node
+        out = ok("tu", "for n in /dev/bus/usb/*/* /dev/hidraw*; do [ -c \"$n\" ] && echo $n; done; true", "tu: device nodes")
+        assert sorted(out.split()) == sorted([node] + hid), out
+        print("PASS  tu sees exactly the tablet's node and its hidraw, not the root hubs'")
+        ok("tu", f"head -c 18 {node} >/dev/null", "tu: the device node opens (descriptors)")
+        ok("tu", f"[ \"$(cat {sysdir}/idVendor)\" = 0627 ] && ls /sys/bus/usb/devices | grep -q .", "tu: its sysfs and /sys/bus/usb")
+        refused("tu", "cat /sys/bus/usb/devices/usb*/idVendor", "tu: the root hubs' sysfs is not there")
+        refused("tu", "test -e /dev/uinput", "tu: no /dev/uinput")
+        print(u("zone list"))
+        u("zone up tv")
+        out = u("zone logs tv")
+        assert "no device matches dead" in out, out
+        print("PASS  tv: no matching device, warned and started")
+        refused("tv", "ls -d /dev/bus/usb /sys/bus/usb 2>/dev/null | grep -q .", "tv: nothing bound")
+        u("zone stop tv")
+        u("zone stop tu")
+
+    with subtest("nix_ld: a generic glibc binary runs only with nix_ld = true"):
+        gbin = "${genericBin}/bin/generic-hello"
+        u("zone up td")
+        out = ok("td", f"{gbin}", "generic binary runs in td (nix_ld = true)")
+        assert "Hello, world!" in out, out
+        ok("td", "case \"$(readlink /lib64/ld-linux-x86-64.so.2)\" in /nix/store/*nix-ld*) ;; *) exit 1;; esac "
+                 "&& [ \"$NIX_LD\" = /run/current-system/sw/share/nix-ld/lib/ld.so ] && [ -n \"$NIX_LD_LIBRARY_PATH\" ]",
+           "/lib64 holds the host's nix-ld shim, NIX_LD set as on the host")
+        rc, out = inside("tb", f"{gbin}")
+        print(out)
+        assert rc != 0 and ("required file not found" in out or "No such file" in out), (rc, out)
+        print("PASS  without nix_ld the same binary fails: required file not found")
+        refused("tb", "test -e /lib64 || [ -n \"$NIX_LD\" ]", "tb (no nix_ld): no /lib64, no NIX_LD")
+        rc, out = u("ZONES_NIX_LD_SHIM=/nonexistent/ld-linux-x86-64.so.2 zone check 2>&1", check=False)
+        print(out)
+        assert rc != 0 and "programs.nix-ld.enable" in out, out
+        print("PASS  the validator refuses nix_ld = true on a host without nix-ld")
+
+    with subtest("tmp = disk: kept across a restart, on the host, old files removed"):
+        T = "/home/alice/.local/share/zones/td"
+        ok("td", "echo kept >/tmp/keep && echo kept2 >/var/tmp/keep2 && mkdir -p /tmp/sub && echo s >/tmp/sub/f",
+           "write /tmp and /var/tmp in td")
+        machine.succeed(f"grep -qx kept {T}/tmp/keep && grep -qx kept2 {T}/var-tmp/keep2")
+        assert machine.succeed(f"stat -c %a {T}/tmp {T}/var-tmp").split() == ["700", "700"]
+        print("PASS  the files are on the host, in 0700 directories")
+        u(f"touch -d '20 days ago' {T}/tmp/old {T}/tmp/sub/old; touch -d '40 days ago' {T}/var-tmp/old; "
+          f"touch -d '20 days ago' {T}/var-tmp/young; ln -s /home/alice/.ssh/id_test {T}/tmp/link; "
+          f"touch -h -d '20 days ago' {T}/tmp/link")
+        u("zone restart td")
+        ok("td", "grep -qx kept /tmp/keep && grep -qx kept2 /var/tmp/keep2 && test -f /tmp/sub/f && test -f /var/tmp/young "
+                 "&& ! test -e /tmp/old && ! test -e /tmp/sub/old && ! test -e /var/tmp/old && ! test -L /tmp/link",
+           "after zone restart: kept files there, old ones (14 days /tmp, 30 days /var/tmp) removed")
+        machine.succeed("test -f /home/alice/.ssh/id_test")
+        print("PASS  cleanup removed the old symlink, not what it pointed to")
+        out = u("zone logs td")
+        assert "unused for 14 days" in out, out
+        refused("ta", "test -e /tmp/keep", "ta (tmp = ram) does not see it")
+
+    with subtest("runtime mounts: zone mount / umount / mounts"):
+        HELPER = machine.succeed("dirname $(readlink -f $(command -v zone))").strip() + "/../libexec/zones/zones-mount-helper"
+        u("mkdir -p ~/proj ~/rosrc && echo A >~/proj/a.txt && echo R >~/rosrc/r.txt && ln -sfn ~/.ssh ~/sshlink")
+        print(u("zone mount td ~/proj"))
+        ok("td", "grep -qx A /mnt/host/proj/a.txt && echo W >/mnt/host/proj/w.txt", "mounted rw: read and write")
+        machine.succeed("grep -qx W /home/alice/proj/w.txt")
+        print(u("zone mount td ~/rosrc --ro --as ro"))
+        ok("td", "grep -qx R /mnt/host/ro/r.txt", "ro mount readable")
+        refused("td", "touch /mnt/host/ro/x", "ro mount not writable")
+        refused("td", "unshare -Urm sh -c 'mount -o remount,bind,rw /mnt/host/ro && touch /mnt/host/ro/x'",
+                "ro stays ro after a remount from a nested user namespace")
+        refused("ta", "test -e /mnt/host/proj", "another zone does not see it")
+        refused("td", "touch /mnt/host/planted", "/mnt/host itself is read-only in the zone")
+        out = u("zone mounts td")
+        print(out)
+        assert "proj" in out and "/home/alice/proj" in out and "ro" in out and "/home/alice/rosrc" in out, out
+
+        # busy: an app with its cwd there
+        u("zone run td -- sh -c 'cd /mnt/host/proj && exec sleep 600'")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ps td | grep -q 'sleep 600'"), timeout=30)
+        rc, out = u("zone umount td proj 2>&1", check=False)
+        print(out)
+        assert rc != 0 and "busy" in out and "sleep 600" in out and "--lazy" in out, out
+        print("PASS  a busy umount says which process holds it")
+        ok("td", "test -f /mnt/host/proj/a.txt", "still mounted after the refused umount")
+        print(u("zone umount --lazy td proj"))
+        refused("td", "test -e /mnt/host/proj/a.txt", "--lazy: gone from the zone at once")
+        u("pkill -u alice -f '^sleep 600' || true")
+        u("zone umount td ro")
+        refused("td", "test -e /mnt/host/ro", "umount removes it")
+        assert "nothing mounted" in u("zone mounts td")
+
+        # never-list, through the CLI
+        for src, why in [("~/.ssh", "never enters"), ("~/sshlink", "resolves to"), ("~/.config", "contains"),
+                         ("/etc", "inside /etc"), ("/srv/code", "never enters"), ("~", "never allowed")]:
+            rc, out = u(f"zone mount td {src} 2>&1", check=False)
+            assert rc != 0 and "refused" in out and why in out, (src, out)
+        print("PASS  zone mount refuses the never-list (also through a symlink)")
+
+        # the root helper itself, called directly with sudo: same refusals
+        def helper(args):
+            rc, out = u(f"sudo -n {HELPER} {args} 2>&1", check=False)
+            print(f"helper {args}: rc={rc} {out.strip()}")
+            return rc, out
+        for args, why in [("mount td x /home/alice/.ssh", "refused"), ("mount td x /home/alice/sshlink", "refused"),
+                          ("mount td x /srv/locked/inner", "as alice"), ("mount td ../x /home/alice/proj", "name"),
+                          ("mount ../td x /home/alice/proj", "not a zone name"), ("mount td x proj", "absolute")]:
+            u("mkdir -p ~/.local/share/zones/td/mnt/x")
+            rc, out = helper(args)
+            assert rc != 0 and why in out, (args, out)
+        u("rmdir ~/.local/share/zones/td/mnt/x")
+        u("ln -s /etc ~/.local/share/zones/td/mnt/evil")
+        rc, out = helper("mount td evil /home/alice/proj")
+        assert rc != 0 and "symlink" in out, out
+        u("rm ~/.local/share/zones/td/mnt/evil")
+        u("mv ~/.local/share/zones/td/mnt ~/.local/share/zones/td/mnt.real && ln -s /etc ~/.local/share/zones/td/mnt")
+        rc, out = helper("mount td x /home/alice/proj")
+        assert rc != 0 and "symlink" in out, out
+        u("rm ~/.local/share/zones/td/mnt && mv ~/.local/share/zones/td/mnt.real ~/.local/share/zones/td/mnt")
+        machine.succeed("! findmnt -rn -o TARGET | grep -q 'zones/td/mnt'")
+        print("PASS  the helper refuses a target outside zones/*/mnt (symlinks), bad names, unreachable sources")
+        rc, out = u(f"{HELPER} umount-all td 2>&1", check=False)
+        assert rc != 0 and "sudo" in out, out
+        rc, out = machine.execute(f"{HELPER} umount-all td 2>&1")
+        assert rc != 0 and "SUDO_UID" in out, out
+        rc, _ = u("sudo -n true", check=False)
+        assert rc != 0
+        rc, out = u(f"sudo -n -u nobody {HELPER} umount-all td 2>&1", check=False)
+        assert rc != 0 and "zones-mount-helper:" not in out, out  # sudo refuses, the helper never runs
+        print("PASS  the helper runs only through sudo, as root for alice; sudo allows alice nothing else")
+        refused("td", f"sudo -n {HELPER} umount-all td || /run/wrappers/bin/sudo -n true",
+                "a zone cannot use sudo (no_new_privs, no wrappers)")
+
+        # mounts end with the zone run
+        u("zone mount td ~/proj")
+        ok("td", "test -f /mnt/host/proj/a.txt", "mounted again")
+        u("zone restart td")
+        refused("td", "test -e /mnt/host/proj", "zone restart drops the mount")
+        machine.succeed("! findmnt -rn -o TARGET | grep -q 'zones/td/mnt'")
+        assert "nothing mounted" in u("zone mounts td")
+        print("PASS  no mount left on the host after the restart")
+        u("zone stop td")
+
+    with subtest("Wayland: security context, window tag and colour"):
+        out = ok("ta", "wayland-info", "wayland-info inside the zone")
+        for hidden in ["zwlr_screencopy_manager_v1", "zwlr_data_control_manager_v1", "ext_data_control_manager_v1",
+                       "zwlr_layer_shell_v1", "zwlr_virtual_pointer_manager_v1", "zwp_virtual_keyboard_manager_v1"]:
+            assert hidden not in out, f"{hidden} visible to a zone client"
+        assert "xdg_wm_base" in out
+        host = u(f"WAYLAND_DISPLAY={WL} wayland-info")
+        assert "zwlr_layer_shell_v1" in host, "control: the host client sees layer-shell"
+        print("PASS  privileged globals hidden from the zone, visible to the host")
+
+        u("zone run ta foot --title zone-cli")
+        machine.wait_until_succeeds(
+            "su -l alice -c " + shlex.quote(ENV + "${hyprland}/bin/hyprctl -i 0 -j clients | grep -q zone-cli"), timeout=60)
+        c = window("zone-cli")
+        print(c)
+        assert "zone:ta" in c["tags"], c
+        prop = hypr(f"getprop address:{c['address']} active_border_color")
+        print("border:", prop)
+        assert "a6e3a1" in prop.lower(), prop
+        machine.succeed(f"grep -qx {c['pid']} /tmp/other-handler")
+        print("PASS  CLI-launched window tagged zone:ta, zone colour; the other open_early handler ran too")
+
+        # from the launcher entry, as a launcher would run it (gio launch)
+        u("zone apps")
+        u(f"WAYLAND_DISPLAY={WL} gio launch ~/.local/share/zones/launcher/share/applications/zone-foot-tb.desktop")
+        machine.wait_until_succeeds(
+            "su -l alice -c " + shlex.quote(ENV + "${hyprland}/bin/hyprctl -i 0 -j clients | jq -e '.[] | select(.tags | index(\"zone:tb\"))'"),
+            timeout=60)
+        print("PASS  launcher entry: window tagged zone:tb")
+
+        # a host window: no zone tag
+        u(f"WAYLAND_DISPLAY={WL} systemd-run --user --collect foot --title host-win")
+        machine.wait_until_succeeds(
+            "su -l alice -c " + shlex.quote(ENV + "${hyprland}/bin/hyprctl -i 0 -j clients | grep -q host-win"), timeout=60)
+        c = window("host-win")
+        assert not any(t.startswith("zone:") for t in c["tags"]), c
+        print("PASS  host window not tagged")
+        assert u(f"HYPRLAND_INSTANCE_SIGNATURE={SIG} zone active").strip() in ("", "[ta]", "[tb]")
+
+    with subtest("single-instance GTK apps: the zone's own bus"):
+        def zone_windows(zone, cls):
+            return [c for c in clients() if f"zone:{zone}" in c["tags"] and cls in c["class"].lower()]
+
+        def wait_windows(zone, cls, n):
+            machine.wait_until_succeeds(
+                "su -l alice -c " + shlex.quote(ENV + "${hyprland}/bin/hyprctl -i 0 -j clients | jq -e "
+                    + shlex.quote(f'[.[] | select((.tags | index("zone:{zone}")) and (.class | ascii_downcase | contains("{cls}")))] | length >= {n}')),
+                timeout=90)
+            ws = zone_windows(zone, cls)
+            print(json.dumps(ws, indent=1))
+            return ws
+
+        # the bug: on the host bus Thunar cannot own org.xfce.Thunar and exits;
+        # `zone run` says so, with its last output and the hint
+        rc, out = u("zone run --bus host ta -- thunar 2>&1", check=False)
+        print(out)
+        assert rc != 0 and "exited with status" in out and "could not own its D-Bus name" in out \
+            and 'bus = "zone"' in out, out
+        print("PASS  on the host bus Thunar exits; zone run reports status, output and the bus hint")
+
+        u("zone run ta thunar")
+        w1 = wait_windows("ta", "thunar", 1)
+        pid = w1[0]["pid"]
+        out = u("zone logs ta")
+        assert "zone bus up" in out and "(bus zone)" in out, out
+        print("PASS  Thunar on the zone's own bus: a window, tagged zone:ta")
+        # an ad-hoc command matching [apps.thunar] gets its bus, and the
+        # second Thunar hands over to the first
+        u("zone run ta -- thunar")
+        w2 = wait_windows("ta", "thunar", 2)
+        assert {c["pid"] for c in w2} == {pid}, w2
+        print("PASS  a second launch reuses the running Thunar (one process, two windows)")
+        out = ok("ta", "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/zone-bus/bus busctl --user list --acquired --no-pager",
+                 "the zone bus lists Thunar's names")
+        assert "org.xfce.Thunar" in out, out
+        out = ok("ta", "busctl --user list --acquired --no-pager", "the host bus proxy")
+        assert "org.xfce.Thunar" not in out, out
+        machine.fail("su -l alice -c " + shlex.quote(ENV + "busctl --user status org.xfce.Thunar"))
+        print("PASS  org.xfce.Thunar exists only on the zone's bus, never on the host's")
+
+        u("zone run ta text-editor")
+        wait_windows("ta", "texteditor", 1)
+        print("PASS  gnome-text-editor (GTK4, single instance) starts")
+        u("zone run ta eog")
+        wait_windows("ta", "eog", 1)
+        print("PASS  eog (single instance) starts")
+
+        # bus = "none": no socket, no address
+        rc, out = u("zone run --wait --bus none ta -- bash -c "
+                    + shlex.quote("ls -A /run/user/1000; test ! -e /run/user/1000/bus && test ! -e /run/user/1000/zone-bus "
+                                  "&& [ -z \"$DBUS_SESSION_BUS_ADDRESS\" ] && test -S /run/user/1000/wayland-0 "
+                                  "&& ! busctl --user list >/dev/null 2>&1 && test ! -e /run/zone/ctl.sock")
+                    + " </dev/null 2>&1", check=False)
+        print(out)
+        assert rc == 0, out
+        print("PASS  bus = none: no bus socket, no address, no zone-init control socket; the Wayland socket stays")
+
+        # --wait hands only pipes, files and /dev/null in: never a socket or a directory (openat on a
+        # directory reaches host files); a TCP socket from bash's /dev/tcp as stdin
+        rc, out = u("exec 3<>/dev/tcp/127.0.0.1/8080; zone run --wait ta -- true <&3 2>&1", check=False)
+        assert rc != 0 and "only pipes" in out, out
+        rc, out = u("zone run --wait ta -- true </tmp 2>&1", check=False)
+        assert rc != 0, out
+        print("PASS  zone run --wait refuses a socket and a directory as stdin")
+
+        # an app that exits early: status and last output
+        rc, out = u("zone run ta -- sh -c 'echo early-boom >&2; exit 3' 2>&1", check=False)
+        print(out)
+        assert rc == 3 and "exited with status 3" in out and "early-boom" in out and "hint" not in out, out
+        print("PASS  zone run reports an app that exits early")
+        rc, _ = u("ZONES_RUN_CHECK=0 zone run ta -- sh -c 'exit 4'", check=False)
+        assert rc == 0
+        assert "early-boom" in u("zone logs ta")
+        rc, out = u("timeout 3 zone logs -f ta", check=False)
+        assert rc == 124 and "early-boom" in out, (rc, out)
+        print("PASS  zone logs [-f]")
+
+        # never owned on the host bus, whatever the TOML says
+        for path in ["${badOwnToml "org.freedesktop.Notifications"}", "${badOwnToml "org.xfce.Thunar"}"]:
+            rc, out = u(f"ZONES_CONFIG={path} zone check 2>&1", check=False)
+            print(out)
+            assert rc != 0 and "never granted" in out, out
+        print("PASS  the validator refuses org.freedesktop.Notifications and org.xfce.Thunar as host-bus own")
+
+    with subtest("Firefox in a zone keeps its own sandbox"):
+        u("zone run ta -- firefox --headless --no-remote http://198.51.100.2/")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ps ta | grep -q contentproc"), timeout=120)
+        # one line per content process: "SECCOMP-MODE USERNS". The probe's own
+        # bash also has "-contentproc" in its command line: skipped by name.
+        out = ok("ta", "for p in $(pgrep -f -- '-contentproc' | grep -v -x $$); do "
+                       "[ \"$(cat /proc/$p/comm)\" = bash ] && continue; "
+                       "echo $(awk '/^Seccomp:/{print $2}' /proc/$p/status) $(readlink /proc/$p/ns/user); done; "
+                       "echo self $(readlink /proc/self/ns/user)",
+                 "content processes listed")
+        print(out)
+        selfns = [l.split()[1] for l in out.splitlines() if l.startswith("self ")][0]
+        procs = [l.split() for l in out.splitlines() if l.split()[:1] in (["0"], ["1"], ["2"])]
+        sandboxed = [p for p in procs if p[0] == "2" and p[1] != selfns]
+        assert len(sandboxed) >= 1, f"no content process under seccomp in its own user namespace: {out}"
+        print("PASS  content processes under seccomp in their own user namespace")
+
+    with subtest("zone shell: a pty inside"):
+        out = u("${pkgs.python3}/bin/python3 ${shellDriver} ta")
+        print(out)
+        assert "ZONE_IS=ta" in out and "/dev/pts/" in out, out
+
+    with subtest("stale config: warn, and run --restart restarts an idle zone"):
+        u("zone up tb")
+        old = invocation("tb")
+        u("sed -i 's/#89b4fa/#cba6f7/' ~/.config/zones/zones.toml")
+        u("zone run tb -- true 2>&1 | grep -q 'zone restart tb'")
+        print("PASS  a stale zone warns")
+        # tb has a foot window from the launcher test: --restart must refuse
+        u("zone run --restart tb -- true 2>&1 | tee /dev/stderr | grep -q 'not restarting'")
+        u("pkill -u alice -x foot || true")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "[ -z \"$(zone ps tb)\" ]"), timeout=30)
+        u("zone run --restart tb -- true 2>&1 | grep -q 'restarting it'")
+        assert invocation("tb") != old
+        print("PASS  run --restart restarted the idle stale zone")
+
+    with subtest("stop, restart, crash"):
+        old = invocation("ta")
+        u("zone restart ta")
+        u("zone ping ta")
+        assert invocation("ta") != old
+        print("PASS  restart")
+        machine.succeed("pkill -9 -u alice -f 'zone_init.py' ")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ping ta"), timeout=60)
+        n = u("systemctl --user show zone@ta.service -p NRestarts --value").strip()
+        assert int(n) >= 1, n
+        print(f"PASS  crash: zone-init killed, unit restarted (NRestarts={n})")
+        u("zone run ta -- sleep 300")
+        u("zone stop --all")
+        machine.fail("pgrep -u alice -f 'zone_init.py|sleep 300|xdg-dbus-proxy|zone-wayland|pasta|zone-bus/session.conf|thunar'")
+        print("PASS  stop --all leaves no zone process")
+
+    with subtest("zone check --probe"):
+        print(u("zone check --probe ta"))
+        u("zone stop ta")
+
+    with subtest("Firefox in two zones: each zone's own remote name"):
+        def ff_windows(zone):
+            return [c for c in clients() if f"zone:{zone}" in c["tags"] and "firefox" in c["class"].lower()]
+
+        def wait_ff(zone, cond):
+            machine.wait_until_succeeds(
+                "su -l alice -c " + shlex.quote(ENV + "${hyprland}/bin/hyprctl -i 0 -j clients | jq -e "
+                    + shlex.quote(f'[.[] | select((.tags | index("zone:{zone}")) and (.class | ascii_downcase | contains("firefox"))'
+                                  f' and ({cond}))] | length >= 1')),
+                timeout=180)
+
+        u("zone run ta firefox about:blank")
+        wait_ff("ta", "true")
+        u("zone run tc firefox about:blank")
+        wait_ff("tc", "true")
+        print(json.dumps(ff_windows("ta") + ff_windows("tc"), indent=1))
+        names = u("busctl --user list --acquired --no-pager")
+        print(names)
+        assert "org.mozilla.firefox_zone_ta." in names and "org.mozilla.firefox_zone_tc." in names, names
+        print("PASS  each zone's Firefox owns its own remote name on the host bus")
+        ta_before = [(c["pid"], c["title"]) for c in ff_windows("ta")]
+        tc_pids = {c["pid"] for c in ff_windows("tc")}
+        # a second launch in tc: handed to tc's Firefox (it exits, no profile
+        # lock), never ta's. The page's title shows where it opened.
+        ok("tc", "echo '<html><title>second-launch</title>x</html>' > ~/second.html", "a page in tc's home")
+        u("zone run tc firefox file:///home/alice/second.html")
+        try:
+            wait_ff("tc", '.title | contains("second-launch")')
+        finally:
+            print(u("zone ps tc"))
+            print(json.dumps(ff_windows("ta") + ff_windows("tc"), indent=1))
+            print(u("zone logs tc | tail -40"))
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(
+            ENV + "[ $(zone ps tc | grep -v -e contentproc -e crashhelper | grep -c 'firefox') -le 1 ]"), timeout=30)
+        assert {c["pid"] for c in ff_windows("tc")} == tc_pids, ff_windows("tc")
+        assert [(c["pid"], c["title"]) for c in ff_windows("ta")] == ta_before, ff_windows("ta")
+        print("PASS  a second launch in tc opens in tc's Firefox, never ta's")
+        u("zone stop --all")
+  '';
+}

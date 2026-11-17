@@ -1,0 +1,19 @@
+# ~/.config/zones/zones.toml: a first configuration that works on any host
+# with appzones installed. No binds, no nix-ld: add those when you need them
+# (examples/zones.toml shows every key; reference: docs/guide.md).
+version = 1
+
+[zones.daily]                  # messengers, personal browsing
+colour  = "#a6e3a1"
+devices = ["gpu", "audio"]
+
+[zones.untrusted]              # links and files you do not trust
+colour  = "#f38ba8"
+dns     = "public"
+links   = "zone"
+devices = ["gpu"]
+
+[apps.firefox]
+command = ["firefox"]
+zones   = ["daily", "untrusted"]
+args    = { untrusted = ["--private-window"] }

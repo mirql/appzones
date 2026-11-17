@@ -1,0 +1,21 @@
+name: Feature request
+description: A new setting, device, command or integration
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The app or workflow, and what stops you today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+      description: How it could look (a zones.toml key, a command, ...).
+  - type: textarea
+    id: security
+    attributes:
+      label: What would a zone gain access to
+      description: Files, sockets, devices, D-Bus names, network. "Nothing new" is a fine answer.

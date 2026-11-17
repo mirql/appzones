@@ -1,0 +1,122 @@
+# ~/.config/zones/zones.toml: an example with every key (reference:
+# docs/guide.md "Configuration reference").
+# Edited by hand. `zone check` validates it. Changes apply at the next
+# `zone restart <zone>`; `zone run` warns when a running zone is stale, and
+# `zone run --restart` restarts a zone with no app in it.
+# Each zone starts with a fresh home in ~/.local/share/zones/<zone>/home: no
+# app data moves in from the host, host apps stay as they are.
+version = 1
+requires = 4                   # the zones release this file needs (`zone check` prints its own); an older
+                               # `zone` then says "update appzones" instead of "unknown key"
+
+[defaults]                     # every zone starts from these; a zone overrides any key
+network     = "internet"       # none | internet | host
+netbird     = false            # with network = "internet": also reach the NetBird mesh (the NetBird interface's network, never the host itself)
+dns         = "host"           # host (the host's resolver: its ad blocking and internal names) | public (1.1.1.1)
+links       = "portal"         # where clicked links open: portal (host default browser) | zone (this zone's browser) | "zone:NAME"
+keyring     = "basic"          # basic (browsers' fixed-key store) | zone (own keyring daemon inside the zone; not built yet)
+devices     = ["gpu"]          # any of: gpu audio mic camera screencast usb   (mic = audio for now)
+camera      = "portal"         # portal | device   (only with "camera" in devices)
+usb         = []               # with "usb" in devices: ["vvvv"] or ["vvvv:pppp"]; matching devices bound at zone start
+x11         = "none"           # none | own (xwayland-satellite inside the zone; not built yet)
+clipboard   = "both"           # the only value for now
+autostart   = false            # start the zone at login
+autostart_apps = []            # app ids started after the zone starts
+userns      = true             # nested user namespaces (browser/Electron sandboxes)
+machine_id  = "zone"           # zone (own, random, kept) | host
+theme       = true             # copy gtk/qt/fonts/cursor config in at each start
+packages    = []               # extra nixpkgs attributes on PATH, built at zone start
+env         = {}               # extra environment (names checked against the never-list)
+binds       = []               # { path = "~/Downloads", mode = "rw" | "ro" }; same path inside
+dbus        = { talk = [], own = [] }   # host bus proxy: added to the safe default set; never-list refused
+bus         = "host"           # bus for commands not in [apps]: host (proxy: portals, tray) | zone (the zone's own bus) | none
+nix_ld      = false            # true: generic Linux binaries (downloaded CLIs) run, through the host's nix-ld
+tmp         = "ram"            # ram (fresh tmpfs each start) | disk (~/.local/share/zones/<zone>/tmp, kept; unused 14 days: removed)
+home        = ""               # default ~/.local/share/zones/<zone>/home
+force_host  = false            # allow network = "host" in the zone named untrusted
+
+# ── zones ───────────────────────────────────────────────────────────────
+[zones.daily]                  # messengers, personal browsing, media
+colour    = "#a6e3a1"          # green
+devices   = ["gpu", "audio", "mic", "screencast"]
+binds     = [
+  { path = "~/Downloads", mode = "rw" },
+  { path = "~/Pictures",  mode = "ro" },
+]
+
+[zones.work]                   # work browser profile, Slack, work chat
+colour    = "#89b4fa"          # blue
+netbird   = true               # internal tools on the mesh (never the host itself)
+links     = "zone"             # links clicked here open in this zone's browser
+devices   = ["gpu", "audio", "mic", "screencast"]
+packages  = ["slack"]
+nix_ld    = true               # prebuilt Linux binaries (agent CLIs, release downloads) run here
+tmp       = "disk"             # /tmp and /var/tmp kept across restarts, at ~/.local/share/zones/work/{tmp,var-tmp}
+# devices = ["gpu", "audio", "mic", "screencast", "usb"]
+# usb     = ["abcd"]           # only these USB devices (by vendor id); after a replug: zone restart work
+
+[zones.untrusted]              # links and files you do not trust, one-off apps
+colour    = "#f38ba8"          # red
+dns       = "public"           # internal names unknown, no ad blocking
+links     = "zone"
+devices   = ["gpu"]            # no sound, no mic, no camera, no screen
+binds     = []                 # nothing from your home; files come in through the file chooser
+nix_ld    = false              # no prebuilt foreign binaries here
+
+# ── apps: launcher entries "Name (zone)"; host entries are never hidden ──
+# Firefox's "already running" remote: each zone's Firefox gets its own D-Bus
+# name (org.mozilla.firefox_zone_<zone>.*) without any setting here, so a
+# second launch opens in the same zone's Firefox, never another zone's.
+[apps.firefox]
+command = ["firefox"]
+desktop = "firefox.desktop"    # name and icon taken from this entry
+zones   = ["daily", "work", "untrusted"]
+args    = { untrusted = ["--private-window"] }
+
+[apps.chromium]
+command = ["chromium"]
+desktop = "chromium-browser.desktop"
+zones   = ["work", "untrusted"]
+
+[apps.telegram]
+command = ["Telegram"]
+desktop = "org.telegram.desktop.desktop"
+zones   = ["daily"]
+
+[apps.vesktop]
+command = ["vesktop"]
+desktop = "vesktop.desktop"
+zones   = ["daily"]
+
+[apps.discord]
+command = ["discord"]
+desktop = "discord.desktop"
+zones   = ["daily"]
+
+[apps.slack]
+command = ["slack"]
+zones   = ["work"]
+
+[apps.code]
+command = ["code"]
+desktop = "code.desktop"
+zones   = ["work"]
+
+[apps.kitty]
+command = ["kitty"]
+desktop = "kitty.desktop"
+zones   = ["daily", "work", "untrusted"]
+
+[apps.mpv]
+command = ["mpv", "--player-operation-mode=pseudo-gui"]
+desktop = "mpv.desktop"
+zones   = ["daily", "untrusted"]
+
+# Single-instance apps own a bus name (org.xfce.Thunar): on the host bus a
+# zone never may, so they get the zone's own bus (no portals there; the
+# second launch hands over to the first). `zone run daily -- thunar` uses it too.
+[apps.thunar]
+command = ["thunar"]
+desktop = "thunar.desktop"
+zones   = ["daily", "work", "untrusted"]
+bus     = "zone"
