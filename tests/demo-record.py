@@ -121,12 +121,12 @@ def quiet(secs: float) -> bool:
 
 def wait_prompt(limit: float = 60) -> None:
     """Until the screen ends in a shell prompt ("$ " or "# ") and is quiet.
-    Raises TimeoutError after limit seconds: a recording must not go on
-    typing into a command that never finished."""
+    Raises TimeoutError after limit seconds, and RuntimeError if the shell
+    exits first: a recording must not go on past a step that never finished."""
     end = time.time() + limit
     while time.time() < end:
         if not pump(0.4):
-            return
+            raise RuntimeError(f"the shell exited before its prompt; the screen ends with {tail[-200:]!r}")
         if re.search(rb"[$#] $", ANSI.sub(b"", tail)) and quiet(0.4):
             return
     raise TimeoutError(f"no shell prompt after {limit:.0f} s; the screen ends with {tail[-200:]!r}")
