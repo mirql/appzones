@@ -61,9 +61,9 @@ appzones puts a wall between those things, without a VM per app:
 - **You can see where a window lives.** Each zone's windows carry its
   border colour, set from the process's cgroup, which the app can't fake.
 
-![A terminal: the host has an SSH key; inside the untrusted zone the home is empty, the key is not there, a LAN address is refused and the internet works](docs/demo-untrusted.gif)
+![A terminal: the host has an SSH key; inside the untrusted zone the home is empty, the key is not there, a LAN address is refused and a public address works](docs/demo-untrusted.gif)
 
-<sub>Recorded in a NixOS VM by <code>just demo</code> (<a href="tests/demo.nix">tests/demo.nix</a>): the commands and their output are real, the yellow lines are narration.</sub>
+<sub>Recorded in a NixOS VM by <code>just demo</code> (<a href="tests/demo.nix">tests/demo.nix</a>): the commands and their output are real, the yellow lines are narration. The LAN and "the internet" are a second VM.</sub>
 
 ## Recipes
 
