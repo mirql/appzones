@@ -181,7 +181,7 @@ class ZonecfgTest(unittest.TestCase):
             os.environ.pop("ZONES_DNS_HOST")
 
     def test_readline_keeps_the_rest(self):
-        """Two replies in one read: the second is not lost (zone run --wait's exit code)."""
+        """Two replies in one read: the second is not lost (appzones run --wait's exit code)."""
         import socket
         zone = self._zone_mod()
         a, b = socket.socketpair()
@@ -262,7 +262,7 @@ class ZonecfgTest(unittest.TestCase):
             os.environ.pop("ZONES_DNS_HOST")
 
     def test_zone_new_concurrent(self):
-        """Two `zone new -y` at once: both zones end up in the file, which is never left half-written."""
+        """Two `appzones new -y` at once: both zones end up in the file, which is never left half-written."""
         import subprocess
         cfgp = Path(self.tmp.name) / "conc/zones.toml"
         env = dict(os.environ, ZONES_CONFIG=str(cfgp), HOME=str(self.home))
@@ -593,7 +593,7 @@ class ZonecfgTest(unittest.TestCase):
         self.assertEqual(self.errs("nix_ld = true"), [])
         self.assertEqual(self.z.host_nix_ld()[1], os.environ["ZONES_NIX_LD_LIB"])
         self.assertRefused(self.errs('nix_ld = "yes"'), "nix_ld must be true or false")
-        # release 3: an older `zone` must say "update appzones", not "unknown key"
+        # release 3: an older `appzones` must say "update appzones", not "unknown key"
         self.assertRefused(self.cfg('version = 1\nrequires = 2\n[zones.tt]\ncolour = "#112233"\nnix_ld = true\n')
                            .errors, "set requires = 3")
         # a host without nix-ld: refused, saying what to enable
@@ -623,7 +623,7 @@ class ZonecfgTest(unittest.TestCase):
         cfg = self.cfg(f'version = 1\nrequires = {self.z.RELEASE}\n[defaults]\nusb = ["abcd"]\n'
                        '[zones.tt]\ncolour = "#112233"\n')
         self.assertEqual(cfg.errors, [])
-        # release 4: an older `zone` must say "update appzones", not "unknown key"
+        # release 4: an older `appzones` must say "update appzones", not "unknown key"
         self.assertRefused(self.cfg('version = 1\nrequires = 3\n[zones.tt]\ncolour = "#112233"\n'
                                     'devices = ["usb"]\nusb = ["abcd"]\n').errors, "set requires = 4")
 

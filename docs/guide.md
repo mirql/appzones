@@ -38,10 +38,10 @@ programs.appzones = {
 ```
 
 Then write `~/.config/zones/zones.toml`: copy `examples/minimal.toml`
-(works on any host), or run `zone new NAME -y` (creates the file if there
+(works on any host), or run `appzones new NAME -y` (creates the file if there
 is none). `examples/zones.toml` shows every key; parts of it need more setup
 (`nix_ld` needs `programs.nix-ld.enable`, binds need the folders to exist).
-Run `zone check`.
+Run `appzones check`.
 
 Requirements:
 
@@ -63,18 +63,18 @@ Zone apps get the host session's `XDG_CURRENT_DESKTOP`.
 `contrib/hyprland/zones.lua` (Hyprland's Lua config) tags every window
 whose process runs in a zone with `zone:NAME` and gives it the zone's
 border colour. The zone comes from the window's host-side cgroup
-(`zone@NAME.service`), which the app cannot change, never from its title or
+(`appzones@NAME.service`), which the app cannot change, never from its title or
 class. Load it from your config:
 
 ```lua
 dofile("/path/to/appzones/contrib/hyprland/zones.lua")
 ```
 
-For a bar: `zone active --follow --json` prints Waybar custom-module JSON
+For a bar: `appzones active --follow --json` prints Waybar custom-module JSON
 (`[work]` while a zone window is focused):
 
 ```json
-"custom/zone": { "exec": "zone active --follow --json", "return-type": "json" }
+"custom/zone": { "exec": "appzones active --follow --json", "return-type": "json" }
 ```
 
 ## Kernel modules
@@ -90,28 +90,28 @@ boot.kernelModules = [ "nf_tables" "nft_reject" "nft_reject_inet" "nf_reject_ipv
 ## Using it
 
 ```bash
-zone list                      # zones, state, network, dns, devices, apps running, colour
-zone run daily firefox         # start the zone if needed, launch the app declared in [apps]
-zone run work -- chromium --incognito   # any command, not only declared apps
-zone run --restart work slack  # apply a changed zones.toml first, if no app runs in work
-zone run daily thunar          # a single-instance app: [apps.thunar] has bus = "zone"
-zone run --bus none daily -- foot   # once, with no D-Bus at all (see "D-Bus" below)
-zone shell untrusted           # an interactive shell inside (the pty is in the zone)
-zone ps daily                  # processes in the zone
-zone logs daily                # its journal (app output is there, prefixed "[app pid]")
-zone logs -f daily             # follow it
-zone stop daily                # SIGTERM to every app in it (they save state), then the zone
-zone restart daily             # stop + start: applies zones.toml changes
-zone stop --all
-zone which work                # every setting in effect and where it came from
-zone check                     # validate zones.toml
-zone check --probe untrusted   # also run isolation probes inside the zone
-zone new games                 # print a safe zone block; `-y` appends it to zones.toml
-zone apps                      # rewrite the launcher entries (also at every login)
-zone mount work ~/src/thing    # ~/src/thing is /mnt/host/thing in the running zone, now
-zone mount work ~/Music --ro --as music   # read-only, at /mnt/host/music
-zone mounts work               # what is mounted, from where, ro or rw
-zone umount work thing         # gone again (busy: says by what; --lazy detaches anyway)
+appzones list                      # zones, state, network, dns, devices, apps running, colour
+appzones run daily firefox         # start the zone if needed, launch the app declared in [apps]
+appzones run work -- chromium --incognito   # any command, not only declared apps
+appzones run --restart work slack  # apply a changed zones.toml first, if no app runs in work
+appzones run daily thunar          # a single-instance app: [apps.thunar] has bus = "zone"
+appzones run --bus none daily -- foot   # once, with no D-Bus at all (see "D-Bus" below)
+appzones shell untrusted           # an interactive shell inside (the pty is in the zone)
+appzones ps daily                  # processes in the zone
+appzones logs daily                # its journal (app output is there, prefixed "[app pid]")
+appzones logs -f daily             # follow it
+appzones stop daily                # SIGTERM to every app in it (they save state), then the zone
+appzones restart daily             # stop + start: applies zones.toml changes
+appzones stop --all
+appzones which work                # every setting in effect and where it came from
+appzones check                     # validate zones.toml
+appzones check --probe untrusted   # also run isolation probes inside the zone
+appzones new games                 # print a safe zone block; `-y` appends it to zones.toml
+appzones apps                      # rewrite the launcher entries (also at every login)
+appzones mount work ~/src/thing    # ~/src/thing is /mnt/host/thing in the running zone, now
+appzones mount work ~/Music --ro --as music   # read-only, at /mnt/host/music
+appzones mounts work               # what is mounted, from where, ro or rw
+appzones umount work thing         # gone again (busy: says by what; --lazy detaches anyway)
 ```
 
 - **Launcher.** Every app in `[apps]` gets a launcher entry per zone, named
@@ -126,31 +126,31 @@ zone umount work thing         # gone again (busy: says by what; --lazy detaches
 - **Files.** A zone sees only its own home and the paths in its `binds`.
   Any other file reaches it through the file chooser: the dialog runs on
   the host, and the zone gets only the file you pick (document portal).
-  `zone run` refuses a path argument that is outside the zone's binds.
-  For a while, without a restart: `zone mount` (see "Runtime mounts").
+  `appzones run` refuses a path argument that is outside the zone's binds.
+  For a while, without a restart: `appzones mount` (see "Runtime mounts").
 - **Links.** With `links = "zone"` (`work`, `untrusted`), a link clicked in
   the zone opens in the same zone's browser. With `links = "portal"`
   (`daily`) it opens in the host's default browser.
 - **Autostart.** A zone with `autostart = true` starts at login and then
   starts its `autostart_apps`.
-- **When an app does not start.** `zone run` watches the app for 2.5 s. If
+- **When an app does not start.** `appzones run` watches the app for 2.5 s. If
   it exits with an error in that time (or with 0 after its D-Bus name was
-  refused, as Thunar does), `zone run` prints its exit status and its last
+  refused, as Thunar does), `appzones run` prints its exit status and its last
   lines of output, exits non-zero, and, when the app
   could not own its D-Bus name, says which `bus` setting fixes it. An app
   that hands over to an instance already running exits 0 and stays quiet.
-  Everything an app prints is in `zone logs ZONE`.
+  Everything an app prints is in `appzones logs ZONE`.
 
 ### Changing a zone
 
 Edit `zones.toml`, then:
 
 ```bash
-zone check                 # what is wrong, if anything
-zone restart work          # a running zone keeps its old settings until then
+appzones check                 # what is wrong, if anything
+appzones restart work          # a running zone keeps its old settings until then
 ```
 
-`zone run` warns when a running zone is older than the file.
+`appzones run` warns when a running zone is older than the file.
 
 ## NVIDIA
 
@@ -174,14 +174,14 @@ inherits from `[defaults]`, and `[defaults]` from the built-in values.
 Unknown keys are errors.
 
 **`requires = N`** (top level) names the zones release the file needs. A
-`zones.toml` kept in a dotfiles repo can change before the installed `zone`
-tool does. A `zone` older than the file then says "needs zones release N,
-this `zone` is release M: update appzones (and rebuild)" and lists what it does not know, instead of
+`zones.toml` kept in a dotfiles repo can change before the installed `appzones`
+tool does. An `appzones` older than the file then says "needs zones release N,
+this `appzones` is release M: update appzones (and rebuild)" and lists what it does not know, instead of
 failing on an unknown key. A file that uses a newer setting without raising
 `requires` is an error, so the field stays true. Release 2 added `bus` and
-`requires`; release 3 `nix_ld`, `tmp` and `zone mount`; release 4 the `usb`
-device and key; `zone check` prints
-the tool's own release. (A `zone` from
+`requires`; release 3 `nix_ld`, `tmp` and `appzones mount`; release 4 the `usb`
+device and key; `appzones check` prints
+the tool's own release. (A `zone` (the old name) from
 before release 2 does not know `requires` either: it still says "unknown
 key" until it is updated once.) A real typo stays an error, with the nearest
 known key suggested.
@@ -208,7 +208,7 @@ known key suggested.
 | `env` | `{}` | extra environment. Names on the never-list are refused (`*TOKEN*`, `*KEY*`, `SSH_AUTH_SOCK`, `HYPRLAND_*`, `LD_PRELOAD`, …) |
 | `binds` | `[]` | `{ path = "~/Downloads", mode = "rw" \| "ro" }`, at the same path inside |
 | `dbus` | `{ talk = [], own = [] }` | names on the host bus proxy added to the safe default set (see "D-Bus" below for what is refused) |
-| `bus` | `"host"` · `"zone"` · `"none"` | the session bus for a command that is not in `[apps]` (`zone run Z -- CMD`). See "D-Bus" below |
+| `bus` | `"host"` · `"zone"` · `"none"` | the session bus for a command that is not in `[apps]` (`appzones run Z -- CMD`). See "D-Bus" below |
 | `nix_ld` | `false` · `true` | generic Linux binaries run: `/lib64/ld-linux-x86-64.so.2` in the zone is the host's nix-ld shim, and `NIX_LD`, `NIX_LD_LIBRARY_PATH` are set as on the host. Refused on a host without nix-ld (`programs.nix-ld.enable`). See "Generic Linux binaries" |
 | `tmp` | `"ram"` · `"disk"` | `ram`: `/tmp` is a fresh tmpfs at every start. `disk`: `/tmp` and `/var/tmp` are `~/.local/share/zones/NAME/tmp` and `.../var-tmp` (0700): kept across restarts, readable from the host. Cleaned at each start, see "/tmp on disk" |
 | `home` | `""` | the zone's home; empty: `~/.local/share/zones/NAME/home` |
@@ -222,7 +222,7 @@ known key suggested.
 | `zones` | the zones it gets a launcher entry in |
 | `args` | extra arguments per zone, `{ untrusted = ["--private-window"] }` |
 | `desktop` | a host `.desktop` file to take the name, icon and MIME types from |
-| `bus` | `"host"` · `"zone"` · `"none"`: the session bus this app gets; default: the zone's `bus`. `zone run Z -- CMD` uses it too when `CMD` is this app's command (by name) |
+| `bus` | `"host"` · `"zone"` · `"none"`: the session bus this app gets; default: the zone's `bus`. `appzones run Z -- CMD` uses it too when `CMD` is this app's command (by name) |
 
 **Never inside a zone, whatever the TOML says.** The validator compares
 resolved paths (symlinks anywhere on the path, also for a `home` that does
@@ -325,7 +325,7 @@ zones   = ["daily", "work", "untrusted"]
 bus     = "zone"
 ```
 
-`zone run daily -- thunar` uses it too: the command matches the app.
+`appzones run daily -- thunar` uses it too: the command matches the app.
 
 **Firefox.** A Firefox launch first looks for a running Firefox on the
 host bus, under `org.mozilla.<app>.<profile path>`, and hands its URL over.
@@ -385,7 +385,7 @@ devices = ["gpu", "audio", "usb"]
 usb     = ["abcd"]          # every device of vendor abcd; "abcd:1234" for one product
 ```
 
-At each zone start, `zone` reads `/sys/bus/usb/devices` and, for every
+At each zone start, `appzones` reads `/sys/bus/usb/devices` and, for every
 device whose `idVendor` (and `idProduct`, if given) matches, binds:
 
 - its node `/dev/bus/usb/BBB/DDD` (from `busnum`/`devnum`, checked against
@@ -405,8 +405,8 @@ session. A zone without `usb` has no `/dev/bus/usb`, no hidraw node and no
 `/sys/bus/usb`.
 
 - **Bound at start.** A device plugged in later, or replugged (its device
-  number changes), is not in the zone: `zone restart ZONE`. With no
-  matching device at start the zone warns (`zone logs ZONE`) and starts
+  number changes), is not in the zone: `appzones restart ZONE`. With no
+  matching device at start the zone warns (`appzones logs ZONE`) and starts
   without one.
 - **Permissions are the host's.** The zone opens the nodes as you. A USB
   node is `root 0664` and a hidraw node `root 0600` unless a udev rule
@@ -435,13 +435,13 @@ a fresh tmpfs at each start, and no `/var/tmp`.
 ## Runtime mounts
 
 ```bash
-zone mount ZONE HOST-DIR [--ro] [--as NAME]   # → /mnt/host/NAME (NAME: HOST-DIR's name)
-zone umount ZONE NAME [--lazy]
-zone mounts ZONE
+appzones mount ZONE HOST-DIR [--ro] [--as NAME]   # → /mnt/host/NAME (NAME: HOST-DIR's name)
+appzones umount ZONE NAME [--lazy]
+appzones mounts ZONE
 ```
 
 A host folder appears at `/mnt/host/NAME` in a **running** zone without a
-restart, and `zone umount` takes it away again. A mount lasts until
+restart, and `appzones umount` takes it away again. A mount lasts until
 `umount` or until the zone stops or restarts: the zone removes every mount
 left at its start and stop. To keep a folder for good, add it to `binds`.
 
@@ -452,7 +452,7 @@ left at its start and stop. To keep a folder for good, add it to `binds`.
   `/run` (sockets, `/run/user/1000`), `/etc`, `/nix`, `/boot`, `/root`,
   `/var` or `/tmp`. Only directories.
 - **Busy.** If an app in the zone has its working directory, a file or a
-  mapping under it, `zone umount` refuses and lists the processes. `--lazy`
+  mapping under it, `appzones umount` refuses and lists the processes. `--lazy`
   detaches it at once; files still open keep working until they close.
 - Always `nosuid` and `nodev`. With `--ro` the mount is read-only from the
   moment the zone sees it, and the zone cannot remount it writable, not
@@ -463,7 +463,7 @@ left at its start and stop. To keep a folder for good, add it to `binds`.
 `/home` is normally a shared mount (systemd makes `/` shared), so a mount the host makes under that
 directory appears in the zone at once, and an unmount disappears. The zone
 cannot create anything in `/mnt/host` itself. A bind mount on the host
-needs root, so `zone` calls one helper, `zones-mount-helper`, through
+needs root, so `appzones` calls one helper, `zones-mount-helper`, through
 `sudo -n`. The NixOS module adds a sudo rule for exactly that file, for
 `programs.appzones.user`, without a password (`mountHelper = true`).
 
@@ -503,15 +503,15 @@ password.
 ## How a zone is built
 
 ```
-systemd --user: zone@work.service   (zones.slice, Type=notify)
-└─ zone _supervise work                       host side
+systemd --user: appzones@work.service   (appzones.slice, Type=notify)
+└─ appzones _supervise work                       host side
    ├─ zone-wayland      → wp_security_context_v1 listener (Hyprland hides
    │                      screencopy, data-control, layer-shell, virtual
    │                      input, global shortcuts, the window list)
    ├─ bwrap ─ xdg-dbus-proxy → the zone's filtered bus; the proxy's bwrap
    │                      carries /.flatpak-info, so portals see
    │                      app id dev.mirql.zone.work
-   └─ pasta (own netns) ─ zone _netsetup (nft deny list, then exec)
+   └─ pasta (own netns) ─ appzones _netsetup (nft deny list, then exec)
       └─ bwrap (user, pid, ipc, uts, cgroup ns; no caps; no_new_privs)
          └─ zone-init     the agent inside: run, shell (pty), ps
             └─ apps
@@ -604,11 +604,11 @@ virtual GPU. It covers:
 - single-instance apps on the zone's own bus: Thunar shows a window and a
   second launch reuses it, `org.xfce.Thunar` exists on the zone bus and
   never on the host's, gnome-text-editor and eog start; on the host bus
-  Thunar exits and `zone run` prints its status, output and the bus hint;
+  Thunar exits and `appzones run` prints its status, output and the bus hint;
   `bus = "none"` leaves no bus socket and no zone-init control socket;
-  `zone run --wait` refuses a socket or directory as stdin; the validator refuses owning
-  `org.freedesktop.Notifications` and `org.xfce.Thunar`; `zone run` reports
-  an app that exits early; `zone logs -f`;
+  `appzones run --wait` refuses a socket or directory as stdin; the validator refuses owning
+  `org.freedesktop.Notifications` and `org.xfce.Thunar`; `appzones run` reports
+  an app that exits early; `appzones logs -f`;
 - Wayland: privileged globals are hidden from zone clients; zone windows
   get the tag and colour, from the CLI and from a launcher entry; a host
   window gets neither;
@@ -622,7 +622,7 @@ virtual GPU. It covers:
   no RPATH) runs with `nix_ld = true` and fails with "required file not
   found" without it; the validator refuses `nix_ld` on a host without
   nix-ld;
-- `tmp = "disk"`: files in `/tmp` and `/var/tmp` survive `zone restart`,
+- `tmp = "disk"`: files in `/tmp` and `/var/tmp` survive `appzones restart`,
   are on the host in 0700 directories, and old files and links are
   removed (never followed);
 - runtime mounts: mount, `mounts`, umount; read-only stays read-only (also

@@ -1,7 +1,7 @@
 """zonecfg: zones.toml schema v1 and its validator.
 
 Everything that is a choice is a per-zone TOML setting (dns, links,
-keyring, netbird, devices, clipboard, ...). Used by `zone` (every command
+keyring, netbird, devices, clipboard, ...). Used by `appzones` (every command
 validates first) and on its own:
 
     python3 zonecfg.py check [FILE]        validate, exit 1 with every error
@@ -153,7 +153,7 @@ KEYS: dict[str, tuple[object, object, str]] = {
 }
 APP_KEYS = {"command", "desktop", "zones", "args", "bus"}
 
-# zones.toml can change before the installed `zone` tool does (a dotfiles
+# zones.toml can change before the installed `appzones` tool does (a dotfiles
 # repo moves faster than a system rebuild). A file names the release it
 # needs (`requires = N`); an older tool then says "update appzones" instead
 # of "unknown key". Bump RELEASE when a key or value is added, and record it here.
@@ -426,7 +426,7 @@ def kind_error(mode: int, raw: str) -> str | None:
     return f"{raw}: is {what}; only directories and files are bound"
 
 
-# ── runtime mounts (zone mount) ────────────────────────────────────────────
+# ── runtime mounts (appzones mount) ────────────────────────────────────────────
 MOUNT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 # On top of the binds' never-list: a runtime mount never comes from inside
 # these. The host's system trees, other users' and root's files, and /tmp
@@ -524,14 +524,14 @@ def load_text(text: str, path: str | Path = "zones.toml") -> Config:
     elif req > RELEASE:
         # every other error is most likely a setting this tool does not know yet
         return Config(zones, apps, [
-            f"{path} needs zones release {req}, and this `zone` is release {RELEASE}: update appzones "
+            f"{path} needs zones release {req}, and this `appzones` is release {RELEASE}: update appzones "
             f"(and rebuild) to get the newer one. Until then, what this zone does not know:"]
             + [f"  {e}" for e in errors], [])
     used = [n for n, since in SINCE.items() if isinstance(req, int) and since > req and uses(raw, n)]
     if used and not errors:
         errors.append(f"requires = {req}, but the file uses {', '.join(used)} (zones release "
                       f"{max(SINCE[n] for n in used)}): set requires = {max(SINCE[n] for n in used)}, so an "
-                      f"older `zone` says to update instead of failing on an unknown key")
+                      f"older `appzones` says to update instead of failing on an unknown key")
     warnings = [f"[zones.{z.name}] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker "
                 f"sandbox without saying so" for z in zones.values() if z.settings["userns"] is False]
     for z in zones.values():
@@ -704,7 +704,7 @@ def app_bus(cfg: Config, zone: str, app: str | None) -> str:
 
 
 def app_for_command(cfg: Config, argv0: str) -> str | None:
-    """The declared app whose command is ARGV0 (by basename), for `zone run Z -- thunar`."""
+    """The declared app whose command is ARGV0 (by basename), for `appzones run Z -- thunar`."""
     base = os.path.basename(argv0)
     for aid, a in cfg.apps.items():
         cmd = a.get("command") or [""]

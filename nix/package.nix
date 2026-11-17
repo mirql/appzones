@@ -1,4 +1,4 @@
-# appzones: `zone` (CLI and supervisor), `zone-init` (the agent inside a
+# appzones: `appzones` (CLI and supervisor), `zone-init` (the agent inside a
 # zone) and `zone-wayland` (the security-context helper). The tools a zone
 # needs at run time (bwrap, pasta, nft, xdg-dbus-proxy, dbus-daemon for a
 # zone's own bus, ip) come from the store, so the package works whatever is
@@ -19,8 +19,9 @@
 }:
 
 let
-  # minor = zonecfg.RELEASE (the config schema release a zones.toml can require)
-  version = "0.4.0";
+  # the package version; the config schema has its own release number
+  # (zonecfg.RELEASE, what a zones.toml can require)
+  version = "0.5.0";
   zone-wayland = callPackage ../src/zone-wayland { };
   runtimePath = lib.makeBinPath [
     bubblewrap
@@ -50,7 +51,7 @@ runCommand "appzones-${version}"
       homepage = "https://github.com/mirql/appzones";
       license = lib.licenses.mit;
       platforms = [ "x86_64-linux" ];
-      mainProgram = "zone";
+      mainProgram = "appzones";
     };
   }
   ''
@@ -62,7 +63,7 @@ runCommand "appzones-${version}"
     cp ${examples}/zones.toml $out/share/zones/zones.example.toml
     cp ${examples}/minimal.toml $out/share/zones/zones.minimal.toml
 
-    # The root helper of `zone mount` (the module's sudo rule names this
+    # The root helper of `appzones mount` (the module's sudo rule names this
     # file): isolated Python (-I: no PYTHON* variables, no user site, not
     # even its own directory on sys.path; it adds $lib itself).
     { echo "#!${python3}/bin/python3 -IB"; cat ${src}/zone_mount_helper.py; } > $lib/zones-mount-helper
@@ -79,7 +80,7 @@ runCommand "appzones-${version}"
 
     # /run/current-system/sw/bin last: systemctl, journalctl, nix and hyprctl
     # are the running system's.
-    makeWrapper ${python3}/bin/python3 $out/bin/zone \
+    makeWrapper ${python3}/bin/python3 $out/bin/appzones \
       --add-flags "-B $lib/zone.py" \
       --prefix PATH : ${runtimePath} \
       --suffix PATH : /run/current-system/sw/bin

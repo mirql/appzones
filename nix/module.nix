@@ -1,8 +1,8 @@
 # NixOS module for appzones (docs/guide.md).
 #
-# Installs the `zone` tool and the systemd user units that run a zone:
-# zone@NAME.service (one long-lived sandbox per zone, in zones.slice) and
-# zones-autostart.service (at login: launcher entries, zones with
+# Installs the `appzones` tool and the systemd user units that run a zone:
+# appzones@NAME.service (one long-lived sandbox per zone, in appzones.slice) and
+# appzones-autostart.service (at login: launcher entries, zones with
 # autostart = true). The zones themselves are declared in
 # ~/.config/zones/zones.toml, which this module never generates.
 {
@@ -14,12 +14,12 @@
 
 let
   cfg = config.programs.appzones;
-  zone = lib.getExe cfg.package;
+  appzones = lib.getExe cfg.package;
   onlyUser = lib.optionalAttrs (cfg.user != null) { ConditionUser = cfg.user; };
 in
 {
   options.programs.appzones = {
-    enable = lib.mkEnableOption "app zones (`zone`, zone@.service)";
+    enable = lib.mkEnableOption "app zones (`appzones`, appzones@.service)";
 
     package = lib.mkOption {
       type = lib.types.package;
@@ -33,7 +33,7 @@ in
       type = lib.types.bool;
       default = true;
       description = ''
-        `zone mount`: a sudo rule that lets `user` (every member of
+        `appzones mount`: a sudo rule that lets `user` (every member of
         `users` when user is null) run exactly the zones mount helper as
         root without a password. The helper only mounts a directory the
         caller can read (never-list checked) at
@@ -95,7 +95,7 @@ in
       text = lib.concatLines cfg.deniedPaths;
     };
 
-    # The one root step of `zone mount`/`zone umount` (and of a zone's start
+    # The one root step of `appzones mount`/`appzones umount` (and of a zone's start
     # and stop, which detach mounts left over). Only this file, any
     # arguments: the helper checks them itself. A zone cannot use it: sudo
     # needs a setuid wrapper, which no_new_privs disables and which is not
@@ -116,17 +116,17 @@ in
     ];
 
     # Launcher entries "App (zone)" live in
-    # ~/.local/share/zones/launcher/share/applications (`zone apps`), not in
+    # ~/.local/share/zones/launcher/share/applications (`appzones apps`), not in
     # ~/.local/share/applications (often managed by dotfiles). A profile adds
     # its share/ to XDG_DATA_DIRS (as flatpak's exports do).
     environment.profiles = [ "$HOME/.local/share/zones/launcher" ];
 
-    systemd.user.slices.zones = {
+    systemd.user.slices.appzones = {
       description = "App zones";
       unitConfig = onlyUser;
     };
 
-    systemd.user.services."zone@" = {
+    systemd.user.services."appzones@" = {
       description = "App zone %i";
       documentation = [ "file://${cfg.package}/share/zones/zones.example.toml" ];
       # Stops with the session (the compositor gone: every Wayland client is
@@ -141,8 +141,8 @@ in
       serviceConfig = {
         Type = "notify";
         NotifyAccess = "main";
-        ExecStart = "${zone} _supervise %i";
-        Slice = "zones.slice";
+        ExecStart = "${appzones} _supervise %i";
+        Slice = "appzones.slice";
         # SIGTERM to the whole cgroup: apps save their state; then SIGKILL.
         # When bwrap (pid 1 of the zone) exits the kernel kills the rest.
         KillMode = "control-group";
@@ -153,7 +153,7 @@ in
       };
     };
 
-    systemd.user.services.zones-autostart = {
+    systemd.user.services.appzones-autostart = {
       description = "App zones: launcher entries and autostart zones";
       wantedBy = [ "graphical-session.target" ];
       after = [ "graphical-session.target" ];
@@ -164,7 +164,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${zone} _autostart";
+        ExecStart = "${appzones} _autostart";
       };
     };
   };

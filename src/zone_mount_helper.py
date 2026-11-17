@@ -1,4 +1,4 @@
-"""zones-mount-helper: the one step of `zone mount` / `zone umount` that needs root.
+"""zones-mount-helper: the one step of `appzones mount` / `appzones umount` that needs root.
 
 Only through sudo, as the zone CLI runs it (the NixOS module's sudo rule
 allows exactly this file, for the zones user, without a password):
@@ -102,7 +102,7 @@ def mount_points() -> list[str]:
 class Caller:
     def __init__(self):
         if os.geteuid() != 0:
-            die("run through sudo (sudo -n zones-mount-helper ...); `zone mount` does")
+            die("run through sudo (sudo -n zones-mount-helper ...); `appzones mount` does")
         try:
             self.uid = int(os.environ["SUDO_UID"])
         except (KeyError, ValueError):
@@ -156,7 +156,7 @@ def do_mount(c: Caller, zone: str, name: str, source: str, ro: bool) -> int:
     target = f"{mnt}/{name}"
     pfd = c.open_owned(mnt)
     if target in mount_points():
-        die(f"{target}: already mounted (zone umount {zone} {name} first)")
+        die(f"{target}: already mounted (appzones umount {zone} {name} first)")
     tfd = c.open_owned(target)
     sfd = c.open_as_caller(source)
     real = fd_path(sfd)

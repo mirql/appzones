@@ -16,6 +16,6 @@
 - [ ] `just test` and `just build` pass
 - [ ] `just test-vm` passes (needed for anything beyond the validator)
 - [ ] Tests added: unit tests for the validator, VM checks for isolation (asserting what is **refused**)
-- [ ] New config key/value: `RELEASE` and `SINCE` bumped, version minor matches
+- [ ] New config key/value: `RELEASE` and `SINCE` bumped
 - [ ] `docs/guide.md` and `examples/zones.toml` updated if behaviour or config changed
 - [ ] Line added under "Unreleased" in `CHANGELOG.md`

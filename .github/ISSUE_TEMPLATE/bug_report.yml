@@ -24,13 +24,13 @@ body:
     id: output
     attributes:
       label: Output
-      description: "`zone check`, and `zone logs ZONE` around the problem."
+      description: "`appzones check`, and `appzones logs ZONE` around the problem."
       render: text
   - type: input
     id: version
     attributes:
       label: appzones version
-      description: "`zone check` prints the release; the flake revision helps too."
+      description: "`appzones check` prints the release; the flake revision helps too."
     validations:
       required: true
   - type: input

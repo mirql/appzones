@@ -9,9 +9,9 @@
 # internet, reached through the default route).
 #
 # Covered:
-#   - the NixOS module: zone@.service in zones.slice (Type=notify), start,
+#   - the NixOS module: appzones@.service in appzones.slice (Type=notify), start,
 #     stop, restart, crash (kill -9 zone-init: the unit restarts),
-#     zones-autostart (autostart zone + autostart app, launcher entries);
+#     appzones-autostart (autostart zone + autostart app, launcher entries);
 #   - the CLI: list, which, run APP / run -- CMD / run --wait / run --restart
 #     on a stale zone, shell (a pty inside), new, check --probe, apps, ps;
 #   - isolation probes (zone home, ~/.ssh, /srv/code, the runtime dir,
@@ -25,12 +25,12 @@
 #     host window gets none; an app launched from its launcher entry too;
 #   - single-instance GTK apps on the zone's own bus (bus = "zone"): Thunar
 #     (with programs.thunar: its names are activatable on the host bus)
-#     shows a window, a second launch (`zone run ta -- thunar`, matched to
+#     shows a window, a second launch (`appzones run ta -- thunar`, matched to
 #     [apps.thunar]) hands over to the first; gnome-text-editor and eog start;
-#     on the host bus Thunar fails and `zone run` prints its exit status, last
+#     on the host bus Thunar fails and `appzones run` prints its exit status, last
 #     output and the bus hint; bus = "none" leaves no bus socket at all; the
 #     validator refuses owning org.freedesktop.Notifications and org.xfce.Thunar
-#     on the host bus; `zone run` reports an app that exits early; `zone logs -f`;
+#     on the host bus; `appzones run` reports an app that exits early; `appzones logs -f`;
 #   - Firefox in two zones at once: each owns only its zone's remote name
 #     (org.mozilla.firefox_zone_ZONE.*), and a second launch in one zone
 #     opens in that zone's Firefox, never the other's;
@@ -42,9 +42,9 @@
 #     /lib64/ld-linux-x86-64.so.2, no RPATH) runs in a zone with
 #     nix_ld = true and fails clearly without; the validator refuses
 #     nix_ld = true on a host without nix-ld;
-#   - tmp = "disk": /tmp and /var/tmp are kept across `zone restart`, are
+#   - tmp = "disk": /tmp and /var/tmp are kept across `appzones restart`, are
 #     visible on the host (0700), old files are removed at start;
-#   - runtime mounts: zone mount / mounts / umount, ro is ro (also against a
+#   - runtime mounts: appzones mount / mounts / umount, ro is ro (also against a
 #     remount from a nested user namespace), a busy umount lists the holder,
 #     --lazy, never-list refused (also through a symlink), the root helper
 #     refuses a target outside zones/*/mnt (symlink, ..), a directory the
@@ -80,7 +80,7 @@ let
     hl.on("hyprland.start", function()
       -- as uwsm does: the session's environment, then
       -- graphical-session.target (xdg-desktop-portal needs it; zone units
-      -- are PartOf it, zones-autostart is WantedBy it)
+      -- are PartOf it, appzones-autostart is WantedBy it)
       hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP"
         .. " && systemctl --user start zones-test-session.target; touch /tmp/hyprland-started")
     end)
@@ -100,13 +100,13 @@ let
     runScript = pkgs.writeShellScript "fhs-hello" "echo fhs-ok";
   };
 
-  # Drives `zone shell ZONE` through a real pty, as a terminal does: types
+  # Drives `appzones shell ZONE` through a real pty, as a terminal does: types
   # a command, reads until the marker, exits. Prints what it read.
   shellDriver = pkgs.writeText "shell-driver.py" ''
     import os, pty, select, sys, time
     pid, fd = pty.fork()
     if pid == 0:
-        os.execvp("zone", ["zone", "shell", sys.argv[1]])
+        os.execvp("appzones", ["appzones", "shell", sys.argv[1]])
     def read_until(marker, buf, secs):
         end = time.time() + secs
         while marker not in buf and time.time() < end:
@@ -259,7 +259,7 @@ pkgs.testers.runNixOSTest {
       };
       # Hyprland on tty1, as the autologin user (a logind seat session).
       # It imports WAYLAND_DISPLAY and HYPRLAND_INSTANCE_SIGNATURE into the
-      # user manager, as a session manager does, so zone@.service sees them.
+      # user manager, as a session manager does, so appzones@.service sees them.
       environment.loginShellInit = ''
         if [ "$(tty)" = /dev/tty1 ] && [ "$(id -u)" = 1000 ]; then
           exec ${hyprland}/bin/Hyprland --config ${hyprConfig} >/tmp/hyprland.log 2>&1
@@ -342,7 +342,7 @@ pkgs.testers.runNixOSTest {
       programs.thunar.enable = true;
 
       environment.systemPackages = with pkgs; [
-        hyprland # hyprctl on PATH (`zone active`)
+        hyprland # hyprctl on PATH (`appzones active`)
         gnome-text-editor
         eog
         foot
@@ -380,7 +380,7 @@ pkgs.testers.runNixOSTest {
 
     def inside(zone, cmd):
         """(rc, output) of cmd run as a process inside the zone."""
-        return u(f"zone run --wait {zone} -- bash -c {shlex.quote(cmd)} </dev/null 2>&1", check=False)
+        return u(f"appzones run --wait {zone} -- bash -c {shlex.quote(cmd)} </dev/null 2>&1", check=False)
 
     def ok(zone, cmd, what):
         rc, out = inside(zone, cmd)
@@ -417,33 +417,33 @@ pkgs.testers.runNixOSTest {
     SIG = [l.split("=", 1)[1] for l in out.splitlines() if l.startswith("HYPRLAND_INSTANCE_SIGNATURE=")][0]
 
     def invocation(zone):
-        return u(f"systemctl --user show zone@{zone}.service -p InvocationID --value").strip()
+        return u(f"systemctl --user show appzones@{zone}.service -p InvocationID --value").strip()
 
-    with subtest("zone check and which"):
-        print(u("zone check"))
-        assert '"internet"' in u("zone which ta")
-        print(u("zone new tn"))  # prints a block, writes nothing
+    with subtest("appzones check and which"):
+        print(u("appzones check"))
+        assert '"internet"' in u("appzones which ta")
+        print(u("appzones new tn"))  # prints a block, writes nothing
         assert "tn" not in u("cat ~/.config/zones/zones.toml")
-        u("zone list")
+        u("appzones list")
 
-    with subtest("zones-autostart: autostart zone, its app, launcher entries"):
-        u("systemctl --user start zones-autostart.service")
-        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ping tz"), timeout=60)
-        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ps tz | grep -q 'sleep 3600'"), timeout=30)
+    with subtest("appzones-autostart: autostart zone, its app, launcher entries"):
+        u("systemctl --user start appzones-autostart.service")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ping tz"), timeout=60)
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ps tz | grep -q 'sleep 3600'"), timeout=30)
         cg = machine.succeed("cat /proc/$(pgrep -u alice -f 'sleep 3600' | head -1)/cgroup").strip()
-        assert cg.endswith("/zones.slice/zone@tz.service"), cg
+        assert cg.endswith("/appzones.slice/appzones@tz.service"), cg
         u("test -f ~/.local/share/zones/launcher/share/applications/zone-foot-ta.desktop")
         print(u("cat ~/.local/share/zones/launcher/share/applications/zone-foot-ta.desktop"))
         # the profile puts the launcher dir on XDG_DATA_DIRS of a login
         assert "/home/alice/.local/share/zones/launcher/share" in u("echo $XDG_DATA_DIRS")
-        u("zone stop tz")
-        u("! zone ping tz")
+        u("appzones stop tz")
+        u("! appzones ping tz")
 
-    with subtest("start: zone@ta.service"):
-        u("zone up ta")
-        print(u("systemctl --user status zone@ta.service --no-pager -n 20"))
-        u("systemctl --user is-active zone@ta.service")
-        print(u("zone list"))
+    with subtest("start: appzones@ta.service"):
+        u("appzones up ta")
+        print(u("systemctl --user status appzones@ta.service --no-pager -n 20"))
+        u("systemctl --user is-active appzones@ta.service")
+        print(u("appzones list"))
 
     with subtest("filesystem and process isolation"):
         ok("ta", "touch ~/probe && test -w ~", "zone home writable")
@@ -535,7 +535,7 @@ pkgs.testers.runNixOSTest {
         node, sysdir = dev
         hid = machine.succeed(f"for h in /sys/class/hidraw/*; do case $(readlink -f $h/device) in {sysdir}/*) echo /dev/''${{h##*/}};; esac; done").split()
         print(f"host: tablet at {node} ({sysdir}), hidraw {hid}")
-        u("zone up tu")
+        u("appzones up tu")
         # a glob, not find -type c: find trusts d_type, which is bwrap's mount-point file, not the bound node
         out = ok("tu", "for n in /dev/bus/usb/*/* /dev/hidraw*; do [ -c \"$n\" ] && echo $n; done; true", "tu: device nodes")
         assert sorted(out.split()) == sorted([node] + hid), out
@@ -544,18 +544,18 @@ pkgs.testers.runNixOSTest {
         ok("tu", f"[ \"$(cat {sysdir}/idVendor)\" = 0627 ] && ls /sys/bus/usb/devices | grep -q .", "tu: its sysfs and /sys/bus/usb")
         refused("tu", "cat /sys/bus/usb/devices/usb*/idVendor", "tu: the root hubs' sysfs is not there")
         refused("tu", "test -e /dev/uinput", "tu: no /dev/uinput")
-        print(u("zone list"))
-        u("zone up tv")
-        out = u("zone logs tv")
+        print(u("appzones list"))
+        u("appzones up tv")
+        out = u("appzones logs tv")
         assert "no device matches dead" in out, out
         print("PASS  tv: no matching device, warned and started")
         refused("tv", "ls -d /dev/bus/usb /sys/bus/usb 2>/dev/null | grep -q .", "tv: nothing bound")
-        u("zone stop tv")
-        u("zone stop tu")
+        u("appzones stop tv")
+        u("appzones stop tu")
 
     with subtest("nix_ld: a generic glibc binary runs only with nix_ld = true"):
         gbin = "${genericBin}/bin/generic-hello"
-        u("zone up td")
+        u("appzones up td")
         out = ok("td", f"{gbin}", "generic binary runs in td (nix_ld = true)")
         assert "Hello, world!" in out, out
         ok("td", "case \"$(readlink /lib64/ld-linux-x86-64.so.2)\" in /nix/store/*nix-ld*) ;; *) exit 1;; esac "
@@ -566,7 +566,7 @@ pkgs.testers.runNixOSTest {
         assert rc != 0 and ("required file not found" in out or "No such file" in out), (rc, out)
         print("PASS  without nix_ld the same binary fails: required file not found")
         refused("tb", "test -e /lib64 || [ -n \"$NIX_LD\" ]", "tb (no nix_ld): no /lib64, no NIX_LD")
-        rc, out = u("ZONES_NIX_LD_SHIM=/nonexistent/ld-linux-x86-64.so.2 zone check 2>&1", check=False)
+        rc, out = u("ZONES_NIX_LD_SHIM=/nonexistent/ld-linux-x86-64.so.2 appzones check 2>&1", check=False)
         print(out)
         assert rc != 0 and "programs.nix-ld.enable" in out, out
         print("PASS  the validator refuses nix_ld = true on a host without nix-ld")
@@ -581,54 +581,54 @@ pkgs.testers.runNixOSTest {
         u(f"touch -d '20 days ago' {T}/tmp/old {T}/tmp/sub/old; touch -d '40 days ago' {T}/var-tmp/old; "
           f"touch -d '20 days ago' {T}/var-tmp/young; ln -s /home/alice/.ssh/id_test {T}/tmp/link; "
           f"touch -h -d '20 days ago' {T}/tmp/link")
-        u("zone restart td")
+        u("appzones restart td")
         ok("td", "grep -qx kept /tmp/keep && grep -qx kept2 /var/tmp/keep2 && test -f /tmp/sub/f && test -f /var/tmp/young "
                  "&& ! test -e /tmp/old && ! test -e /tmp/sub/old && ! test -e /var/tmp/old && ! test -L /tmp/link",
            "after zone restart: kept files there, old ones (14 days /tmp, 30 days /var/tmp) removed")
         machine.succeed("test -f /home/alice/.ssh/id_test")
         print("PASS  cleanup removed the old symlink, not what it pointed to")
-        out = u("zone logs td")
+        out = u("appzones logs td")
         assert "unused for 14 days" in out, out
         refused("ta", "test -e /tmp/keep", "ta (tmp = ram) does not see it")
 
-    with subtest("runtime mounts: zone mount / umount / mounts"):
-        HELPER = machine.succeed("dirname $(readlink -f $(command -v zone))").strip() + "/../libexec/zones/zones-mount-helper"
+    with subtest("runtime mounts: appzones mount / umount / mounts"):
+        HELPER = machine.succeed("dirname $(readlink -f $(command -v appzones))").strip() + "/../libexec/zones/zones-mount-helper"
         u("mkdir -p ~/proj ~/rosrc && echo A >~/proj/a.txt && echo R >~/rosrc/r.txt && ln -sfn ~/.ssh ~/sshlink")
-        print(u("zone mount td ~/proj"))
+        print(u("appzones mount td ~/proj"))
         ok("td", "grep -qx A /mnt/host/proj/a.txt && echo W >/mnt/host/proj/w.txt", "mounted rw: read and write")
         machine.succeed("grep -qx W /home/alice/proj/w.txt")
-        print(u("zone mount td ~/rosrc --ro --as ro"))
+        print(u("appzones mount td ~/rosrc --ro --as ro"))
         ok("td", "grep -qx R /mnt/host/ro/r.txt", "ro mount readable")
         refused("td", "touch /mnt/host/ro/x", "ro mount not writable")
         refused("td", "unshare -Urm sh -c 'mount -o remount,bind,rw /mnt/host/ro && touch /mnt/host/ro/x'",
                 "ro stays ro after a remount from a nested user namespace")
         refused("ta", "test -e /mnt/host/proj", "another zone does not see it")
         refused("td", "touch /mnt/host/planted", "/mnt/host itself is read-only in the zone")
-        out = u("zone mounts td")
+        out = u("appzones mounts td")
         print(out)
         assert "proj" in out and "/home/alice/proj" in out and "ro" in out and "/home/alice/rosrc" in out, out
 
         # busy: an app with its cwd there
-        u("zone run td -- sh -c 'cd /mnt/host/proj && exec sleep 600'")
-        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ps td | grep -q 'sleep 600'"), timeout=30)
-        rc, out = u("zone umount td proj 2>&1", check=False)
+        u("appzones run td -- sh -c 'cd /mnt/host/proj && exec sleep 600'")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ps td | grep -q 'sleep 600'"), timeout=30)
+        rc, out = u("appzones umount td proj 2>&1", check=False)
         print(out)
         assert rc != 0 and "busy" in out and "sleep 600" in out and "--lazy" in out, out
         print("PASS  a busy umount says which process holds it")
         ok("td", "test -f /mnt/host/proj/a.txt", "still mounted after the refused umount")
-        print(u("zone umount --lazy td proj"))
+        print(u("appzones umount --lazy td proj"))
         refused("td", "test -e /mnt/host/proj/a.txt", "--lazy: gone from the zone at once")
         u("pkill -u alice -f '^sleep 600' || true")
-        u("zone umount td ro")
+        u("appzones umount td ro")
         refused("td", "test -e /mnt/host/ro", "umount removes it")
-        assert "nothing mounted" in u("zone mounts td")
+        assert "nothing mounted" in u("appzones mounts td")
 
         # never-list, through the CLI
         for src, why in [("~/.ssh", "never enters"), ("~/sshlink", "resolves to"), ("~/.config", "contains"),
                          ("/etc", "inside /etc"), ("/srv/code", "never enters"), ("~", "never allowed")]:
-            rc, out = u(f"zone mount td {src} 2>&1", check=False)
+            rc, out = u(f"appzones mount td {src} 2>&1", check=False)
             assert rc != 0 and "refused" in out and why in out, (src, out)
-        print("PASS  zone mount refuses the never-list (also through a symlink)")
+        print("PASS  appzones mount refuses the never-list (also through a symlink)")
 
         # the root helper itself, called directly with sudo: same refusals
         def helper(args):
@@ -665,14 +665,14 @@ pkgs.testers.runNixOSTest {
                 "a zone cannot use sudo (no_new_privs, no wrappers)")
 
         # mounts end with the zone run
-        u("zone mount td ~/proj")
+        u("appzones mount td ~/proj")
         ok("td", "test -f /mnt/host/proj/a.txt", "mounted again")
-        u("zone restart td")
-        refused("td", "test -e /mnt/host/proj", "zone restart drops the mount")
+        u("appzones restart td")
+        refused("td", "test -e /mnt/host/proj", "appzones restart drops the mount")
         machine.succeed("! findmnt -rn -o TARGET | grep -q 'zones/td/mnt'")
-        assert "nothing mounted" in u("zone mounts td")
+        assert "nothing mounted" in u("appzones mounts td")
         print("PASS  no mount left on the host after the restart")
-        u("zone stop td")
+        u("appzones stop td")
 
     with subtest("Wayland: security context, window tag and colour"):
         out = ok("ta", "wayland-info", "wayland-info inside the zone")
@@ -684,7 +684,7 @@ pkgs.testers.runNixOSTest {
         assert "zwlr_layer_shell_v1" in host, "control: the host client sees layer-shell"
         print("PASS  privileged globals hidden from the zone, visible to the host")
 
-        u("zone run ta foot --title zone-cli")
+        u("appzones run ta foot --title zone-cli")
         machine.wait_until_succeeds(
             "su -l alice -c " + shlex.quote(ENV + "${hyprland}/bin/hyprctl -i 0 -j clients | grep -q zone-cli"), timeout=60)
         c = window("zone-cli")
@@ -697,7 +697,7 @@ pkgs.testers.runNixOSTest {
         print("PASS  CLI-launched window tagged zone:ta, zone colour; the other open_early handler ran too")
 
         # from the launcher entry, as a launcher would run it (gio launch)
-        u("zone apps")
+        u("appzones apps")
         u(f"WAYLAND_DISPLAY={WL} gio launch ~/.local/share/zones/launcher/share/applications/zone-foot-tb.desktop")
         machine.wait_until_succeeds(
             "su -l alice -c " + shlex.quote(ENV + "${hyprland}/bin/hyprctl -i 0 -j clients | jq -e '.[] | select(.tags | index(\"zone:tb\"))'"),
@@ -711,7 +711,7 @@ pkgs.testers.runNixOSTest {
         c = window("host-win")
         assert not any(t.startswith("zone:") for t in c["tags"]), c
         print("PASS  host window not tagged")
-        assert u(f"HYPRLAND_INSTANCE_SIGNATURE={SIG} zone active").strip() in ("", "[ta]", "[tb]")
+        assert u(f"HYPRLAND_INSTANCE_SIGNATURE={SIG} appzones active").strip() in ("", "[ta]", "[tb]")
 
     with subtest("single-instance GTK apps: the zone's own bus"):
         def zone_windows(zone, cls):
@@ -727,22 +727,22 @@ pkgs.testers.runNixOSTest {
             return ws
 
         # the bug: on the host bus Thunar cannot own org.xfce.Thunar and exits;
-        # `zone run` says so, with its last output and the hint
-        rc, out = u("zone run --bus host ta -- thunar 2>&1", check=False)
+        # `appzones run` says so, with its last output and the hint
+        rc, out = u("appzones run --bus host ta -- thunar 2>&1", check=False)
         print(out)
         assert rc != 0 and "exited with status" in out and "could not own its D-Bus name" in out \
             and 'bus = "zone"' in out, out
-        print("PASS  on the host bus Thunar exits; zone run reports status, output and the bus hint")
+        print("PASS  on the host bus Thunar exits; appzones run reports status, output and the bus hint")
 
-        u("zone run ta thunar")
+        u("appzones run ta thunar")
         w1 = wait_windows("ta", "thunar", 1)
         pid = w1[0]["pid"]
-        out = u("zone logs ta")
+        out = u("appzones logs ta")
         assert "zone bus up" in out and "(bus zone)" in out, out
         print("PASS  Thunar on the zone's own bus: a window, tagged zone:ta")
         # an ad-hoc command matching [apps.thunar] gets its bus, and the
         # second Thunar hands over to the first
-        u("zone run ta -- thunar")
+        u("appzones run ta -- thunar")
         w2 = wait_windows("ta", "thunar", 2)
         assert {c["pid"] for c in w2} == {pid}, w2
         print("PASS  a second launch reuses the running Thunar (one process, two windows)")
@@ -754,15 +754,15 @@ pkgs.testers.runNixOSTest {
         machine.fail("su -l alice -c " + shlex.quote(ENV + "busctl --user status org.xfce.Thunar"))
         print("PASS  org.xfce.Thunar exists only on the zone's bus, never on the host's")
 
-        u("zone run ta text-editor")
+        u("appzones run ta text-editor")
         wait_windows("ta", "texteditor", 1)
         print("PASS  gnome-text-editor (GTK4, single instance) starts")
-        u("zone run ta eog")
+        u("appzones run ta eog")
         wait_windows("ta", "eog", 1)
         print("PASS  eog (single instance) starts")
 
         # bus = "none": no socket, no address
-        rc, out = u("zone run --wait --bus none ta -- bash -c "
+        rc, out = u("appzones run --wait --bus none ta -- bash -c "
                     + shlex.quote("ls -A /run/user/1000; test ! -e /run/user/1000/bus && test ! -e /run/user/1000/zone-bus "
                                   "&& [ -z \"$DBUS_SESSION_BUS_ADDRESS\" ] && test -S /run/user/1000/wayland-0 "
                                   "&& ! busctl --user list >/dev/null 2>&1 && test ! -e /run/zone/ctl.sock")
@@ -773,34 +773,34 @@ pkgs.testers.runNixOSTest {
 
         # --wait hands only pipes, files and /dev/null in: never a socket or a directory (openat on a
         # directory reaches host files); a TCP socket from bash's /dev/tcp as stdin
-        rc, out = u("exec 3<>/dev/tcp/127.0.0.1/8080; zone run --wait ta -- true <&3 2>&1", check=False)
+        rc, out = u("exec 3<>/dev/tcp/127.0.0.1/8080; appzones run --wait ta -- true <&3 2>&1", check=False)
         assert rc != 0 and "only pipes" in out, out
-        rc, out = u("zone run --wait ta -- true </tmp 2>&1", check=False)
+        rc, out = u("appzones run --wait ta -- true </tmp 2>&1", check=False)
         assert rc != 0, out
-        print("PASS  zone run --wait refuses a socket and a directory as stdin")
+        print("PASS  appzones run --wait refuses a socket and a directory as stdin")
 
         # an app that exits early: status and last output
-        rc, out = u("zone run ta -- sh -c 'echo early-boom >&2; exit 3' 2>&1", check=False)
+        rc, out = u("appzones run ta -- sh -c 'echo early-boom >&2; exit 3' 2>&1", check=False)
         print(out)
         assert rc == 3 and "exited with status 3" in out and "early-boom" in out and "hint" not in out, out
-        print("PASS  zone run reports an app that exits early")
-        rc, _ = u("ZONES_RUN_CHECK=0 zone run ta -- sh -c 'exit 4'", check=False)
+        print("PASS  appzones run reports an app that exits early")
+        rc, _ = u("ZONES_RUN_CHECK=0 appzones run ta -- sh -c 'exit 4'", check=False)
         assert rc == 0
-        assert "early-boom" in u("zone logs ta")
-        rc, out = u("timeout 3 zone logs -f ta", check=False)
+        assert "early-boom" in u("appzones logs ta")
+        rc, out = u("timeout 3 appzones logs -f ta", check=False)
         assert rc == 124 and "early-boom" in out, (rc, out)
-        print("PASS  zone logs [-f]")
+        print("PASS  appzones logs [-f]")
 
         # never owned on the host bus, whatever the TOML says
         for path in ["${badOwnToml "org.freedesktop.Notifications"}", "${badOwnToml "org.xfce.Thunar"}"]:
-            rc, out = u(f"ZONES_CONFIG={path} zone check 2>&1", check=False)
+            rc, out = u(f"ZONES_CONFIG={path} appzones check 2>&1", check=False)
             print(out)
             assert rc != 0 and "never granted" in out, out
         print("PASS  the validator refuses org.freedesktop.Notifications and org.xfce.Thunar as host-bus own")
 
     with subtest("Firefox in a zone keeps its own sandbox"):
-        u("zone run ta -- firefox --headless --no-remote http://198.51.100.2/")
-        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ps ta | grep -q contentproc"), timeout=120)
+        u("appzones run ta -- firefox --headless --no-remote http://198.51.100.2/")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ps ta | grep -q contentproc"), timeout=120)
         # one line per content process: "SECCOMP-MODE USERNS". The probe's own
         # bash also has "-contentproc" in its command line: skipped by name.
         out = ok("ta", "for p in $(pgrep -f -- '-contentproc' | grep -v -x $$); do "
@@ -815,44 +815,44 @@ pkgs.testers.runNixOSTest {
         assert len(sandboxed) >= 1, f"no content process under seccomp in its own user namespace: {out}"
         print("PASS  content processes under seccomp in their own user namespace")
 
-    with subtest("zone shell: a pty inside"):
+    with subtest("appzones shell: a pty inside"):
         out = u("${pkgs.python3}/bin/python3 ${shellDriver} ta")
         print(out)
         assert "ZONE_IS=ta" in out and "/dev/pts/" in out, out
 
     with subtest("stale config: warn, and run --restart restarts an idle zone"):
-        u("zone up tb")
+        u("appzones up tb")
         old = invocation("tb")
         u("sed -i 's/#89b4fa/#cba6f7/' ~/.config/zones/zones.toml")
-        u("zone run tb -- true 2>&1 | grep -q 'zone restart tb'")
+        u("appzones run tb -- true 2>&1 | grep -q 'appzones restart tb'")
         print("PASS  a stale zone warns")
         # tb has a foot window from the launcher test: --restart must refuse
-        u("zone run --restart tb -- true 2>&1 | tee /dev/stderr | grep -q 'not restarting'")
+        u("appzones run --restart tb -- true 2>&1 | tee /dev/stderr | grep -q 'not restarting'")
         u("pkill -u alice -x foot || true")
-        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "[ -z \"$(zone ps tb)\" ]"), timeout=30)
-        u("zone run --restart tb -- true 2>&1 | grep -q 'restarting it'")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "[ -z \"$(appzones ps tb)\" ]"), timeout=30)
+        u("appzones run --restart tb -- true 2>&1 | grep -q 'restarting it'")
         assert invocation("tb") != old
         print("PASS  run --restart restarted the idle stale zone")
 
     with subtest("stop, restart, crash"):
         old = invocation("ta")
-        u("zone restart ta")
-        u("zone ping ta")
+        u("appzones restart ta")
+        u("appzones ping ta")
         assert invocation("ta") != old
         print("PASS  restart")
         machine.succeed("pkill -9 -u alice -f 'zone_init.py' ")
-        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "zone ping ta"), timeout=60)
-        n = u("systemctl --user show zone@ta.service -p NRestarts --value").strip()
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ping ta"), timeout=60)
+        n = u("systemctl --user show appzones@ta.service -p NRestarts --value").strip()
         assert int(n) >= 1, n
         print(f"PASS  crash: zone-init killed, unit restarted (NRestarts={n})")
-        u("zone run ta -- sleep 300")
-        u("zone stop --all")
+        u("appzones run ta -- sleep 300")
+        u("appzones stop --all")
         machine.fail("pgrep -u alice -f 'zone_init.py|sleep 300|xdg-dbus-proxy|zone-wayland|pasta|zone-bus/session.conf|thunar'")
         print("PASS  stop --all leaves no zone process")
 
-    with subtest("zone check --probe"):
-        print(u("zone check --probe ta"))
-        u("zone stop ta")
+    with subtest("appzones check --probe"):
+        print(u("appzones check --probe ta"))
+        u("appzones stop ta")
 
     with subtest("Firefox in two zones: each zone's own remote name"):
         def ff_windows(zone):
@@ -865,9 +865,9 @@ pkgs.testers.runNixOSTest {
                                   f' and ({cond}))] | length >= 1')),
                 timeout=180)
 
-        u("zone run ta firefox about:blank")
+        u("appzones run ta firefox about:blank")
         wait_ff("ta", "true")
-        u("zone run tc firefox about:blank")
+        u("appzones run tc firefox about:blank")
         wait_ff("tc", "true")
         print(json.dumps(ff_windows("ta") + ff_windows("tc"), indent=1))
         names = u("busctl --user list --acquired --no-pager")
@@ -879,18 +879,18 @@ pkgs.testers.runNixOSTest {
         # a second launch in tc: handed to tc's Firefox (it exits, no profile
         # lock), never ta's. The page's title shows where it opened.
         ok("tc", "echo '<html><title>second-launch</title>x</html>' > ~/second.html", "a page in tc's home")
-        u("zone run tc firefox file:///home/alice/second.html")
+        u("appzones run tc firefox file:///home/alice/second.html")
         try:
             wait_ff("tc", '.title | contains("second-launch")')
         finally:
-            print(u("zone ps tc"))
+            print(u("appzones ps tc"))
             print(json.dumps(ff_windows("ta") + ff_windows("tc"), indent=1))
-            print(u("zone logs tc | tail -40"))
+            print(u("appzones logs tc | tail -40"))
         machine.wait_until_succeeds("su -l alice -c " + shlex.quote(
-            ENV + "[ $(zone ps tc | grep -v -e contentproc -e crashhelper | grep -c 'firefox') -le 1 ]"), timeout=30)
+            ENV + "[ $(appzones ps tc | grep -v -e contentproc -e crashhelper | grep -c 'firefox') -le 1 ]"), timeout=30)
         assert {c["pid"] for c in ff_windows("tc")} == tc_pids, ff_windows("tc")
         assert [(c["pid"], c["title"]) for c in ff_windows("ta")] == ta_before, ff_windows("ta")
         print("PASS  a second launch in tc opens in tc's Firefox, never ta's")
-        u("zone stop --all")
+        u("appzones stop --all")
   '';
 }

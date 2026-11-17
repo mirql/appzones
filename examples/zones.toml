@@ -1,13 +1,13 @@
 # ~/.config/zones/zones.toml: an example with every key (reference:
 # docs/guide.md "Configuration reference").
-# Edited by hand. `zone check` validates it. Changes apply at the next
-# `zone restart <zone>`; `zone run` warns when a running zone is stale, and
-# `zone run --restart` restarts a zone with no app in it.
+# Edited by hand. `appzones check` validates it. Changes apply at the next
+# `appzones restart <zone>`; `appzones run` warns when a running zone is stale, and
+# `appzones run --restart` restarts a zone with no app in it.
 # Each zone starts with a fresh home in ~/.local/share/zones/<zone>/home: no
 # app data moves in from the host, host apps stay as they are.
 version = 1
-requires = 4                   # the zones release this file needs (`zone check` prints its own); an older
-                               # `zone` then says "update appzones" instead of "unknown key"
+requires = 4                   # the zones release this file needs (`appzones check` prints its own); an older
+                               # `appzones` then says "update appzones" instead of "unknown key"
 
 [defaults]                     # every zone starts from these; a zone overrides any key
 network     = "internet"       # none | internet | host
@@ -53,7 +53,7 @@ packages  = ["slack"]
 nix_ld    = true               # prebuilt Linux binaries (agent CLIs, release downloads) run here
 tmp       = "disk"             # /tmp and /var/tmp kept across restarts, at ~/.local/share/zones/work/{tmp,var-tmp}
 # devices = ["gpu", "audio", "mic", "screencast", "usb"]
-# usb     = ["abcd"]           # only these USB devices (by vendor id); after a replug: zone restart work
+# usb     = ["abcd"]           # only these USB devices (by vendor id); after a replug: appzones restart work
 
 [zones.untrusted]              # links and files you do not trust, one-off apps
 colour    = "#f38ba8"          # red
@@ -114,7 +114,7 @@ zones   = ["daily", "untrusted"]
 
 # Single-instance apps own a bus name (org.xfce.Thunar): on the host bus a
 # zone never may, so they get the zone's own bus (no portals there; the
-# second launch hands over to the first). `zone run daily -- thunar` uses it too.
+# second launch hands over to the first). `appzones run daily -- thunar` uses it too.
 [apps.thunar]
 command = ["thunar"]
 desktop = "thunar.desktop"

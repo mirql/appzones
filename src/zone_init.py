@@ -24,7 +24,7 @@ Listens on /run/zone/ctl.sock. One JSON request line per connection:
   {"op": "resize", "pid": N, "rows": R, "cols": C}   resize a shell's pty
   {"op": "mounts"}                       -> {"ok": true, "mounts": [[path, "ro"|"rw"], ...]} under /mnt/host
   {"op": "busy", "path": "/mnt/host/N"}  -> {"ok": true, "procs": [[pid, cmdline, what], ...]}: what holds
-        a runtime mount (cwd, root, exe, open files, mapped files), for `zone umount`
+        a runtime mount (cwd, root, exe, open files, mapped files), for `appzones umount`
 
 Anything inside the zone can reach this socket too; it can only start
 processes in its own zone, which it can do anyway.

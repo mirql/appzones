@@ -10,11 +10,11 @@ home, other zones or the host's sockets. You declare zones in one TOML file
 and they run as systemd user units.
 
 ```bash
-zone run daily firefox          # start the zone if needed, launch Firefox in it
-zone run work -- chromium       # any command
-zone shell untrusted            # a shell inside
-zone mount work ~/src/thing     # share a folder with a running zone, until umount
-zone list                       # zones, state, network, devices, apps running
+appzones run daily firefox          # start the zone if needed, launch Firefox in it
+appzones run work -- chromium       # any command
+appzones shell untrusted            # a shell inside
+appzones mount work ~/src/thing     # share a folder with a running zone, until umount
+appzones list                       # zones, state, network, devices, apps running
 ```
 
 ```toml
@@ -62,7 +62,7 @@ programs.appzones.enable = true;
 ```
 
 Then copy `examples/minimal.toml` to `~/.config/zones/zones.toml` (or run
-`zone new daily -y`), and run `zone check`. You need x86_64 NixOS and a
+`appzones new daily -y`), and run `appzones check`. You need x86_64 NixOS and a
 Wayland compositor with `wp_security_context_v1`; window tags and border
 colours need Hyprland. Other distributions aren't packaged yet.
 

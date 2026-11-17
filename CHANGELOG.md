@@ -1,9 +1,21 @@
 # Changelog
 
-The minor version follows the config release (`requires = N` in
-`zones.toml`, `RELEASE` in `src/zonecfg.py`).
+The config schema has its own release number (`requires = N` in
+`zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
 
 ## Unreleased
+
+## 0.5.0
+
+- **Renamed the command** `zone` to `appzones` (`appzones run daily
+  firefox`), the same name as the project, so it is not mixed up with other
+  "zone" tools. The user units are now `appzones@NAME.service`,
+  `appzones-autostart.service` and `appzones.slice`; update a bar module
+  (`appzones active --follow --json`) and the Hyprland hook
+  (`contrib/hyprland/zones.lua` matches the new cgroup path). Unchanged:
+  `~/.config/zones/zones.toml`, `~/.local/share/zones/` (zone homes),
+  `/etc/zones/denied-paths`, the `zone:NAME` window tag, `ZONES_*`
+  variables, config release 4.
 
 ## 0.4.0
 

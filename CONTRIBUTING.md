@@ -7,7 +7,7 @@ test.
 
 ## Before you start
 
-- **Bugs:** open an issue with the bug template. Include `zone check`
+- **Bugs:** open an issue with the bug template. Include `appzones check`
   output and the relevant part of your `zones.toml`.
 - **Features and new config keys:** open an issue first, so we can agree
   on the shape before you write code.
@@ -35,10 +35,10 @@ VM test.
 
 | path | what |
 |---|---|
-| `src/zone.py` | the `zone` CLI and the supervisor (`zone _supervise`, the unit's ExecStart) |
+| `src/zone.py` | the `zone` CLI and the supervisor (`appzones _supervise`, the unit's ExecStart) |
 | `src/zone_init.py` | the agent inside a zone (PID 2 under bwrap) |
 | `src/zonecfg.py` | the `zones.toml` schema, the validator and the never-lists |
-| `src/zone_mount_helper.py` | the root step of `zone mount`, run through sudo |
+| `src/zone_mount_helper.py` | the root step of `appzones mount`, run through sudo |
 | `src/zone-wayland/` | the `wp_security_context_v1` helper (C) |
 | `nix/package.nix`, `nix/module.nix` | the package and the NixOS module |
 | `tests/vm.nix` | the NixOS VM test |
@@ -53,9 +53,8 @@ VM test.
   should assert that something is **refused**, not only that the happy
   path works.
 - **New config key or value.** Bump `RELEASE` in `src/zonecfg.py`, record
-  the key in `SINCE`, raise the package version's minor to match, and
-  document it in `docs/guide.md` ("Configuration reference") and
-  `examples/zones.toml`.
+  the key in `SINCE`, and document it in `docs/guide.md` ("Configuration
+  reference") and `examples/zones.toml`.
 - **Never-lists** (paths, D-Bus names, environment) only grow by default.
   Removing an entry needs an explicit reason in the PR.
 - **`zone_mount_helper.py` runs as root.** Keep it small, keep it

@@ -1,41 +1,41 @@
-"""zone: app zones on this host (appzones, https://github.com/mirql/appzones).
+"""appzones: app zones on this host (appzones, https://github.com/mirql/appzones).
 
-    zone list                          zones: state, network, dns, devices, apps running, colour
-    zone which ZONE                    every setting in effect and where it came from
-    zone run [--restart] [--bus B] ZONE APP [ARGS...]
-    zone run [--restart] [--bus B] [--wait] ZONE -- CMD [ARGS...]
-                                       start the zone if needed, launch inside it.
-                                       --restart: if zones.toml changed for ZONE and no
-                                       app runs in it, restart it first.
-                                       --bus host|zone|none: the session bus the app gets
-                                       (default: the app's `bus` in [apps], also for
-                                       `-- CMD` when CMD is a declared app's command;
-                                       else the zone's `bus`).
-                                       --wait: CMD gets this stdin/stdout/stderr (pipes
-                                       or files, never a tty) and its exit code is ours.
-                                       Without --wait, `run` watches the app for a few
-                                       seconds ($ZONES_RUN_CHECK, 0: not at all) and, if
-                                       it exits with an error, prints its last output.
-    zone shell ZONE                    an interactive shell inside (pty in the zone)
-    zone ps ZONE | logs ZONE [-f]      processes in the zone | its journal (-f: follow)
-    zone up|stop|restart ZONE|--all
-    zone new NAME [-y]                 print a safe zone block; append it to zones.toml with -y
-    zone check [--probe ZONE]          validate zones.toml; --probe also runs isolation probes in ZONE
-    zone apps                          (re)write launcher entries "App (zone)" from [apps]
-    zone active [--follow] [--json]    "[zone]" for Hyprland's active window (for bars;
-                                       --json: Waybar custom-module JSON)
-    zone mount ZONE HOST-DIR [--ro] [--as NAME]
-                                       HOST-DIR appears at /mnt/host/NAME in the running
-                                       zone (NAME: the folder's name), until umount or
-                                       the zone stops; same never-list as binds
-    zone umount ZONE NAME [--lazy]     remove it; busy: lists what holds it (--lazy:
-                                       detach now, open files keep it until they close)
-    zone mounts ZONE                   what is mounted in the zone
+    appzones list                          zones: state, network, dns, devices, apps running, colour
+    appzones which ZONE                    every setting in effect and where it came from
+    appzones run [--restart] [--bus B] ZONE APP [ARGS...]
+    appzones run [--restart] [--bus B] [--wait] ZONE -- CMD [ARGS...]
+                                           start the zone if needed, launch inside it.
+                                           --restart: if zones.toml changed for ZONE and no
+                                           app runs in it, restart it first.
+                                           --bus host|zone|none: the session bus the app gets
+                                           (default: the app's `bus` in [apps], also for
+                                           `-- CMD` when CMD is a declared app's command;
+                                           else the zone's `bus`).
+                                           --wait: CMD gets this stdin/stdout/stderr (pipes
+                                           or files, never a tty) and its exit code is ours.
+                                           Without --wait, `run` watches the app for a few
+                                           seconds ($ZONES_RUN_CHECK, 0: not at all) and, if
+                                           it exits with an error, prints its last output.
+    appzones shell ZONE                    an interactive shell inside (pty in the zone)
+    appzones ps ZONE | logs ZONE [-f]      processes in the zone | its journal (-f: follow)
+    appzones up|stop|restart ZONE|--all
+    appzones new NAME [-y]                 print a safe zone block; append it to zones.toml with -y
+    appzones check [--probe ZONE]          validate zones.toml; --probe also runs isolation probes in ZONE
+    appzones apps                          (re)write launcher entries "App (zone)" from [apps]
+    appzones active [--follow] [--json]    "[zone]" for Hyprland's active window (for bars;
+                                           --json: Waybar custom-module JSON)
+    appzones mount ZONE HOST-DIR [--ro] [--as NAME]
+                                           HOST-DIR appears at /mnt/host/NAME in the running
+                                           zone (NAME: the folder's name), until umount or
+                                           the zone stops; same never-list as binds
+    appzones umount ZONE NAME [--lazy]     remove it; busy: lists what holds it (--lazy:
+                                           detach now, open files keep it until they close)
+    appzones mounts ZONE                   what is mounted in the zone
 
 Internal (systemd and the supervisor):
-    zone _supervise ZONE               the zone itself (zone@ZONE.service's ExecStart)
-    zone _netsetup RULES INFO -- CMD   load nft RULES in this netns, open INFO as fd 3, exec CMD
-    zone _autostart                    write launcher entries, start zones with autostart = true
+    appzones _supervise ZONE               the zone itself (appzones@ZONE.service's ExecStart)
+    appzones _netsetup RULES INFO -- CMD   load nft RULES in this netns, open INFO as fd 3, exec CMD
+    appzones _autostart                    write launcher entries, start zones with autostart = true
 
 Config: ~/.config/zones/zones.toml ($ZONES_CONFIG). State: ~/.local/share/zones.
 Guide: docs/guide.md.
@@ -94,12 +94,12 @@ def tool(name: str) -> str:
 
 
 def die(msg: str, code: int = 1):
-    print(f"zone: {msg}", file=sys.stderr)
+    print(f"appzones: {msg}", file=sys.stderr)
     sys.exit(code)
 
 
 def warn(msg: str) -> None:
-    print(f"zone: {msg}", file=sys.stderr)
+    print(f"appzones: {msg}", file=sys.stderr)
 
 
 def load_cfg(quiet: bool = False) -> zonecfg.Config:
@@ -397,7 +397,7 @@ def usb_binds(ids: list[str], root: str = "/") -> tuple[list[str], list[str]]:
     Plus /sys/bus/usb (libusb enumerates there), and /sys/class/hidraw with a
     hidraw match: listings only, their links dangle for any device not bound.
     Never all of /dev/bus/usb or /dev/hidraw*, never /dev/uinput. A replug
-    changes the device number: `zone restart` after it. ROOT: tests only."""
+    changes the device number: `appzones restart` after it. ROOT: tests only."""
     def r(p: str) -> Path:
         return Path(root) / p.lstrip("/")
 
@@ -578,7 +578,7 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
         a += ["--tmpfs", "/tmp"]
     a += ["--tmpfs", "/run", "--perms", "0700", "--tmpfs", ZRT, "--dir", "/run/zone",
           "--ro-bind", "/nix/store", "/nix/store"]
-    # runtime mounts (zone mount): read-only here, so the zone cannot plant
+    # runtime mounts (appzones mount): read-only here, so the zone cannot plant
     # anything in it; a host mount below .../mnt propagates in (bwrap makes
     # its mounts slaves of the host's, and /home is shared on the host)
     a += ["--ro-bind", str(zdir / "mnt"), "/mnt/host"]
@@ -631,7 +631,7 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
             a += ub
         else:
             warn(f"usb: no device matches {', '.join(s['usb'])} now; the zone starts without one "
-                 f"(plug it in, then `zone restart {z.name}`)")
+                 f"(plug it in, then `appzones restart {z.name}`)")
     a += ["--ro-bind-try", "/sys/devices/system/cpu", "/sys/devices/system/cpu"]
     a += ["--bind", str(zrt / "ctl"), "/run/zone"]
     if (zrt / "ctl/bin").is_dir():
@@ -1070,9 +1070,9 @@ def up(name: str, quiet: bool = False) -> None:
     if use_systemd():
         if not quiet:
             warn(f"starting zone {name}")
-        r = systemctl("start", f"zone@{name}.service", check=False)
+        r = systemctl("start", f"appzones@{name}.service", check=False)
         if r.returncode != 0:
-            die(f"zone {name} failed to start; see `zone logs {name}`\n{r.stderr.strip()}")
+            die(f"zone {name} failed to start; see `appzones logs {name}`\n{r.stderr.strip()}")
     else:
         RT.mkdir(parents=True, exist_ok=True)
         log = open(RT / f"{name}.log", "ab")
@@ -1082,7 +1082,7 @@ def up(name: str, quiet: bool = False) -> None:
         if ping(name):
             return
         time.sleep(0.05)
-    die(f"zone {name} did not answer within 10 s; see `zone logs {name}`")
+    die(f"zone {name} did not answer within 10 s; see `appzones logs {name}`")
 
 
 def stale(name: str, z: zonecfg.Zone) -> bool:
@@ -1112,7 +1112,7 @@ def run(name: str, words: list[str], wait: bool, restart: bool, bus: str | None 
         die(f"no zone {name!r} in {CONFIG}")
     z = cfg.zones[name]
     if not words:
-        die("usage: zone run ZONE APP [ARGS...] | zone run ZONE -- CMD [ARGS...]")
+        die("usage: appzones run ZONE APP [ARGS...] | appzones run ZONE -- CMD [ARGS...]")
     if words[0] == "--":
         argv = words[1:]
         if not argv:
@@ -1123,9 +1123,9 @@ def run(name: str, words: list[str], wait: bool, restart: bool, bus: str | None 
         try:
             base = zonecfg.resolve_app(cfg, name, words[0])
         except ValueError as e:
-            die(f"{e}; to run it anyway: zone run {name} -- {' '.join(words)}")
+            die(f"{e}; to run it anyway: appzones run {name} -- {' '.join(words)}")
         if base is None:
-            die(f"no app {words[0]!r} in [apps]; to run a command: zone run {name} -- {' '.join(words)}")
+            die(f"no app {words[0]!r} in [apps]; to run a command: appzones run {name} -- {' '.join(words)}")
         argv = base + words[1:]
     bus = bus or zonecfg.app_bus(cfg, name, app)
     if bus == "none" and not z.settings["userns"]:
@@ -1141,9 +1141,9 @@ def run(name: str, words: list[str], wait: bool, restart: bool, bus: str | None 
             restart_zone(name)
         elif restart:
             warn(f"zones.toml changed for {name}, but {n} process(es) run in it; not restarting "
-                 f"(`zone restart {name}` applies it)")
+                 f"(`appzones restart {name}` applies it)")
         else:
-            warn(f"zones.toml changed for {name}; `zone restart {name}` (or `zone run --restart`) applies it")
+            warn(f"zones.toml changed for {name}; `appzones restart {name}` (or `appzones run --restart`) applies it")
     up(name, quiet=wait)
     cwd = os.getcwd()
     cwd = cwd if any(Path(cwd).is_relative_to(Path(zonecfg.expand(b["path"]))) for b in z.settings["binds"]) else None
@@ -1152,7 +1152,7 @@ def run(name: str, words: list[str], wait: bool, restart: bool, bus: str | None 
     if wait:
         fds = [0, 1, 2]
         if any(os.isatty(f) for f in fds):
-            die("--wait passes stdin/stdout/stderr into the zone and refuses a tty; use pipes, or `zone shell`")
+            die("--wait passes stdin/stdout/stderr into the zone and refuses a tty; use pipes, or `appzones shell`")
         bad = [n for n, f in zip(("stdin", "stdout", "stderr"), fds) if not stdio_fd_ok(f)]
         if bad:
             die(f"--wait passes only pipes, regular files and /dev/null into the zone; {', '.join(bad)} is "
@@ -1223,8 +1223,8 @@ def watch(name: str, pid: int, argv: list[str], bus: str, app: str | None) -> in
                  f"an [apps] entry for it with bus = \"zone\" (command = [\"{label}\"])")
         warn(f"hint: {label} could not own its D-Bus name. A single-instance app needs one, and a zone never "
              f"owns names on the host bus. Give it the zone's own bus: add {where} to {CONFIG}, "
-             f"or once: zone run --bus zone {name} -- {' '.join(argv)}")
-    print(f"  (the whole log: zone logs {name})", file=sys.stderr)
+             f"or once: appzones run --bus zone {name} -- {' '.join(argv)}")
+    print(f"  (the whole log: appzones logs {name})", file=sys.stderr)
     return code if code > 0 else 1
 
 
@@ -1232,7 +1232,7 @@ def shell(name: str) -> int:
     import termios
     import tty
     if not os.isatty(0):
-        die("zone shell needs a terminal (for a command with pipes: zone run --wait ZONE -- CMD)")
+        die("appzones shell needs a terminal (for a command with pipes: appzones run --wait ZONE -- CMD)")
     up(name)
     cols, rows = shutil.get_terminal_size()
     s = request(name, {"op": "shell", "rows": rows, "cols": cols, "term": os.environ.get("TERM", "xterm-256color")},
@@ -1279,7 +1279,7 @@ def shell(name: str) -> int:
 
 def stop_zone(name: str) -> None:
     if use_systemd():
-        systemctl("stop", f"zone@{name}.service")
+        systemctl("stop", f"appzones@{name}.service")
         return
     out = subprocess.run(["pgrep", "-f", f"zone.py _supervise {name}$"], capture_output=True, text=True).stdout.split()
     for p in out:
@@ -1292,7 +1292,7 @@ def stop_zone(name: str) -> None:
 
 def restart_zone(name: str) -> None:
     if use_systemd():
-        systemctl("restart", f"zone@{name}.service")
+        systemctl("restart", f"appzones@{name}.service")
         for _ in range(200):
             if ping(name):
                 return
@@ -1332,7 +1332,7 @@ def which(name: str) -> int:
 
 
 NEW_BLOCK = """
-[zones.{name}]                 # added by `zone new`: internet only, gpu, nothing from your home
+[zones.{name}]                 # added by `appzones new`: internet only, gpu, nothing from your home
 colour    = "{colour}"
 network   = "internet"
 dns       = "host"
@@ -1341,7 +1341,7 @@ binds     = []
 """
 
 
-NEW_FILE = """# ~/.config/zones/zones.toml (written by `zone new`; reference: appzones docs/guide.md)
+NEW_FILE = """# ~/.config/zones/zones.toml (written by `appzones new`; reference: appzones docs/guide.md)
 version = 1
 """
 
@@ -1354,7 +1354,7 @@ def new(name: str, write: bool) -> int:
         if name in cfg.zones:
             die(f"zone {name!r} already exists")
         print(new_block(cfg, name).strip())
-        print(f"\n(not written; `zone new {name} -y` appends it to {CONFIG})", file=sys.stderr)
+        print(f"\n(not written; `appzones new {name} -y` appends it to {CONFIG})", file=sys.stderr)
         return 0
     real = Path(os.path.realpath(CONFIG))  # a stowed link: write where it points
     real.parent.mkdir(parents=True, exist_ok=True)
@@ -1473,7 +1473,7 @@ def apps() -> int:
             lines = ["[Desktop Entry]", "Type=Application", f"Name={name} ({zn})",
                      f"GenericName={host.get('GenericName', name)} in zone {zn}",
                      f"Comment=Runs in app zone {zn} ({z.settings['network']}, colour {z.settings['colour']})",
-                     f"Exec=zone run {zn} {aid} %U", f"Icon={icon}", "Terminal=false",
+                     f"Exec=appzones run {zn} {aid} %U", f"Icon={icon}", "Terminal=false",
                      f"Keywords=zone;{zn};{aid};", f"X-Zone={zn}"]
             for k in ("Categories", "MimeType", "StartupNotify"):
                 if host.get(k):
@@ -1491,7 +1491,7 @@ def autostart() -> int:
     for n, z in cfg.zones.items():
         if z.settings["autostart"]:
             print(f"autostart: zone {n}")
-            systemctl("start", "--no-block", f"zone@{n}.service", check=False)
+            systemctl("start", "--no-block", f"appzones@{n}.service", check=False)
     return 0
 
 
@@ -1536,7 +1536,7 @@ def logs(name: str, follow: bool) -> int:
     load_zone(name)
     if not use_systemd():
         os.execvp("tail", ["tail", "-n", "200", *(["-F"] if follow else []), str(RT / f"{name}.log")])
-    os.execvp("journalctl", ["journalctl", "--user", "-u", f"zone@{name}.service", "-n", "200", "--no-pager",
+    os.execvp("journalctl", ["journalctl", "--user", "-u", f"appzones@{name}.service", "-n", "200", "--no-pager",
                              *(["-f"] if follow else [])])
 
 
@@ -1552,7 +1552,7 @@ def zone_request(name: str, req: dict) -> dict:
 
 
 def mounts_file(name: str) -> Path:
-    return RT / name / "mounts.json"  # sources, for `zone mounts`; gone when the zone restarts
+    return RT / name / "mounts.json"  # sources, for `appzones mounts`; gone when the zone restarts
 
 
 def read_mounts(name: str) -> dict:
@@ -1579,7 +1579,7 @@ def helper_failed(r: subprocess.CompletedProcess, what: str):
 def mount(name: str, path: str, ro: bool, as_name: str | None) -> int:
     load_zone(name)
     if not ping(name):
-        die(f"zone {name} is not running; a mount lives only while the zone runs (`zone up {name}` first)")
+        die(f"zone {name} is not running; a mount lives only while the zone runs (`appzones up {name}` first)")
     err = zonecfg.mount_source_error(path)
     if err:
         die(f"refused: {err}")
@@ -1588,7 +1588,7 @@ def mount(name: str, path: str, ro: bool, as_name: str | None) -> int:
     if not zonecfg.MOUNT_NAME_RE.match(nm):
         die(f"{nm!r} cannot be a mount name (letters, digits, . _ -, not first; at most 64): give one with --as NAME")
     if nm in host_mounts(name):
-        die(f"/mnt/host/{nm} is already mounted in zone {name} (zone mounts {name})")
+        die(f"/mnt/host/{nm} is already mounted in zone {name} (appzones mounts {name})")
     target = STATE / name / "mnt" / nm
     target.mkdir(exist_ok=True)
     r = helper("mount", name, nm, src, *(["--ro"] if ro else []))
@@ -1604,23 +1604,23 @@ def mount(name: str, path: str, ro: bool, as_name: str | None) -> int:
     inside = zone_request(name, {"op": "mounts"})
     if inside and f"/mnt/host/{nm}" not in [p for p, _ in inside.get("mounts", [])]:
         warn(f"mounted on the host, but zone {name} does not see /mnt/host/{nm} (did the zone start before release "
-             f"3? `zone restart {name}`)")
+             f"3? `appzones restart {name}`)")
     print(f"{src} is /mnt/host/{nm} in zone {name} ({'read-only' if ro else 'read-write'}), until "
-          f"`zone umount {name} {nm}` or the zone stops")
+          f"`appzones umount {name} {nm}` or the zone stops")
     return 0
 
 
 def umount(name: str, nm: str, lazy: bool) -> int:
     load_zone(name)
     if nm not in host_mounts(name):
-        die(f"nothing is mounted at /mnt/host/{nm} in zone {name} (zone mounts {name})")
+        die(f"nothing is mounted at /mnt/host/{nm} in zone {name} (appzones mounts {name})")
     r = helper("umount", name, nm, *(["--lazy"] if lazy else []))
     if r.returncode == 3:
         busy = zone_request(name, {"op": "busy", "path": f"/mnt/host/{nm}"}).get("procs", [])
         warn(f"/mnt/host/{nm} is busy in zone {name}" + (":" if busy else " (zone-init could not say by what)"))
         for pid, cmd, what in busy:
             print(f"  pid {pid} {cmd[:60]}: {what}", file=sys.stderr)
-        die(f"close those (or stop the app), or detach it now: zone umount --lazy {name} {nm}")
+        die(f"close those (or stop the app), or detach it now: appzones umount --lazy {name} {nm}")
     if r.returncode != 0:
         helper_failed(r, "umount")
     try:
@@ -1650,7 +1650,7 @@ def mounts(name: str) -> int:
     for nm in names:
         rows.append((nm, modes.get(nm, m.get(nm, {}).get("mode", "?")), m.get(nm, {}).get("source", "?")))
     if len(rows) == 1:
-        print(f"nothing mounted in zone {name} (zone mount {name} DIR)")
+        print(f"nothing mounted in zone {name} (appzones mount {name} DIR)")
         return 0
     w = [max(len(r[i]) for r in rows) for i in range(3)]
     for row in rows:
@@ -1666,7 +1666,7 @@ def main(argv: list[str]) -> int:
 
     def one() -> str:
         if not rest:
-            die(f"usage: zone {cmd} ZONE")
+            die(f"usage: appzones {cmd} ZONE")
         return rest[0]
 
     def each(fn) -> int:
@@ -1721,11 +1721,11 @@ def main(argv: list[str]) -> int:
                     flags[f] = True
         take(rest)
         if not rest:
-            die("usage: zone run [--restart] [--bus host|zone|none] [--wait] ZONE APP|-- CMD...")
+            die("usage: appzones run [--restart] [--bus host|zone|none] [--wait] ZONE APP|-- CMD...")
         name, words = rest[0], rest[1:]
         take(words)
         if flags["--wait"] and words[:1] != ["--"]:
-            die("--wait runs a command: zone run --wait ZONE -- CMD...")
+            die("--wait runs a command: appzones run --wait ZONE -- CMD...")
         return run(name, words, flags["--wait"], flags["--restart"], flags["--bus"])
     if cmd == "new":
         return new(one(), "-y" in rest[1:])
@@ -1759,7 +1759,7 @@ def main(argv: list[str]) -> int:
             return umount(words[0], words[1], opts["--lazy"])
         if cmd == "mounts" and len(words) == 1:
             return mounts(words[0])
-        die("usage: zone mount ZONE HOST-DIR [--ro] [--as NAME] | zone umount ZONE NAME [--lazy] | zone mounts ZONE")
+        die("usage: appzones mount ZONE HOST-DIR [--ro] [--as NAME] | appzones umount ZONE NAME [--lazy] | appzones mounts ZONE")
     print(__doc__, file=sys.stderr)
     return 2
 
