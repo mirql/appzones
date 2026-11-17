@@ -20,6 +20,12 @@ build:
 test-vm:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.vm
 
+# Record the README's terminal demos in a VM: docs/demo-*.gif, docs/demo-*.cast (needs /dev/kvm)
+demo:
+    nice -n 19 nix build -L -o result-demo .#demo
+    install -m 644 result-demo/* docs/
+    rm result-demo
+
 # Format the Nix files
 fmt:
     nix fmt

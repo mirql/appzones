@@ -41,6 +41,14 @@
         }
       );
 
+      # The README's terminal demos, recorded in a VM: `just demo`
+      legacyPackages = forAll (pkgs: {
+        demo = import ./tests/demo.nix {
+          inherit pkgs;
+          module = self.nixosModules.default;
+        };
+      });
+
       devShells = forAll (pkgs: {
         default = pkgs.mkShell {
           packages = [

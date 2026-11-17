@@ -7,11 +7,25 @@
 
 <p align="center"><b>Long-lived sandboxes for your desktop apps, dev tools and AI agents on Linux.</b></p>
 
+<p align="center">
+  <a href="https://github.com/mirql/appzones/releases"><img alt="Release" src="https://img.shields.io/github/v/release/mirql/appzones"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <a href="#install"><img alt="NixOS flake and module" src="https://img.shields.io/badge/NixOS-flake%20%2B%20module-5277C3?logo=nixos&logoColor=white"></a>
+  <a href="docs/guide.md"><img alt="Wayland" src="https://img.shields.io/badge/Wayland-wp__security__context__v1-FFBC00"></a>
+</p>
+
 An app zone is a place your apps live in: `daily` for messengers, `work`
 for Slack and the work browser, `untrusted` for links you don't trust,
 `dev` for `npm install`. Each zone has its own home, its own network rules
 and its own window border colour. You declare them in one TOML file; they
 run as systemd user units.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/concept/concept-dark.svg">
+    <img alt="A link opens in the untrusted zone. Its attempts to read ~/.ssh and ~/Documents, reach the host's dev server, the other zones and the LAN are refused; the internet is reachable." src="assets/concept/concept-light.svg" width="760">
+  </picture>
+</p>
 
 ```bash
 appzones run daily firefox        # start the zone if needed, launch Firefox in it
@@ -42,6 +56,10 @@ appzones puts a wall between those things, without a VM per app:
   store: no second runtime, no repackaging.
 - **You can see where a window lives.** Each zone's windows carry its
   border colour, set from the process's cgroup, which the app can't fake.
+
+![A terminal: the host has an SSH key; inside the untrusted zone the home is empty, the key is not there, a LAN address is refused and the internet works](docs/demo-untrusted.gif)
+
+<sub>Recorded in a NixOS VM by <code>just demo</code> (<a href="tests/demo.nix">tests/demo.nix</a>): the commands and their output are real, the yellow lines are narration.</sub>
 
 ## Recipes
 
@@ -104,6 +122,8 @@ The agent's login, its tokens and its history stay in the zone's home. It
 can't read `~/.ssh` or your other projects, has no `SSH_AUTH_SOCK`, and
 can't reach your LAN or the host's own services.
 
+![A terminal: the host has three projects and a dev server on localhost:3000; inside the agents zone only ~/src/my-app exists, ssh-add finds no agent, and localhost:3000 is refused](docs/demo-agents.gif)
+
 > [!CAUTION]
 > A **writable** bind is writable from the zone: it can change anything in
 > that folder, including files your host runs later, such as `.git/hooks`,
@@ -134,6 +154,8 @@ appzones run untrusted -- evince /mnt/host/dl/invoice.pdf
 appzones umount untrusted dl
 ```
 
+![A terminal: ~/Downloads is mounted read-only into the untrusted zone; inside, writing to invoice.pdf fails with Read-only file system; then it is unmounted](docs/demo-file.gif)
+
 > [!TIP]
 > `appzones new NAME` prints a safe zone block, and `-y` appends it to your
 > config. `appzones check --probe ZONE` runs isolation probes inside a zone.
@@ -156,6 +178,24 @@ its own:
   managers, virtual input and global shortcuts from zone clients.
 - **Hyprland** (optional): zone windows get the zone's border colour and a
   `zone:NAME` tag, from the process's cgroup.
+
+</details>
+
+<details>
+<summary><b>How it compares</b>: Flatpak, Firejail, Qubes OS, Distrobox</summary>
+
+| | appzones | Flatpak | Firejail | Qubes OS | Distrobox / Toolbx |
+|---|---|---|---|---|---|
+| You group apps by | trust (a zone per area of your life) | app | app | VM | container (not a boundary) |
+| Apps come from | the host's own Nix store | Flathub, packaged for it | your system | each VM's OS | the container's distro |
+| Network | internet yes; LAN, host and tailnet no | on or off | on, off or a filter | per-VM firewall | the host's |
+| Which zone is this window? | border colour, the app can't fake it | no | no | border colour | no |
+| Isolation | namespaces, same kernel | namespaces, same kernel | namespaces, same kernel, setuid binary | separate VMs (much stronger) | almost none |
+| Runs on | your NixOS desktop | any distro | any distro | Qubes only | any distro |
+
+appzones is for when Flatpak is too fine-grained, Qubes is too much, and
+you want your messenger, your work browser, your agents and that PDF in
+separate, labelled boxes on the desktop you already have.
 
 </details>
 
@@ -249,6 +289,19 @@ just test-vm     # NixOS VM test with Hyprland (~6 min, needs /dev/kvm)
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Found a way out of a zone? Please
 report it privately: [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+Issues, ideas and PRs are welcome. Good places to start:
+
+- **Other compositors.** Only Hyprland gets window tags and border
+  colours. Sway, niri or KWin hooks would help.
+- **Other distributions.** Only NixOS is packaged.
+- **aarch64.** Nothing has been tried there yet.
+- **Docs.** If something in the [guide](docs/guide.md) was unclear to you,
+  it will be to the next person too.
+
+Questions go to [Discussions](https://github.com/mirql/appzones/discussions).
 
 ## Authors
 

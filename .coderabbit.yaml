@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit PR reviews. The rules below are CONTRIBUTING.md's, per path.
+language: en-US
+tone_instructions: "Plain and short. appzones is a sandbox: first ask whether a change makes a zone easier to escape or lets it see more of the host."
+
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!flake.lock"
+    - "!docs/demo-*.gif"
+    - "!docs/demo-*.cast"
+    - "!assets/**/*.svg"
+    - "!assets/**/*.png"
+  path_instructions:
+    - path: "src/zone_mount_helper.py"
+      instructions: |
+        Runs as root through sudo. Check that it clears every ZONES_* variable
+        before importing anything, trusts only SUDO_UID for the caller, mounts
+        only under the caller's zones/*/mnt, and is safe against symlink swaps
+        and races between checking a path and using it. It should stay small;
+        flag anything that grows its surface.
+    - path: "src/zonecfg.py"
+      instructions: |
+        The schema, the validator and the never-lists. Never-lists (paths,
+        D-Bus names, environment) only grow: flag any removal. A new config key
+        or value needs RELEASE bumped, an entry in SINCE, a unit test in
+        src/test_zonecfg.py, and docs in docs/guide.md and examples/zones.toml.
+        Malformed values must be errors, never a crash.
+    - path: "src/zone.py"
+      instructions: |
+        The CLI and the supervisor that builds the bubblewrap command line.
+        Flag anything that gives a zone more: new binds, sockets, environment
+        variables, D-Bus names, devices or capabilities. Binds are pinned by
+        fd (--bind-fd) and checked after opening; keep it that way.
+    - path: "src/zone_init.py"
+      instructions: |
+        Runs inside the zone (PID 2 under bwrap) and serves the control socket.
+        Treat everything arriving on the socket as untrusted input.
+    - path: "src/zone-wayland/**"
+      instructions: |
+        C helper for wp_security_context_v1. Check memory safety, fd leaks and
+        error paths; a failure must close the zone's access, not open it.
+    - path: "nix/module.nix"
+      instructions: |
+        The sudo rule must allow the configured user only the mount helper,
+        nothing else. Flag new privileges, setuid wrappers or world-writable paths.
+    - path: "tests/**"
+      instructions: |
+        Isolation checks should assert that something is refused, not only that
+        the happy path works. Nothing may run on a live desktop session.
+    - path: "**/*.py"
+      instructions: "Standard library only: the package has no Python dependencies."
+    - path: "**/*.md"
+      instructions: "If behaviour changes, docs/guide.md and a CHANGELOG line under Unreleased change in the same PR."
+
+chat:
+  auto_reply: true

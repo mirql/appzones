@@ -24,6 +24,7 @@ just check FILE      # validate a zones.toml
 just build           # the package; runs the unit tests too
 just test-vm         # NixOS VM test with Hyprland (~6 min, needs /dev/kvm)
 just fmt             # format the Nix files
+just demo            # re-record docs/demo-*.gif in a VM, when the CLI output changes
 ```
 
 **Never test on your live desktop session**: no zone units, windows or
@@ -42,6 +43,8 @@ VM test.
 | `src/zone-wayland/` | the `wp_security_context_v1` helper (C) |
 | `nix/package.nix`, `nix/module.nix` | the package and the NixOS module |
 | `tests/vm.nix` | the NixOS VM test |
+| `tests/demo.nix`, `tests/demo-record.py` | the README's terminal demos, recorded in a VM (`just demo`) |
+| `assets/concept/concept.py` | the README's concept animation (writes `concept-{dark,light}.svg`) |
 | `contrib/hyprland/zones.lua` | window tags and border colours for Hyprland |
 | `docs/guide.md`, `examples/zones.toml` | user docs and the full example |
 

@@ -6,6 +6,9 @@
   helper). Nix: `nix/package.nix`, `nix/module.nix`, `tests/vm.nix`.
 - User docs: `docs/guide.md`. When behaviour or a config key changes, update
   it and `examples/zones.toml`.
+- The README's terminal GIFs (`docs/demo-*.gif`) are recorded in a VM from
+  `tests/demo.nix`. When a command's name, arguments or output there
+  changes, run `just demo` and commit the new GIFs.
 - Never test on a live desktop session (no zone units, windows or
   screenshots there). Use `just test`, `just build` and `just test-vm`.
 - Adding a config key or value: bump `RELEASE` in `zonecfg.py`, record it in
