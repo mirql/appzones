@@ -3,7 +3,9 @@
   "projectOwner": "mirql",
   "repoType": "github",
   "repoHost": "https://github.com",
-  "files": ["README.md"],
+  "files": [
+    "README.md"
+  ],
   "imageSize": 80,
   "commit": false,
   "commitConvention": "none",
@@ -16,14 +18,37 @@
       "name": "Askar Amirov",
       "avatar_url": "https://avatars.githubusercontent.com/u/59274133",
       "profile": "https://github.com/askaramirov",
-      "contributions": ["code", "doc", "design", "test", "security", "infra", "maintenance"]
+      "contributions": [
+        "code",
+        "doc",
+        "design",
+        "test",
+        "security",
+        "infra",
+        "maintenance"
+      ]
     },
     {
       "login": "Saifeldin-H",
       "name": "Saif H",
       "avatar_url": "https://avatars.githubusercontent.com/u/249896858",
       "profile": "https://github.com/Saifeldin-H",
-      "contributions": ["doc", "design"]
+      "contributions": [
+        "doc",
+        "design"
+      ]
+    },
+    {
+      "login": "Lil-Clanky",
+      "name": "Marnix de Jong",
+      "avatar_url": "https://avatars.githubusercontent.com/u/190942173?v=4",
+      "profile": "https://github.com/Lil-Clanky",
+      "contributions": [
+        "code",
+        "test",
+        "doc"
+      ]
     }
-  ]
+  ],
+  "commitType": "docs"
 }
