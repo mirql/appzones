@@ -34,9 +34,9 @@
 
 Internal (systemd and the supervisor):
     appzones _supervise ZONE               the zone itself (appzones@ZONE.service's ExecStart)
-    appzones _netsetup RULES INFO AGENT -- CMD
-                                           load nft RULES in this netns, open INFO as fd 3, listen
-                                           on AGENT (for zone-init: $ZONE_CTL_FD), exec CMD
+    appzones _netsetup RULES INFO ZONE -- CMD
+                                           load nft RULES in this netns, open INFO as fd 3, make
+                                           ZONE's agent socket (for zone-init: $ZONE_CTL_FD), exec CMD
     appzones _autostart                    write launcher entries, start zones with autostart = true
 
 Config: ~/.config/appzones/zones.toml ($APPZONES_CONFIG). State: ~/.local/share/appzones.
@@ -935,7 +935,7 @@ def supervise(name: str) -> int:
     # pasta closes inherited fds, so the info fd is opened by _netsetup, in
     # pasta's namespace, right before it execs bwrap.
     argv = [sys.executable, str(HERE / "zone.py"), "_netsetup", str(zrt / "nft.rules") if network == "internet" else "-",
-            str(fp / "bwrapinfo.json"), str(zrt / "agent.sock"), "--"] + inner
+            str(fp / "bwrapinfo.json"), name, "--"] + inner
     if network == "internet":
         argv = pasta_argv(z) + argv
     child = subprocess.Popen(argv)
@@ -1016,10 +1016,18 @@ def pin_binds(argv: list[str]) -> list[str]:
     return out
 
 
-def agent_listener(path: str) -> int:
+def agent_path(name: str) -> Path:
+    """Where the host side of zone NAME's agent socket lives (never in the zone)."""
+    if not zonecfg.NAME_RE.fullmatch(name):
+        die(f"not a zone name: {name!r}")
+    return RT / name / "agent.sock"
+
+
+def agent_listener(name: str) -> int:
     """zone-init's control socket, made here on the host side: a path outside
     everything bound into the zone, so no process in the zone can replace it,
     and handed to zone-init as an inherited fd ($ZONE_CTL_FD)."""
+    path = agent_path(name)
     try:
         os.unlink(path)
     except FileNotFoundError:
@@ -1027,7 +1035,7 @@ def agent_listener(path: str) -> int:
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     old = os.umask(0o177)
     try:
-        s.bind(path)
+        s.bind(str(path))
     finally:
         os.umask(old)
     s.listen(16)
@@ -1036,7 +1044,7 @@ def agent_listener(path: str) -> int:
     return fd
 
 
-def netsetup(rules: str, info: str, agent: str, argv: list[str]) -> None:
+def netsetup(rules: str, info: str, name: str, argv: list[str]) -> None:
     if rules != "-":
         r = subprocess.run([tool("nft"), "-f", rules])
         if r.returncode != 0:
@@ -1046,7 +1054,7 @@ def netsetup(rules: str, info: str, agent: str, argv: list[str]) -> None:
         os.dup2(fd, 3)
         os.close(fd)
     os.set_inheritable(3, True)
-    ctl = agent_listener(agent)
+    ctl = agent_listener(name)
     i = argv.index("--")
     argv = argv[:i] + ["--setenv", "ZONE_CTL_FD", str(ctl)] + argv[i:]
     argv = pin_binds(argv)  # after fd 3 and the agent's: pinned descriptors come next
@@ -1057,7 +1065,7 @@ def netsetup(rules: str, info: str, agent: str, argv: list[str]) -> None:
 def request(name: str, req: dict, fds: list[int] | None = None, timeout: float | None = 5.0) -> socket.socket:
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
-    s.connect(str(RT / name / "agent.sock"))  # host side only, see agent_listener
+    s.connect(str(agent_path(name)))  # host side only, see agent_listener
     data = (json.dumps(req) + "\n").encode()
     if fds:
         socket.send_fds(s, [data], fds)
