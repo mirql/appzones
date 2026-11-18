@@ -683,8 +683,14 @@ os.write(w, b"\\n"); os.close(w)
         self.assertEqual(zone.system_binds("fhs", root=str(root)),
                          ["--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--ro-bind", "/sbin", "/sbin",
                           "--symlink", "usr/lib", "/lib"])
+        unmerged = Path(self.tmp.name) / "unmerged"  # /bin and /sbin real directories
+        for d in ("usr/bin", "bin", "sbin", "lib", "lib64"):
+            (unmerged / d).mkdir(parents=True)
+        self.assertEqual(zone.system_binds("fhs", root=str(unmerged)),
+                         ["--ro-bind", "/usr", "/usr", "--ro-bind", "/bin", "/bin", "--ro-bind", "/sbin", "/sbin",
+                          "--ro-bind", "/lib", "/lib", "--ro-bind", "/lib64", "/lib64"])
         fhs, nix = zone.system_env("fhs"), zone.system_env("nixos")
-        self.assertEqual(fhs["PATH"], "/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin")
+        self.assertEqual(fhs["PATH"], "/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/bin:/sbin")
         self.assertEqual((fhs["XDG_DATA_DIRS"], fhs["TZDIR"]), ("/usr/local/share:/usr/share", "/usr/share/zoneinfo"))
         self.assertTrue(nix["PATH"].endswith("/run/current-system/sw/bin"))
         # the xdg-open shim: a shell every layout has, and the real xdg-open filled in

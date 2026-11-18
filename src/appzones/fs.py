@@ -46,7 +46,7 @@ def system_env(layout: str | None = None) -> dict[str, str]:
         return {"PATH": f"/etc/profiles/per-user/{common.USER}/bin:/run/current-system/sw/bin",
                 "XDG_DATA_DIRS": f"/etc/profiles/per-user/{common.USER}/share:/run/current-system/sw/share",
                 "TZDIR": "/etc/zoneinfo"}
-    return {"PATH": "/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin",
+    return {"PATH": "/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/bin:/sbin",  # /bin, /sbin: unmerged hosts
             "XDG_DATA_DIRS": "/usr/local/share:/usr/share", "TZDIR": "/usr/share/zoneinfo"}
 
 
@@ -386,6 +386,9 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
         a += ["--tmpfs", "/tmp"]  # NOSONAR: a fresh tmpfs inside the zone
     layout = zonecfg.host_layout()
     a += ["--tmpfs", "/run", "--perms", "0700", "--tmpfs", common.ZRT, "--dir", "/run/zone"] + system_binds(layout)
+    if layout == "fhs" and extra_path:
+        # packages built with the host's Nix: their store paths, read-only
+        a += ["--ro-bind", "/nix/store", "/nix/store"]
     # runtime mounts (appzones mount): read-only here, so the zone cannot plant
     # anything in it; a host mount below .../mnt propagates in (bwrap makes
     # its mounts slaves of the host's, and /home is shared on the host)
