@@ -26,6 +26,12 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify)
   zone untouched. With `--lock-fd N` a caller hands over a lock it took: fd N is
   inherited across `exec` (not close-on-exec), and the lock lives as long as any
   copy of it, so the caller closes its own (or `exec`s into `serve`).
+- Without systemd (`APPZONES_SUPERVISOR=none`), `appzones run`, `up` and `shell`
+  start the zone themselves when it does not answer: the client takes the
+  zone's lock and starts `appzones serve ZONE --lock-fd L --notify-fd W`
+  detached (its own session, cwd `/`, output to
+  `~/.local/state/appzones/ZONE.log`, rotated at each start), then waits for
+  readiness. Other clients wait for the zone to answer.
 - The zone ends with its server, however the server ends (also `kill -9`):
   zone-init holds a pidfd of the server (handed over a unix socket, since
   pasta closes inherited fds) and ends the zone when it becomes readable;

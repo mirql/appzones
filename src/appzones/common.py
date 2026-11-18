@@ -115,3 +115,12 @@ def server_command(argv: list[str], cwd: str) -> tuple[str, str] | None:
     if path == (HERE / "zone.py").resolve() or installed:
         return rest[0], rest[1]
     return None
+
+
+LOG_DIR = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "appzones"
+LOG_MAX = 2 * 1024 * 1024  # a log is rotated (to NAME.log.1) at a start when it is bigger
+
+
+def log_path(name: str) -> Path:
+    """Zone NAME's log when appzones starts it itself (without systemd)."""
+    return LOG_DIR / f"{name}.log"

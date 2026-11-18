@@ -316,6 +316,63 @@ class ZonecfgTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             zone.take_lock("../x")
 
+    def _fake_server(self, zone, body):
+        """A zone.py in a temp HERE that stands in for `appzones serve` (BODY: its script)."""
+        lib = Path(self.tmp.name) / "lib"
+        lib.mkdir(exist_ok=True)
+        (lib / "zone.py").write_text(body)
+        zone.HERE = lib
+        zone.RT = Path(self.tmp.name) / "rt"
+        zone.LOG_DIR = Path(self.tmp.name) / "state"
+        zone.ping = lambda n: None
+        return lib
+
+    def test_spawn(self):
+        """Without systemd the client starts serve detached, hands it the lock and waits for its
+        readiness; the server keeps the lock; a failed start shows the end of the log."""
+        import fcntl
+        import signal as sg
+        zone = self._zone_mod()
+        self._fake_server(zone, """import fcntl, os, sys, time
+a = sys.argv[1:]
+lock, w = int(a[a.index("--lock-fd") + 1]), int(a[a.index("--notify-fd") + 1])
+fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)  # the very lock the client took
+print("fake serve", a[1], "cwd", os.getcwd(), "sid", os.getsid(0) == os.getpid(), flush=True)
+os.write(w, b"\\n"); os.close(w)
+time.sleep(30)
+""")
+        with contextlib.redirect_stderr(io.StringIO()):
+            zone.spawn("aa")
+        pids = zone.server_pids("aa")
+        try:
+            self.assertEqual(len(pids), 1)
+            fd = os.open(zone.lock_path("aa"), os.O_RDWR)
+            with self.assertRaises(BlockingIOError):  # held by the server, not by us
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.close(fd)
+            log = zone.log_path("aa").read_text()
+            self.assertIn("fake serve aa cwd / sid True", log)  # its own session, cwd /
+            self.assertEqual(oct(zone.log_path("aa").stat().st_mode & 0o777), "0o600")
+        finally:
+            for pid in pids:
+                os.kill(pid, sg.SIGKILL)
+        time.sleep(0.2)
+        # a server that fails: the client says so, with the end of the log
+        self._fake_server(zone, "import sys\nprint('boom: no such zone', flush=True)\nsys.exit(1)\n")
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            zone.spawn("bb")
+        self.assertIn("did not start", err.getvalue())
+        self.assertIn("boom: no such zone", err.getvalue())
+
+    def test_spawn_log_rotation(self):
+        zone = self._zone_mod()
+        zone.LOG_DIR = Path(self.tmp.name) / "state"
+        zone.LOG_DIR.mkdir()
+        zone.log_path("aa").write_bytes(b"x" * (zone.LOG_MAX + 1))
+        os.close(zone._open_log("aa"))
+        self.assertEqual(zone.log_path("aa").stat().st_size, 0)
+        self.assertEqual((zone.LOG_DIR / "aa.log.1").stat().st_size, zone.LOG_MAX + 1)
+
     def test_server_pids(self):
         """stop without systemd finds exactly this appzones' `zone.py serve NAME`, also from a
         relative path; never another program called zone.py, nor another zone's server."""

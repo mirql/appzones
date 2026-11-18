@@ -1010,5 +1010,38 @@ pkgs.testers.runNixOSTest {
             print(f"PASS  kill -9 of {z}'s server ({when}): zone-init, bwrap, pasta, the proxy and zone-wayland are gone")
             u(f"appzones up {z} && appzones ping {z} && appzones stop {z}")
             print(f"PASS  {z} starts again at once (the lock went with the killed server)")
+
+    with subtest("start on demand without systemd"):
+        S = "APPZONES_SUPERVISOR=none "
+
+        def servers(z):
+            return int(machine.succeed(f"pgrep -u alice -fc 'zone.py serve {z}( |$)' || true").strip() or 0)
+
+        u("! appzones ping tb")
+        u(S + "appzones run --wait tb -- true </dev/null 2>&1")
+        u("appzones ping tb && ! systemctl --user is-active appzones@tb.service && test -s ~/.local/state/appzones/tb.log")
+        assert servers("tb") == 1
+        print("PASS  run starts a stopped zone itself: one server, no unit, its log in ~/.local/state/appzones")
+        u(S + "appzones stop tb && ! appzones ping tb")
+        assert servers("tb") == 0
+        u("for i in $(seq 10); do " + S + "appzones run --wait tb -- true </dev/null >/dev/null 2>&1 & done; wait")
+        assert servers("tb") == 1, servers("tb")
+        print("PASS  ten runs at once on a stopped zone: all ran, exactly one server")
+        u(S + "appzones stop tb")
+        u("timeout -s KILL 1.2 env " + S + "appzones up tb </dev/null >/dev/null 2>&1 || true")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ping tb"), timeout=60)
+        assert servers("tb") == 1
+        print("PASS  a client killed during the start leaves the server starting; it comes up")
+        # the python running zone_init.py (bwrap's own command line names it too)
+        init = machine.succeed("pgrep -u alice -f '^[^ ]*python[^ ]* [^ ]*zone_init.py'").split()
+        assert len(init) == 1, init
+        machine.succeed(f"kill -STOP {init[0]}")
+        rc, out = u(S + "appzones up tb 2>&1", check=False)
+        print(out)
+        assert rc != 0 and "does not answer" in out, (rc, out)
+        assert servers("tb") == 1
+        machine.succeed(f"kill -CONT {init[0]}")
+        print("PASS  a stuck zone: the client reports it, no second server")
+        u(S + "appzones stop tb && ! appzones ping tb")
   '';
 }

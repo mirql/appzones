@@ -38,8 +38,10 @@ itself makes sure there is exactly one per zone and that nothing outlives it.
 - **Your choice of process manager.** `appzones serve ZONE` runs a zone in the
   foreground with standard readiness signalling, so runit, s6, dinit or a script
   can manage zones the way they manage anything else.
-- **Later in 0.7:** zones that start on demand without any service manager, the
-  way `tmux` or `gpg-agent` do, and a path to running appzones outside NixOS.
+- **Zones that start on demand** without any service manager, the way `tmux` or
+  `gpg-agent` do: `appzones run` starts the zone if it is not running.
+- **Later in 0.7:** choosing the supervisor per zone, and a path to running
+  appzones outside NixOS.
 
 ## What is done
 
@@ -48,15 +50,29 @@ itself makes sure there is exactly one per zone and that nothing outlives it.
 | ✓ | `appzones serve ZONE [--notify-fd N]`: a zone in the foreground; readiness over sd_notify, or as a newline on fd N (s6 style); SIGTERM or Ctrl-C stops it | [#43](https://github.com/mirql/appzones/pull/43) |
 | ✓ | One server per zone: a lock (`$XDG_RUNTIME_DIR/appzones/NAME.lock`); a second `serve` exits with status 75, "already served", and leaves the running zone alone | [#51](https://github.com/mirql/appzones/pull/51) |
 | ✓ | The zone ends with its server: zone-init watches a pidfd of the server, zone-wayland and the D-Bus proxy die with it; the startup waits (zone-wayland's "ready", the bus, the pidfd hand-over, zone-init's answer) have a 30-second deadline, building `packages` none | [#53](https://github.com/mirql/appzones/pull/53) |
-| | Start zones on demand without systemd: `appzones run` starts the zone when it does not answer, with logs in `~/.local/state/appzones/` | [#46](https://github.com/mirql/appzones/issues/46) |
+| ✓ | Start zones on demand without systemd: `appzones run`, `up` and `shell` start the zone when it does not answer (one server even with many clients at once), with logs in `~/.local/state/appzones/` | [#46](https://github.com/mirql/appzones/issues/46) |
 | | Supervisor mode `auto`: systemd when the unit is installed, otherwise on demand; never both for one zone | [#47](https://github.com/mirql/appzones/issues/47) |
 | | Per-zone settings: `supervisor`, `start_timeout`, `linger` (end a zone after some idle time, only if you want that) | [#48](https://github.com/mirql/appzones/issues/48) |
 | | Service files for runit, s6 and dinit; a try outside NixOS | [#49](https://github.com/mirql/appzones/issues/49) |
 
 ## Running a zone yourself today
 
-`appzones serve` is the zone. Run it in a terminal to watch a zone start and
-stop (Ctrl-C ends it):
+Let appzones start zones on demand, without systemd. Until the automatic mode
+comes ([#47](https://github.com/mirql/appzones/issues/47)), you choose it with an
+environment variable:
+
+```bash
+export APPZONES_SUPERVISOR=none
+appzones run daily firefox      # starts the zone if needed, then Firefox in it
+appzones logs daily             # ~/.local/state/appzones/daily.log
+appzones stop daily
+```
+
+Many clients at once still get exactly one server per zone: the zone's lock
+decides who starts it, and the others wait for it to answer.
+
+Or run the zone itself: `appzones serve` is the zone. Run it in a terminal to
+watch a zone start and stop (Ctrl-C ends it):
 
 ```bash
 appzones serve daily

@@ -15,6 +15,14 @@ with the module nothing changes for you. Why, what is done and what is coming:
 https://mirql.github.io/appzones/without-systemd.html (milestone "0.7.0: zones
 without systemd", #50).
 
+- **Zones start on demand without systemd** (`APPZONES_SUPERVISOR=none` for now):
+  `appzones run`, `up` and `shell` start a zone that does not answer, like tmux or
+  gpg-agent. The client takes the zone's lock and hands it to a detached
+  `appzones serve`, so many clients at once still get one server; a client killed
+  during the start leaves the zone starting. Logs in
+  `~/.local/state/appzones/ZONE.log` (rotated at each start); `appzones logs` and
+  autostart follow.
+
 - **The zone ends with its server**, however the server ends: outside systemd, a
   killed `appzones serve` used to leave zone-init, bwrap and pasta running.
   zone-init now holds a pidfd of the server and ends the zone when the server is
