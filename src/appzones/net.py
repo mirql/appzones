@@ -84,7 +84,7 @@ def pasta_argv(z: zonecfg.Zone) -> list[str]:
          "--dns-forward", common.DNS_ADDR, "-q", "-f"]
     # pasta skips loopback nameservers from resolv.conf ("Couldn't get any
     # nameserver address"), so name the resolver explicitly.
-    a += ["--dns-host", "1.1.1.1" if z.settings["dns"] == "public" else host_resolver()]
+    a += ["--dns-host", "1.1.1.1" if z.settings["dns"] == "public" else host_resolver()]  # NOSONAR: the public resolver when dns = "public"
     return a + ["--"]
 
 

@@ -307,7 +307,7 @@ def host_mounts(zone: str) -> list[str]:
 
 
 def helper(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([common.SUDO, "-n", common.MOUNT_HELPER, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    return subprocess.run([common.SUDO, "-n", common.MOUNT_HELPER, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)  # NOSONAR: argv list, no shell; the helper re-validates every argument
 
 
 def prepare_mnt(zone: str, zdir: Path) -> None:
@@ -346,9 +346,9 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
     a += ["--proc", "/proc", "--dev", "/dev"]
     if s["tmp"] == "disk":
         # kept across restarts, reachable from the host (prepare_tmp: 0700, cleaned at start)
-        a += ["--bind", str(zdir / "tmp"), "/tmp", "--bind", str(zdir / "var-tmp"), "/var/tmp"]
+        a += ["--bind", str(zdir / "tmp"), "/tmp", "--bind", str(zdir / "var-tmp"), "/var/tmp"]  # NOSONAR: the zone's own /tmp, bound from its private directory
     else:
-        a += ["--tmpfs", "/tmp"]
+        a += ["--tmpfs", "/tmp"]  # NOSONAR: a fresh tmpfs inside the zone
     a += ["--tmpfs", "/run", "--perms", "0700", "--tmpfs", common.ZRT, "--dir", "/run/zone",
           "--ro-bind", "/nix/store", "/nix/store"]
     # runtime mounts (appzones mount): read-only here, so the zone cannot plant

@@ -144,7 +144,7 @@ class Caller:
         os.setegid(self.gid)
         os.seteuid(self.uid)
         try:
-            fd = os.open(source, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+            fd = os.open(source, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)  # NOSONAR: opened with the caller's own uid and groups (set above)
             os.stat(".", dir_fd=fd)  # search permission on it, too
         except OSError as e:
             die(f"{source}: {e.strerror} (as {self.name})")

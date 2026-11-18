@@ -366,7 +366,7 @@ def policy_error(real: Path, raw: str) -> str | None:
     path of a descriptor they already hold (the supervisor pins binds)."""
     via = f" (resolves to {real})" if str(real) != str(expand(raw)) else ""
     for forbidden in (Path("/"), Path("/home"), Path(os.path.realpath(HOME)), Path("/nix"), Path("/etc"),
-                      Path("/proc"), Path("/sys"), Path("/dev"), Path("/run"), Path("/tmp"), Path("/var")):
+                      Path("/proc"), Path("/sys"), Path("/dev"), Path("/run"), Path("/tmp"), Path("/var")):  # NOSONAR: paths the policy refuses, not used as files
         if real == forbidden:
             return f"{raw}{via}: binding {forbidden} whole is never allowed"
     try:
@@ -406,7 +406,7 @@ def bind_error(raw: str) -> str | None:
 
 # Theme files are copied (dereferenced) into every zone: never from here, nor
 # from the never-list (the store and /etc are fine: fonts and icons live there).
-THEME_NEVER_INSIDE = [Path(p) for p in ("/proc", "/sys", "/dev", "/run", "/tmp", "/var", "/root", "/boot")]
+THEME_NEVER_INSIDE = [Path(p) for p in ("/proc", "/sys", "/dev", "/run", "/tmp", "/var", "/root", "/boot")]  # NOSONAR: paths the policy refuses, not used as files
 
 
 def theme_source_error(real: Path) -> str | None:
@@ -454,7 +454,7 @@ MOUNT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 # these. The host's system trees, other users' and root's files, and /tmp
 # (its X11 and ICE sockets are a way to the host session).
 MOUNT_NEVER_INSIDE = [Path(p) for p in ("/proc", "/sys", "/dev", "/run", "/etc", "/nix", "/boot", "/root",
-                                        "/var", "/tmp")]
+                                        "/var", "/tmp")]  # NOSONAR: paths the policy refuses, not used as files
 
 
 def mount_source_error(raw: str) -> str | None:
@@ -492,7 +492,7 @@ class Config:
 
 def load(path: str | Path) -> Config:
     try:
-        text = Path(path).read_text()
+        text = Path(path).read_text()  # NOSONAR: the user's own config file
     except (OSError, UnicodeDecodeError) as e:
         return Config({}, {}, [f"{path}: {e}"])
     return load_text(text, path)

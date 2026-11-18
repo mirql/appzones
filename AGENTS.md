@@ -24,3 +24,6 @@
 - `zone_mount_helper.py` runs as root through sudo. It clears every
   `APPZONES_*` and `ZONES_*` variable before importing anything; keep it that way.
 - `main` takes only squash merges through a PR.
+- SonarQube Cloud checks every PR. A finding that is not a real problem (a validated
+  argument, a test address) gets `# NOSONAR: <why>` on its line, with a reason a reader
+  can check.

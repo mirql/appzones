@@ -34,7 +34,7 @@ def default_state() -> Path:
 STATE = Path(zonecfg.env("STATE") or default_state())
 CONFIG, LEGACY_CONFIG = zonecfg.config_path(HOME)
 LAUNCHER = STATE / "launcher/share/applications"
-DNS_ADDR = "169.254.53.53"
+DNS_ADDR = "169.254.53.53"  # NOSONAR: the zone's link-local DNS address, by design
 ZRT = f"/run/user/{UID}"  # the zone's own XDG_RUNTIME_DIR (a fresh tmpfs)
 MOUNT_HELPER = zonecfg.env("MOUNT_HELPER") or str(HERE / "appzones-mount-helper")
 SUDO = zonecfg.env("SUDO") or "/run/wrappers/bin/sudo"

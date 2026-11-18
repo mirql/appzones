@@ -122,7 +122,7 @@ def _start_server(name: str, lock: int) -> tuple[int, int]:
         pid, err = -1, e
     if pid == 0:  # the intermediate: start the server in a new session, then go
         try:
-            subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=log, cwd="/", env=env,
+            subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=log, cwd="/", env=env,  # NOSONAR: zone name checked against NAME_RE above; argv list, no shell
                              pass_fds=(lock, w), start_new_session=True)
             os._exit(0)
         except BaseException:
@@ -514,7 +514,7 @@ def restart_zone(name: str) -> None:
         up(name, quiet=True)
 
 
-def zone_list(as_json: bool = False) -> int:
+def zone_list(as_json: bool = False) -> int:  # NOSONAR: an exit status: 0 is the only one
     cfg = load_cfg(quiet=True)
     rows = [("ZONE", "STATE", "NETWORK", "DNS", "DEVICES", "APPS", "COLOUR")]
     zones = []
@@ -644,12 +644,12 @@ def check(probe: str | None) -> int:
     ]
     if z.settings["network"] == "internet":
         probes += [("nft flush refused", 1, "nft flush ruleset 2>/dev/null"),
-                   ("LAN 192.168.0.0/16 refused", 1, tcp.format("192.168.1.1", 53)),
-                   ("tailnet 100.64.0.0/10 refused", 1, tcp.format("100.64.0.1", 8443)),
+                   ("LAN 192.168.0.0/16 refused", 1, tcp.format("192.168.1.1", 53)),  # NOSONAR: a test address the probe must fail to reach
+                   ("tailnet 100.64.0.0/10 refused", 1, tcp.format("100.64.0.1", 8443)),  # NOSONAR: a test address the probe must fail to reach
                    ("host loopback refused", 1, tcp.format("127.0.0.1", 22))]
     fails = 0
     for title, expect, cmd in probes:
-        r = subprocess.run([sys.executable, str(common.HERE / "zone.py"), "run", "--wait", probe, "--",
+        r = subprocess.run([sys.executable, str(common.HERE / "zone.py"), "run", "--wait", probe, "--",  # NOSONAR: argv list, no shell; a configured zone (load_zone above)
                             "/run/current-system/sw/bin/bash", "-c", cmd],
                            stdin=subprocess.DEVNULL, capture_output=True, text=True)
         ok = (r.returncode == 0) == (expect == 0)
@@ -731,7 +731,7 @@ def autostart() -> int:
     return 0
 
 
-def active(follow: bool, as_json: bool) -> int:
+def active(follow: bool, as_json: bool) -> int:  # NOSONAR: an exit status: 0 is the only one
     """Print "[zone]" (or an empty line) for Hyprland's active window, from
     its compositor tags only: never the app-chosen xdgTag, class or title
     --json: Waybar's custom-module JSON."""

@@ -26,7 +26,7 @@ def read_mounts(name: str) -> dict:
 
 def write_mounts(name: str, m: dict) -> None:
     tmp = mounts_file(name).with_suffix(".tmp")
-    tmp.write_text(json.dumps(m, indent=1) + "\n")
+    tmp.write_text(json.dumps(m, indent=1) + "\n")  # NOSONAR: a file in the zone's own runtime directory
     tmp.replace(mounts_file(name))
 
 
@@ -97,7 +97,7 @@ def umount(name: str, nm: str, lazy: bool) -> int:
     return 0
 
 
-def mounts(name: str) -> int:
+def mounts(name: str) -> int:  # NOSONAR: an exit status: 0 is the only one
     load_zone(name)
     names = fs.host_mounts(name)
     if not agent.ping(name):

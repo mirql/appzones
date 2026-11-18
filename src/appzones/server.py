@@ -210,7 +210,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             str(fp / "bwrapinfo.json"), name, "--"] + inner
     if network == "internet":
         argv = net.pasta_argv(z) + argv
-    child = subprocess.Popen(argv)
+    child = subprocess.Popen(argv)  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
     if not offer_pidfd(name, child):
         print(f"[zone] {name}: _netsetup did not take the server's pidfd; stopping", flush=True)
         stop_all()
@@ -416,10 +416,10 @@ def receive_pidfd(name: str) -> int:
 
 def netsetup(rules: str, info: str, name: str, argv: list[str]) -> None:
     if rules != "-":
-        r = subprocess.run([tool("nft"), "-f", rules])
+        r = subprocess.run([tool("nft"), "-f", rules])  # NOSONAR: argv list, no shell; rules written by appzones
         if r.returncode != 0:
             die("nft rules failed to load; refusing to start the zone without them")
-    fd = os.open(info, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(info, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # NOSONAR: a path the server passes, in its own runtime directory
     if fd != 3:
         os.dup2(fd, 3)
         os.close(fd)
