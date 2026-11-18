@@ -1117,7 +1117,7 @@ pkgs.testers.runNixOSTest {
         machine.sleep(16)
         u("appzones ping tl")
         machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + "appzones ping tl"), timeout=60)
-        assert servers("tl") == 0
+        machine.wait_until_fails("pgrep -u alice -f 'zone.py serve tl( |$)'", timeout=30)
         u("grep -q 'no app for 10s (linger); stopping' ~/.local/state/appzones/tl.log")
         print("PASS  linger: the zone stayed while its app ran, then ended on its own")
         # under systemd: ends with success, not restarted

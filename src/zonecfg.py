@@ -59,9 +59,15 @@ def duration(v) -> float | None:
     if isinstance(v, bool):
         return None
     if isinstance(v, int):
-        return float(v) if v > 0 else None
-    m = _DURATION.fullmatch(v) if isinstance(v, str) else None
-    return float(int(m[1]) * {"s": 1, "m": 60, "h": 3600}[m[2]]) if m and int(m[1]) > 0 else None
+        n = v
+    else:
+        m = _DURATION.fullmatch(v) if isinstance(v, str) else None
+        if not m:
+            return None
+        n = int(m[1]) * {"s": 1, "m": 60, "h": 3600}[m[2]]
+    if n <= 0:
+        return None
+    return float(n) if n < 10**9 else float("inf")  # far out of any range, never an OverflowError
 
 
 def _duration(lo: int, hi: int, empty: bool = False):

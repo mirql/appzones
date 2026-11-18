@@ -247,7 +247,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     # wait for the zone; a dead helper takes the zone down (a zone without
     # its proxy or Wayland socket is worse than a restart)
     rc = None
-    idle_since, next_check = time.monotonic(), 0.0
+    idle_since: float | None = None  # since the first of an unbroken run of idle reports
+    next_check = 0.0
     while rc is None:
         rc = child.poll()
         if rc is not None:
@@ -256,6 +257,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             now = time.monotonic()
             next_check = now + min(10.0, linger / 3)
             if apps_running(name) is not False:  # an app, or no answer: not idle
+                idle_since = None
+            elif idle_since is None:
                 idle_since = now
             elif now - idle_since >= linger:
                 print(f"[zone] {name}: no app for {s['linger']} (linger); stopping", flush=True)
@@ -290,6 +293,8 @@ def apps_running(name: str) -> bool | None:
             r = agent.readline(sock)[0]
     except (OSError, ValueError):
         return None
+    if not r.get("ok") or not isinstance(r.get("procs"), list):
+        return None  # no report: not idle
     skip = {1, r.get("init"), *r.get("helpers", [])}
     return any(p[0] not in skip for p in r.get("procs", []))
 

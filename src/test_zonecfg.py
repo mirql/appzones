@@ -1208,7 +1208,9 @@ os.write(w, b"\\n"); os.close(w)
                                  ("start_timeout", 'true', "start_timeout must be a duration"),
                                  ("linger", '"5s"', "linger must be between 10 s and 168 h"),
                                  ("linger", '"1d"', "linger must be a duration"),
-                                 ("linger", '-1', "linger must be a duration")]:
+                                 ("linger", '-1', "linger must be a duration"),
+                                 ("linger", '"' + "9" * 400 + 's"', "linger must be between"),
+                                 ("start_timeout", "9" * 30, "start_timeout must be between")]:
             with self.subTest(key=key, bad=bad):
                 self.assertRefused(self.errs(f"{key} = {bad}"), needle)
         self.assertEqual([self.z.duration(v) for v in ("30s", "10m", "2h", 45, "", "1.5m", 0, True)],
@@ -1254,10 +1256,13 @@ os.write(w, b"\\n"); os.close(w)
 
         zone.request = lambda name, req, **kw: Conn()
         zone.readline = lambda s, buf=b"": (replies.pop(0), b"")
-        replies.append({"procs": [[1, "bwrap"], [2, "zone_init.py"], [5, "dbus-daemon"]], "init": 2, "helpers": [5]})
+        replies.append({"ok": True, "procs": [[1, "bwrap"], [2, "zone_init.py"], [5, "dbus-daemon"]], "init": 2,
+                        "helpers": [5]})
         self.assertFalse(zone.apps_running("tt"))
-        replies.append({"procs": [[1, "bwrap"], [2, "zone_init.py"], [7, "firefox"]], "init": 2, "helpers": []})
+        replies.append({"ok": True, "procs": [[1, "bwrap"], [2, "zone_init.py"], [7, "firefox"]], "init": 2})
         self.assertTrue(zone.apps_running("tt"))
+        replies.append({})  # EOF without a reply: no report, not idle
+        self.assertIsNone(zone.apps_running("tt"))
 
         def refused(name, req, **kw):
             raise ConnectionRefusedError
