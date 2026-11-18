@@ -125,6 +125,10 @@ def take_lock(name: str, lock_fd: int | None = None) -> int:
     return fd
 
 
+class _Stopped(Exception):
+    """A stop (SIGTERM, SIGINT) while the zone is being prepared."""
+
+
 def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = None) -> int:
     """The zone NAME, in the foreground (`appzones serve`): builds it, holds it, and
     returns when it ends. SIGTERM or SIGINT stops it and its helpers. One server per
@@ -136,41 +140,6 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             die(f"--notify-fd {notify_fd}: not a pipe or file above 2, open for writing")
         os.set_inheritable(notify_fd, False)  # never into the zone or a helper
     lock = take_lock(name, lock_fd)  # noqa: F841  (held until this process exits)
-    cfg = load_cfg(quiet=False)
-    if name not in cfg.zones:
-        die(f"no zone {name!r} in {common.CONFIG}")
-    z = cfg.zones[name]
-    s = z.settings
-    global START_TIMEOUT
-    START_TIMEOUT = zonecfg.duration(s["start_timeout"]) or START_TIMEOUT
-    linger = zonecfg.duration(s["linger"])
-    zdir, zrt = common.STATE / name, common.RT / name
-    zdir.mkdir(parents=True, exist_ok=True)
-    common.RT.mkdir(parents=True, exist_ok=True)
-    os.chmod(common.RT, 0o700)
-    if zrt.exists():
-        shutil.rmtree(zrt)
-    (zrt / "ctl").mkdir(parents=True, mode=0o700)
-    if not (zdir / "machine-id").exists():
-        (zdir / "machine-id").write_text(secrets.token_hex(16) + "\n")
-    (zrt / "resolv.conf").write_text(net.resolv_conf(s))
-    (zrt / "hosts").write_text(f"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 {name}-zone\n")
-    instance = f"zone-{name}-{secrets.randbelow(2**31)}"
-    (zrt / "flatpak-info").write_text(portals.flatpak_info(z, instance))
-    (zrt / "config.sha256").write_text(settings_hash(z) + "\n")
-    write_colours(cfg)
-    if s["tmp"] == "disk":
-        fs.prepare_tmp(zdir)
-    fs.prepare_mnt(name, zdir)
-    extra_path = fs.package_paths(z, zdir) if s["packages"] else []
-    target = portals.link_target(z)
-    links_srv = None
-    if target:
-        (zrt / "ctl/bin").mkdir()
-        xo = zrt / "ctl/bin/xdg-open"
-        xo.write_text(portals.XDG_OPEN.format(links=s["links"], target=target, python=os.path.realpath(sys.executable)))
-        xo.chmod(0o755)
-        links_srv = portals.serve_links(z, zrt, target)
     helpers: list[subprocess.Popen] = []
     child: subprocess.Popen | None = None
 
@@ -206,8 +175,53 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         stopped.append(signum)
         stop_all()
 
-    signal.signal(signal.SIGTERM, stop_asked)
-    signal.signal(signal.SIGINT, stop_asked)
+    def stop_preparing(signum, _frame):  # before any helper runs: unwind (a packages build is killed)
+        stopped.append(signum)
+        raise _Stopped
+
+    signal.signal(signal.SIGTERM, stop_preparing)
+    signal.signal(signal.SIGINT, stop_preparing)
+    try:
+        cfg = load_cfg(quiet=False)
+        if name not in cfg.zones:
+            die(f"no zone {name!r} in {common.CONFIG}")
+        z = cfg.zones[name]
+        s = z.settings
+        global START_TIMEOUT
+        START_TIMEOUT = zonecfg.duration(s["start_timeout"]) or START_TIMEOUT
+        linger = zonecfg.duration(s["linger"])
+        zdir, zrt = common.STATE / name, common.RT / name
+        zdir.mkdir(parents=True, exist_ok=True)
+        common.RT.mkdir(parents=True, exist_ok=True)
+        os.chmod(common.RT, 0o700)
+        if zrt.exists():
+            shutil.rmtree(zrt)
+        (zrt / "ctl").mkdir(parents=True, mode=0o700)
+        if not (zdir / "machine-id").exists():
+            (zdir / "machine-id").write_text(secrets.token_hex(16) + "\n")
+        (zrt / "resolv.conf").write_text(net.resolv_conf(s))
+        (zrt / "hosts").write_text(f"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 {name}-zone\n")
+        instance = f"zone-{name}-{secrets.randbelow(2**31)}"
+        (zrt / "flatpak-info").write_text(portals.flatpak_info(z, instance))
+        (zrt / "config.sha256").write_text(settings_hash(z) + "\n")
+        write_colours(cfg)
+        if s["tmp"] == "disk":
+            fs.prepare_tmp(zdir)
+        fs.prepare_mnt(name, zdir)
+        extra_path = fs.package_paths(z, zdir) if s["packages"] else []
+        target = portals.link_target(z)
+        links_srv = None
+        if target:
+            (zrt / "ctl/bin").mkdir()
+            xo = zrt / "ctl/bin/xdg-open"
+            xo.write_text(portals.XDG_OPEN.format(links=s["links"], target=target, python=os.path.realpath(sys.executable)))
+            xo.chmod(0o755)
+            links_srv = portals.serve_links(z, zrt, target)
+        signal.signal(signal.SIGTERM, stop_asked)
+        signal.signal(signal.SIGINT, stop_asked)
+    except _Stopped:
+        print(f"[zone] {name}: stopped while starting", flush=True)
+        return stop_code()
     if os.environ.get("WAYLAND_DISPLAY"):
         h = subprocess.Popen([tool("zone-wayland"), str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
                              stdout=subprocess.PIPE,

@@ -1156,6 +1156,19 @@ pkgs.testers.runNixOSTest {
         r = u("systemctl --user show appzones@tb.service -p Result --value").strip()
         assert r == "success", r
         print("PASS  systemd: stopping the unit ends it as a success (SuccessExitStatus=143)")
+        # a stop while the zone starts (zone-wayland slowed down): SIGINT (appzones stop)
+        # exits 0, SIGTERM 143; neither is a failure
+        for how, want in [("appzones stop tb", "0"), ("systemctl --user kill -s TERM --kill-whom=main serve-slow", "143")]:
+            u("systemd-run --user --unit=serve-slow -p RemainAfterExit=yes -E APPZONES_BIN_ZONE_WAYLAND=/tmp/slow-zw "
+              "$(readlink -f $(command -v appzones)) serve tb")
+            machine.wait_until_succeeds("pgrep -u alice -f 'zone.py serve tb( |$)'", timeout=30)
+            u("! appzones ping tb")
+            u(how)
+            wait_down("tb")
+            st = u("systemctl --user show serve-slow -p ExecMainStatus --value").strip()
+            assert st == want, (how, st)
+            u("systemctl --user stop serve-slow; systemctl --user reset-failed serve-slow || true")
+        print("PASS  a stop while the zone starts: appzones stop exits 0, SIGTERM 143 (not a failure)")
 
         # runit: a failure is restarted; appzones stop and sv down keep it down
         u(f"rm -rf /tmp/rsv && mkdir /tmp/rsv && cp -r {C}/runit/appzones-ZONE /tmp/rsv/appzones-tb && chmod -R u+w /tmp/rsv")
