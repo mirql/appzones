@@ -29,8 +29,9 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify)
   zone-init holds a pidfd of the server (handed over a unix socket, since
   pasta closes inherited fds) and ends the zone when it becomes readable;
   zone-wayland gets SIGTERM when the server dies (`PR_SET_PDEATHSIG`); the
-  D-Bus proxy's bwrap has `--die-with-parent`. Every startup step has a
-  30-second limit.
+  D-Bus proxy is tied the same way. Waiting for zone-wayland's "ready", the
+  proxy's bus, the pidfd hand-over and zone-init's answer each have a 30-second
+  deadline; building `packages` comes before them and has none.
 - The `appzones` CLI talks to zone-init over a socket the host makes,
   `$XDG_RUNTIME_DIR/appzones/NAME/agent.sock`, outside the zone. zone-init
   gets it as an inherited fd; there is no socket file inside the zone. zone-init

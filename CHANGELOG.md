@@ -8,8 +8,10 @@ The config schema has its own release number (`requires = N` in
 - **The zone ends with its server**, however the server ends: outside systemd, a
   killed `appzones serve` used to leave zone-init, bwrap and pasta running.
   zone-init now holds a pidfd of the server and ends the zone when the server is
-  gone; zone-wayland gets SIGTERM with it. Each startup step (zone-wayland, the
-  D-Bus proxy, zone-init answering) has a 30-second limit instead of waiting forever.
+  gone; zone-wayland and the D-Bus proxy are tied to it as well. Waiting for
+  zone-wayland's "ready" (which could block forever), the D-Bus proxy's bus, the
+  pidfd hand-over and zone-init's answer each have a 30-second deadline; building
+  `packages` comes before them and has none.
 
 - **One server per zone**: `appzones serve` holds a lock
   (`$XDG_RUNTIME_DIR/appzones/NAME.lock`) before it changes anything; a second one

@@ -366,7 +366,7 @@ pkgs.testers.runNixOSTest {
     };
 
   testScript = ''
-    import json, shlex
+    import json, shlex, time
 
     start_all()
     peer.wait_for_unit("nginx.service")
@@ -986,7 +986,7 @@ pkgs.testers.runNixOSTest {
 
     with subtest("crash containment: kill -9 of the server leaves nothing behind"):
         appz = machine.succeed("readlink -f $(command -v appzones)").strip()
-        for z, when in [("td", "running"), ("tb", "running"), ("td", "starting")]:
+        for z, when in [("td", "running"), ("tb", "running"), ("td", "starting"), ("tb", "starting")]:
             unit = f"crash-{z}-{when}"
             u(f"rm -f /tmp/{z}-ready")
             # KillMode=process: systemd cleans up nothing; what stays is what the zone left
@@ -995,15 +995,20 @@ pkgs.testers.runNixOSTest {
             if when == "running":
                 machine.wait_until_succeeds(f"test -s /tmp/{z}-ready", timeout=90)
                 u(f"appzones ping {z}")
-            else:
-                machine.sleep(1)
-            pid = u(f"systemctl --user show {unit} -p MainPID --value").strip()
-            if pid != "0":
-                machine.succeed(f"kill -9 {pid}")
+            pid = "0"
+            for _ in range(200):  # a live server, as early as possible
+                pid = u(f"systemctl --user show {unit} -p MainPID --value").strip()
+                if pid != "0":
+                    break
+                time.sleep(0.05)
+            assert pid != "0", f"{unit}: no server to kill"
+            if when == "starting":
+                assert machine.succeed(f"cat /tmp/{z}-ready") == "", "the zone was ready already"
+            machine.succeed(f"kill -9 {pid}")
             machine.wait_until_fails(f"pgrep -u alice -f 'dev.mirql.zone.{z}|appzones/{z}/|zone_init.py'", timeout=30)
             u(f"! appzones ping {z}")
             print(f"PASS  kill -9 of {z}'s server ({when}): zone-init, bwrap, pasta, the proxy and zone-wayland are gone")
-        u("appzones up td && appzones ping td && appzones stop td")
-        print("PASS  the zone starts again at once (the lock went with the killed server)")
+            u(f"appzones up {z} && appzones ping {z} && appzones stop {z}")
+            print(f"PASS  {z} starts again at once (the lock went with the killed server)")
   '';
 }

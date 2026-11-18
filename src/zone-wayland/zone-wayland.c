@@ -45,7 +45,12 @@ int main(int argc, char **argv) {
   }
   const char *parent = getenv("ZONE_WAYLAND_PARENT");
   if (parent) {
-    // the server's death ends this helper; checked after prctl: no gap
+    // the server's death ends this helper; checked after prctl: no gap. SIGTERM
+    // unblocked first, in case whoever started the server had it blocked
+    sigset_t term;
+    sigemptyset(&term);
+    sigaddset(&term, SIGTERM);
+    sigprocmask(SIG_UNBLOCK, &term, NULL);
     if (prctl(PR_SET_PDEATHSIG, SIGTERM) < 0) { perror("prctl"); return 1; }
     if (getppid() != (pid_t)atol(parent)) { fprintf(stderr, "zone-wayland: server gone\n"); return 1; }
   }

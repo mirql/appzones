@@ -415,7 +415,13 @@ def busy(path):
 
 
 def handle(conn: socket.socket):
-    data, fds, _, _ = socket.recv_fds(conn, 65536, 3)
+    conn.settimeout(5)  # a client that connects and says nothing cannot hold zone-init up
+    try:
+        data, fds, _, _ = socket.recv_fds(conn, 65536, 3)
+    except (TimeoutError, OSError):
+        conn.close()
+        return
+    conn.settimeout(None)
     try:
         req = json.loads(data.decode().splitlines()[0])
     except (ValueError, IndexError):
@@ -598,8 +604,12 @@ def main():
                 os.read(r, 512)
                 reap()
             elif kind == "server":
-                log("the zone's server is gone; ending the zone")
-                sys.exit(0)
+                try:  # best effort: a stalled log reader must not keep the zone alive
+                    os.set_blocking(1, False)
+                    os.write(1, b"[zone-init] the zone's server is gone; ending the zone\n")
+                except OSError:
+                    pass
+                os._exit(0)
             elif kind == "out":
                 if pid in outputs:
                     read_output(pid)

@@ -182,16 +182,16 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     signal.signal(signal.SIGINT, stop_all)
     if os.environ.get("WAYLAND_DISPLAY"):
         h = subprocess.Popen([tool("zone-wayland"), str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
-                             stdout=subprocess.PIPE, text=True,
+                             stdout=subprocess.PIPE,
                              env=dict(os.environ, ZONE_WAYLAND_PARENT=str(os.getpid())))
         helpers.append(h)
-        ready, _, _ = select.select([h.stdout], [], [], START_TIMEOUT)
-        if not ready or h.stdout.readline().strip() != "ready":
+        if read_line(h.stdout.fileno(), START_TIMEOUT) != b"ready":
             stop_all(); die(f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
     else:
         print(f"[zone] no WAYLAND_DISPLAY: zone {name} starts without a Wayland socket", flush=True)
     if os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
-        helpers.append(subprocess.Popen(portals.dbus_proxy_argv(z, zrt)))  # its bwrap: --die-with-parent
+        # its bwrap has --die-with-parent too, but arms it only once running
+        helpers.append(subprocess.Popen(portals.dbus_proxy_argv(z, zrt), preexec_fn=die_with(os.getpid())))
         end = time.monotonic() + START_TIMEOUT
         while not (zrt / "bus").exists():
             if time.monotonic() > end or helpers[-1].poll() is not None:
@@ -214,19 +214,20 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     if not offer_pidfd(name, child):
         print(f"[zone] {name}: _netsetup did not take the server's pidfd; stopping", flush=True)
         stop_all()
-        child.wait()
+        wait_or_kill(child)
         shutil.rmtree(fp, ignore_errors=True)
         return 1
     # ready: zone-init answers; then the autostart apps
-    end = time.monotonic() + START_TIMEOUT
-    while time.monotonic() < end:
-        if child.poll() is not None or agent.ping(name):
+    end, answered = time.monotonic() + START_TIMEOUT, False
+    while time.monotonic() < end and child.poll() is None:
+        if agent.ping(name):
+            answered = True
             break
         time.sleep(0.05)
-    if child.poll() is None and not agent.ping(name):
+    if child.poll() is None and not answered:
         print(f"[zone] {name}: zone-init did not answer within {START_TIMEOUT:.0f} s; stopping", flush=True)
         stop_all()
-        child.wait()
+        wait_or_kill(child)
         shutil.rmtree(fp, ignore_errors=True)
         return 1
     if child.poll() is None:
@@ -316,9 +317,44 @@ def agent_listener(name: str) -> int:
     return fd
 
 
+def read_line(fd: int, timeout: float) -> bytes | None:
+    """One line from FD, read whole within TIMEOUT seconds (without its newline); None if not."""
+    end, buf = time.monotonic() + timeout, b""
+    while b"\n" not in buf:
+        left = end - time.monotonic()
+        if left <= 0 or not select.select([fd], [], [], left)[0]:
+            return None
+        chunk = os.read(fd, 256)
+        if not chunk:
+            return None
+        buf += chunk
+    return buf.split(b"\n", 1)[0].strip()
+
+
+def die_with(server: int):
+    """A preexec_fn: the child gets SIGKILL when SERVER dies (PR_SET_PDEATHSIG), and exits
+    if it died already. The server is single-threaded, so preexec_fn is safe here."""
+    def arm():
+        import ctypes
+        PR_SET_PDEATHSIG = 1
+        ctypes.CDLL(None, use_errno=True).prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
+        if os.getppid() != server:
+            os._exit(1)
+    return arm
+
+
+def wait_or_kill(p: subprocess.Popen, timeout: float = 10.0) -> None:
+    """Wait for P, SIGKILL it when it has not exited after TIMEOUT (e.g. stopped by SIGSTOP)."""
+    try:
+        p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.wait()
+
+
 def handoff_path(name: str) -> Path:
     """Where the server hands its own pidfd to _netsetup (in the zone's runtime dir, 0700)."""
-    return common.RT / name / "server.sock"
+    return common.RT / name / "srv.sock"  # not longer than agent.sock (unix socket path limit)
 
 
 def offer_pidfd(name: str, child: subprocess.Popen) -> bool:
@@ -342,6 +378,9 @@ def offer_pidfd(name: str, child: subprocess.Popen) -> bool:
                     me = os.pidfd_open(os.getpid())
                     try:
                         socket.send_fds(conn, [b"pidfd"], [me])
+                    except OSError as e:
+                        print(f"[zone] {name}: handing over the server's pidfd failed: {e.strerror or e}", flush=True)
+                        return False
                     finally:
                         os.close(me)
                 return True
