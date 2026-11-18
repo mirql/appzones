@@ -9,11 +9,19 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify)
    ├─ bwrap ─ xdg-dbus-proxy → the zone's filtered bus; the proxy's bwrap
    │                      carries /.flatpak-info, so portals see
    │                      app id dev.mirql.zone.work
-   └─ pasta (own netns) ─ appzones _netsetup (nft deny list, then exec)
+   └─ pasta (own netns) ─ appzones _netsetup (nft deny list, the agent's
+      │                   socket, then exec)
       └─ bwrap (user, pid, ipc, uts, cgroup ns; no caps; no_new_privs)
          └─ zone-init     the agent inside: run, shell (pty), ps
             └─ apps
 ```
+
+- The `appzones` CLI talks to zone-init over a socket the host makes,
+  `$XDG_RUNTIME_DIR/appzones/NAME/agent.sock`, outside the zone. zone-init
+  gets it as an inherited fd; there is no socket file inside the zone. zone-init
+  is not dumpable, so apps in the zone cannot trace it or take that fd.
+- `/run/zone` inside is read-only: the `xdg-open` shim (`bin/`) and the
+  host's `links.sock`, through which clicked links leave the zone.
 
 - `/run/user/1000` inside is an empty tmpfs that holds only the zone's
   sockets: `wayland-0`, `bus`, `zone-bus/` once an app uses the zone's own
