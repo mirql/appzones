@@ -48,6 +48,9 @@ class _Zone:
 
 class ZonecfgTest(unittest.TestCase):
     def setUp(self):
+        # the tests assume NixOS's layout unless they set another (the Nix build
+        # sandbox has no /run/current-system)
+        os.environ["APPZONES_LAYOUT"] = "nixos"
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name) / "home"
         for d in ("Downloads/work", "Pictures", "Music", ".ssh", ".gnupg", ".config/opencode",
@@ -78,6 +81,7 @@ class ZonecfgTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+        os.environ.pop("APPZONES_LAYOUT", None)
         os.environ.pop("APPZONES_HOME_FOR_TESTS", None)
         os.environ.pop("APPZONES_DBUS_SERVICE_DIRS", None)
         os.environ.pop("APPZONES_DENIED_PATHS", None)
@@ -647,6 +651,56 @@ os.write(w, b"\\n"); os.close(w)
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 entry.main(bad)
         importlib.reload(importlib.import_module("appzones.server"))
+
+    def test_layout(self):
+        """A zone's system files: NixOS's /nix/store, or /usr and the host's /bin /lib* links (fhs)."""
+        zone = self._zone_mod()
+        old = os.environ.pop("APPZONES_LAYOUT", None)
+        try:
+            self.assertEqual(self.z.host_layout(), "nixos" if os.path.exists("/run/current-system") else "fhs")  # detected
+            for v in ("fhs", "nixos"):
+                os.environ["APPZONES_LAYOUT"] = v
+                self.assertEqual(self.z.host_layout(), v)
+            os.environ["APPZONES_LAYOUT"] = "gentoo"  # not a layout: detected as usual
+            self.assertIn(self.z.host_layout(), ("nixos", "fhs"))
+            # nix_ld is for NixOS only
+            os.environ["APPZONES_LAYOUT"] = "fhs"
+            self.assertRefused(self.errs("nix_ld = true"), "nix_ld = true is for NixOS")
+            self.assertEqual(zone.real_xdg_open(), "/usr/bin/xdg-open")
+            os.environ["APPZONES_LAYOUT"] = "nixos"
+            self.assertEqual(zone.real_xdg_open(), "/run/current-system/sw/bin/xdg-open")
+        finally:
+            os.environ.pop("APPZONES_LAYOUT", None)
+            if old is not None:
+                os.environ["APPZONES_LAYOUT"] = old
+        self.assertEqual(zone.system_binds("nixos"), ["--ro-bind", "/nix/store", "/nix/store"])
+        root = Path(self.tmp.name) / "root"  # a merged-/usr system, and a separate /sbin
+        (root / "usr/bin").mkdir(parents=True)
+        (root / "usr/lib").mkdir()
+        (root / "sbin").mkdir()
+        (root / "bin").symlink_to("usr/bin")
+        (root / "lib").symlink_to("usr/lib")
+        self.assertEqual(zone.system_binds("fhs", root=str(root)),
+                         ["--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--ro-bind", "/sbin", "/sbin",
+                          "--symlink", "usr/lib", "/lib"])
+        fhs, nix = zone.system_env("fhs"), zone.system_env("nixos")
+        self.assertEqual(fhs["PATH"], "/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin")
+        self.assertEqual((fhs["XDG_DATA_DIRS"], fhs["TZDIR"]), ("/usr/local/share:/usr/share", "/usr/share/zoneinfo"))
+        self.assertTrue(nix["PATH"].endswith("/run/current-system/sw/bin"))
+        # the xdg-open shim: a shell every layout has, and the real xdg-open filled in
+        shim = zone.XDG_OPEN.format(links="zone", target="aa", python="/usr/bin/python3", xdg_open="/usr/bin/xdg-open")
+        self.assertTrue(shim.startswith("#!/bin/sh\n"))
+        self.assertIn('exec /usr/bin/xdg-open "$@"', shim)
+        # packages without Nix: a warning, no build
+        cfg = self.cfg('version = 1\n[zones.tt]\ncolour = "#112233"\npackages = ["hello"]\n')
+        real = zone.shutil.which
+        zone.shutil.which = lambda name, *a, **k: None if name == "nix" else real(name, *a, **k)
+        try:
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(zone.package_paths(cfg.zones["tt"], Path(self.tmp.name)), [])
+            self.assertIn("packages need Nix", err.getvalue())
+        finally:
+            zone.shutil.which = real
 
     def test_active(self):
         """appzones active: the zone from the window's compositor tag; zone:? is a sandbox it cannot name."""

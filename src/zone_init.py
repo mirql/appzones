@@ -61,7 +61,7 @@ def moz_remoting_name(zone, app):
 
 
 ENV_ALLOW = {"TERM", "COLUMNS", "LINES", "LANG", "LC_ALL", "MOZ_HEADLESS", "NO_AT_BRIDGE"}
-SHELL = ["/run/current-system/sw/bin/bash", "-i"]
+SHELL = ["/bin/bash", "-i"]  # NixOS zones have /bin too (the system's sw/bin)
 
 ZRT = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 ZBUS_DIR = f"{ZRT}/zone-bus"
@@ -113,7 +113,7 @@ def service_links():
     """Link the activatable services the zone may start on its own bus."""
     out = f"{ZBUS_DIR}/services"
     os.makedirs(out, exist_ok=True)
-    dirs = os.environ.get("XDG_DATA_DIRS", "/run/current-system/sw/share").split(":")
+    dirs = os.environ.get("XDG_DATA_DIRS", "/usr/share").split(":")
     for d in dirs:
         sd = os.path.join(d, "dbus-1/services")
         try:

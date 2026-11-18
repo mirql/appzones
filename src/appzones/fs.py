@@ -18,6 +18,38 @@ from . import common, server
 
 
 # ── filesystem ─────────────────────────────────────────────────────────────
+# /etc on a usual (FHS) distribution: what NixOS keeps elsewhere (alternatives
+# for /usr/bin links, the loader's cache, the names getaddrinfo reads).
+FHS_ETC = ["alternatives", "ld.so.cache", "ld.so.conf", "ld.so.conf.d", "services", "protocols", "gai.conf",
+           "ca-certificates", "bash.bashrc", "debian_version", "lsb-release", "environment"]
+
+
+def system_binds(layout: str | None = None, root: str = "/") -> list[str]:
+    """The host's programs, read-only, for a zone and the D-Bus proxy's sandbox:
+    /nix/store on NixOS; elsewhere /usr, and /bin /sbin /lib* as the host has
+    them (links into /usr on a merged-/usr system)."""
+    if (layout or zonecfg.host_layout()) == "nixos":
+        return ["--ro-bind", "/nix/store", "/nix/store"]
+    a = ["--ro-bind", "/usr", "/usr"]
+    for d in ("/bin", "/sbin", "/lib", "/lib64", "/lib32", "/libx32"):
+        p = os.path.join(root, d.lstrip("/"))
+        if os.path.islink(p):
+            a += ["--symlink", os.readlink(p), d]
+        elif os.path.isdir(p):
+            a += ["--ro-bind", d, d]
+    return a
+
+
+def system_env(layout: str | None = None) -> dict[str, str]:
+    """PATH (the system part), XDG_DATA_DIRS and TZDIR inside a zone."""
+    if (layout or zonecfg.host_layout()) == "nixos":
+        return {"PATH": f"/etc/profiles/per-user/{common.USER}/bin:/run/current-system/sw/bin",
+                "XDG_DATA_DIRS": f"/etc/profiles/per-user/{common.USER}/share:/run/current-system/sw/share",
+                "TZDIR": "/etc/zoneinfo"}
+    return {"PATH": "/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin",
+            "XDG_DATA_DIRS": "/usr/local/share:/usr/share", "TZDIR": "/usr/share/zoneinfo"}
+
+
 ETC = ["static", "fonts", "ssl", "pki", "passwd", "group", "nsswitch.conf", "localtime", "zoneinfo",
        "mime.types", "xdg", "profile", "hosts", "host.conf", "login.defs", "os-release", "pulse",
        "alsa", "asound.conf", "gtk-3.0", "gtk-2.0", "machine-info", "locale.conf", "vconsole.conf",
@@ -231,6 +263,9 @@ def usb_binds(ids: list[str], root: str = "/") -> tuple[list[str], list[str]]:
 def package_paths(z: zonecfg.Zone, zdir: Path) -> list[str]:
     """Build the zone's extra `packages` (nixpkgs attributes) with GC roots in
     the zone's state; returns their bin dirs. A failure warns and continues."""
+    if not shutil.which("nix"):
+        warn(f"packages: {' '.join(z.settings['packages'])} not built: packages need Nix (nix on PATH)")
+        return []
     out = []
     roots = zdir / "packages"
     roots.mkdir(exist_ok=True)
@@ -349,8 +384,8 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
         a += ["--bind", str(zdir / "tmp"), "/tmp", "--bind", str(zdir / "var-tmp"), "/var/tmp"]  # NOSONAR: the zone's own /tmp, bound from its private directory
     else:
         a += ["--tmpfs", "/tmp"]  # NOSONAR: a fresh tmpfs inside the zone
-    a += ["--tmpfs", "/run", "--perms", "0700", "--tmpfs", common.ZRT, "--dir", "/run/zone",
-          "--ro-bind", "/nix/store", "/nix/store"]
+    layout = zonecfg.host_layout()
+    a += ["--tmpfs", "/run", "--perms", "0700", "--tmpfs", common.ZRT, "--dir", "/run/zone"] + system_binds(layout)
     # runtime mounts (appzones mount): read-only here, so the zone cannot plant
     # anything in it; a host mount below .../mnt propagates in (bwrap makes
     # its mounts slaves of the host's, and /home is shared on the host)
@@ -362,9 +397,10 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
                  "/run/opengl-driver-32"):
         if os.path.lexists(link):
             a += ["--symlink", os.path.realpath(link), link]
-    a += ["--symlink", "/run/current-system/sw/bin", "/bin"]
-    a += ["--symlink", "/run/current-system/sw/bin/env", "/usr/bin/env"]
-    for e in ETC:
+    if layout == "nixos":
+        a += ["--symlink", "/run/current-system/sw/bin", "/bin"]
+        a += ["--symlink", "/run/current-system/sw/bin/env", "/usr/bin/env"]
+    for e in ETC + (FHS_ETC if layout == "fhs" else []):
         p = Path("/etc") / e
         if not os.path.lexists(p) or (e == "hosts" and s["dns"] == "public"):
             continue
@@ -412,17 +448,17 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
     if (zrt / "ctl/bin").is_dir():
         # the xdg-open shim: first on PATH, so never writable from inside
         a += ["--ro-bind", str(zrt / "ctl/bin"), "/run/zone/bin"]
+    sysenv = system_env(layout)
     env = {
         "HOME": str(common.HOME), "USER": common.USER, "LOGNAME": common.USER,
-        "PATH": ":".join(extra_path + ["/run/zone/bin", f"/etc/profiles/per-user/{common.USER}/bin",
-                                       "/run/current-system/sw/bin"]),
+        "PATH": ":".join(extra_path + ["/run/zone/bin", sysenv["PATH"]]),
         "LANG": os.environ.get("LANG", "C.UTF-8"), "TZ": os.environ.get("TZ", ":/etc/localtime"),
         "XDG_RUNTIME_DIR": common.ZRT, "ZONE": z.name, "TERM": "xterm-256color",
-        "XDG_DATA_DIRS": f"/etc/profiles/per-user/{common.USER}/share:/run/current-system/sw/share",
+        "XDG_DATA_DIRS": sysenv["XDG_DATA_DIRS"],
         "XDG_CONFIG_DIRS": "/etc/xdg", "XDG_SESSION_TYPE": "wayland",
         "NIXOS_OZONE_WL": "1", "MOZ_ENABLE_WAYLAND": "1", "QT_QPA_PLATFORM": "wayland;xcb",
         "SDL_VIDEODRIVER": "wayland", "ELECTRON_OZONE_PLATFORM_HINT": "wayland",
-        "TZDIR": "/etc/zoneinfo",
+        "TZDIR": sysenv["TZDIR"],
     }
     # the host session's desktop name (portal backends and toolkits pick by it)
     desk = os.environ.get("XDG_CURRENT_DESKTOP", "")

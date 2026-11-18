@@ -653,7 +653,7 @@ def check(probe: str | None) -> int:
     fails = 0
     for title, expect, cmd in probes:
         r = subprocess.run([sys.executable, str(common.HERE / "zone.py"), "run", "--wait", probe, "--",  # NOSONAR: argv list, no shell; a configured zone (load_zone above)
-                            "/run/current-system/sw/bin/bash", "-c", cmd],
+                            "/bin/bash", "-c", cmd],
                            stdin=subprocess.DEVNULL, capture_output=True, text=True)
         ok = (r.returncode == 0) == (expect == 0)
         fails += not ok
@@ -663,7 +663,8 @@ def check(probe: str | None) -> int:
 
 def find_desktop(name: str) -> dict:
     dirs = [os.environ.get("XDG_DATA_HOME", str(common.HOME / ".local/share"))]
-    dirs += os.environ.get("XDG_DATA_DIRS", "/run/current-system/sw/share").split(":")
+    dirs += os.environ.get("XDG_DATA_DIRS", "/run/current-system/sw/share" if zonecfg.host_layout() == "nixos"
+                           else "/usr/local/share:/usr/share").split(":")
     for d in dirs:
         p = Path(d) / "applications" / name
         if p.is_file():

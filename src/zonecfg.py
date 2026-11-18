@@ -212,6 +212,19 @@ SINCE = {"requires": 2, "bus": 2, "apps.bus": 2, "bus = \"zone\"": 2, "bus = \"n
          "usb": 4,  # release 4: the "usb" device and its usb key
          "supervisor": 5, "start_timeout": 5, "linger": 5}
 
+LAYOUTS = ("nixos", "fhs")
+
+
+def host_layout() -> str:
+    """Where the host keeps its programs, which a zone sees read-only: "nixos"
+    (/nix/store, /run/current-system) or "fhs" (/usr, the usual Linux layout).
+    $APPZONES_LAYOUT overrides it."""
+    v = env("LAYOUT")
+    if v in LAYOUTS:
+        return v
+    return "nixos" if os.path.exists("/run/current-system") else "fhs"
+
+
 # nix-ld on the host (programs.nix-ld.enable): the shim at the FHS loader
 # path, and the directory with the real loader (ld.so) and its libraries.
 NIX_LD_SHIM = env("NIX_LD_SHIM") or "/lib64/ld-linux-x86-64.so.2"
@@ -684,7 +697,10 @@ def validate(zones: dict[str, Zone], apps: dict[str, dict]) -> list[str]:
             errs.append(f"{p} network = \"host\" in untrusted needs force_host = true")
         if isinstance(s["links"], str) and s["links"].startswith("zone:") and s["links"][5:] not in zones:
             errs.append(f"{p} links names unknown zone {s['links'][5:]!r}")
-        if s["nix_ld"] is True and host_nix_ld() is None:
+        if s["nix_ld"] is True and host_layout() == "fhs":
+            errs.append(f"{p} nix_ld = true is for NixOS; on this distribution generic Linux binaries run "
+                        f"without it: remove it")
+        elif s["nix_ld"] is True and host_nix_ld() is None:
             errs.append(f"{p} nix_ld = true, but this host has no nix-ld ({NIX_LD_SHIM} is not its shim, or "
                         f"{NIX_LD_LIB}/ld.so is missing): programs.nix-ld.enable = true on the host first")
         if isinstance(s["devices"], list) and "camera" not in s["devices"] and z.origin["camera"] == "zone":

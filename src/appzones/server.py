@@ -187,6 +187,9 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             die(f"no zone {name!r} in {common.CONFIG}")
         z = cfg.zones[name]
         s = z.settings
+        if common.HERE.is_relative_to(common.HOME.resolve()):
+            die(f"appzones runs from {common.HERE}, inside your home: a zone cannot see it there (a zone's "
+                "home is its own). Install it outside the home (`make install`, or the Nix package)")
         global START_TIMEOUT
         START_TIMEOUT = zonecfg.duration(s["start_timeout"]) or START_TIMEOUT
         linger = zonecfg.duration(s["linger"])
@@ -214,7 +217,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         if target:
             (zrt / "ctl/bin").mkdir()
             xo = zrt / "ctl/bin/xdg-open"
-            xo.write_text(portals.XDG_OPEN.format(links=s["links"], target=target, python=os.path.realpath(sys.executable)))
+            xo.write_text(portals.XDG_OPEN.format(links=s["links"], target=target, python=os.path.realpath(sys.executable),
+                                                  xdg_open=portals.real_xdg_open()))
             xo.chmod(0o755)
             links_srv = portals.serve_links(z, zrt, target)
         signal.signal(signal.SIGTERM, stop_asked)

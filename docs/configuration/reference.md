@@ -36,12 +36,12 @@ known key suggested.
 | `userns` | `true` · `false` | nested user namespaces, which browser and Electron sandboxes need. `false`: Chromium and Electron refuse to start, and Firefox runs a weaker sandbox without saying so (warned) |
 | `machine_id` | `"zone"` · `"host"` | `zone`: a random id, kept, so apps cannot link the zone to the host or to other zones |
 | `theme` | `true` · `false` | copy GTK, Qt, font, icon and cursor settings in at each start. Copied, not bound, because they are often links into a dotfiles checkout |
-| `packages` | `[]` | extra nixpkgs attributes, built at zone start and put first on `PATH` |
+| `packages` | `[]` | extra nixpkgs attributes, built at zone start and put first on `PATH`. Needs Nix on the host (without it: a warning, nothing built) |
 | `env` | `{}` | extra environment. Names on the never-list are refused (`*TOKEN*`, `*KEY*`, `SSH_AUTH_SOCK`, `HYPRLAND_*`, `LD_PRELOAD`, …) |
 | `binds` | `[]` | `{ path = "~/Downloads", mode = "rw" \| "ro" }`, at the same path inside |
 | `dbus` | `{ talk = [], own = [] }` | names on the host bus proxy added to the safe default set (see [D-Bus](dbus.md) for what is refused) |
 | `bus` | `"host"` · `"zone"` · `"none"` | the session bus for a command that is not in `[apps]` (`appzones run Z -- CMD`). See [D-Bus](dbus.md) |
-| `nix_ld` | `false` · `true` | generic Linux binaries run: `/lib64/ld-linux-x86-64.so.2` in the zone is the host's nix-ld shim, and `NIX_LD`, `NIX_LD_LIBRARY_PATH` are set as on the host. Refused on a host without nix-ld (`programs.nix-ld.enable`). See [Generic binaries](nix-ld.md) |
+| `nix_ld` | `false` · `true` | generic Linux binaries run: `/lib64/ld-linux-x86-64.so.2` in the zone is the host's nix-ld shim, and `NIX_LD`, `NIX_LD_LIBRARY_PATH` are set as on the host. Refused on a host without nix-ld (`programs.nix-ld.enable`), and outside NixOS, where generic binaries run without it. See [Generic binaries](nix-ld.md) |
 | `tmp` | `"ram"` · `"disk"` | `ram`: `/tmp` is a fresh tmpfs at every start. `disk`: `/tmp` and `/var/tmp` are `~/.local/share/appzones/NAME/tmp` and `.../var-tmp` (0700): kept across restarts, readable from the host. Cleaned at each start, see [/tmp on disk](files.md#tmp-on-disk-tmp--disk) |
 | `home` | `""` | the zone's home; empty: `~/.local/share/appzones/NAME/home` |
 | `force_host` | `false` · `true` | allow `network = "host"` in `untrusted` |

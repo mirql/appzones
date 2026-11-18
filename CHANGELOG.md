@@ -5,6 +5,17 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **A zone's file system on other distributions** (0.8 milestone "zones beyond
+  NixOS", #62): without `/run/current-system`, a zone gets the host's `/usr`
+  read-only and `/bin`, `/sbin`, `/lib*` as the host has them, the `/etc` files
+  such systems need (`alternatives`, `ld.so.cache`, ...), and a matching `PATH`,
+  `XDG_DATA_DIRS` and `TZDIR`; the D-Bus proxy's sandbox too. NixOS stays as it
+  is (`APPZONES_LAYOUT` overrides the choice). The shell, the `xdg-open` shim and
+  `appzones check` no longer name `/run/current-system`. `nix_ld` is refused
+  outside NixOS, `packages` warns without Nix, and appzones run from inside the
+  home says it must be installed outside it (a zone cannot see it there). Not
+  enough on its own yet: an install outside Nix and DNS with older pasta follow.
+
 - **Window borders fail closed** (Hyprland): a window that comes from a zone but
   cannot be named gets the tag `zone:?` and a red warning border, never the host's
   look. Before, it got none: a zone started without systemd, a process under

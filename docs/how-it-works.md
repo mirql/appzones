@@ -68,11 +68,16 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   sockets: `wayland-0`, `bus`, `zone-bus/` once an app uses the zone's own
   bus, and with `audio`, `pipewire-0` and `pulse/native`. The real bus, Hyprland's IPC, systemd, pueue, gnupg and
   the secrets never exist there.
-- `/nix/store` is read-only. A curated `/etc` is bound, with the zone's own
-  `machine-id`, `resolv.conf` and, for `dns = "public"`, `hosts`.
+- The host's programs are read-only: on NixOS `/nix/store` (and the
+  system's links); on other distributions `/usr`, with `/bin`, `/sbin` and
+  `/lib*` as the host has them (links into `/usr` on most). Which one is
+  decided at start: NixOS when `/run/current-system` exists
+  (`APPZONES_LAYOUT=nixos|fhs` overrides it). A curated `/etc` is bound, with
+  the zone's own `machine-id`, `resolv.conf` and, for `dns = "public"`,
+  `hosts`.
 - `/tmp` is a tmpfs, or with `tmp = "disk"` the zone's `tmp/` (and
   `/var/tmp` its `var-tmp/`). `/mnt/host` is the zone's `mnt/`, read-only,
-  where runtime mounts appear. `/lib64` exists only with `nix_ld`.
+  where runtime mounts appear. On NixOS, `/lib64` exists only with `nix_ld`.
 - `/dev` is bwrap's minimal one, plus the render node with `gpu`,
   `/dev/video*` with `camera = "device"`, and the named USB devices with
   `usb`. `/sys` holds only what those need and `/sys/devices/system/cpu`.

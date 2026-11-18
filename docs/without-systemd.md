@@ -47,10 +47,9 @@ itself makes sure there is exactly one per zone and that nothing outlives it.
   `linger` for a zone that should end by itself when no app runs in it.
 - **Service files** for runit, s6 and dinit (and systemd outside NixOS), in
   `contrib/`.
-- **Not yet: other distributions.** A zone's file system is built from NixOS's
-  layout (`/nix/store`, `/run/current-system`), so zones need NixOS for now;
-  what is missing is collected in
-  [#22](https://github.com/mirql/appzones/issues/22).
+- **Not yet: other distributions.** The work is milestone
+  [0.8.0: zones beyond NixOS](https://github.com/mirql/appzones/milestone/2):
+  command-line zones on Ubuntu and Debian first.
 
 ## What is done
 

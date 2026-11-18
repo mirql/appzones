@@ -10,7 +10,7 @@ from pathlib import Path
 import zonecfg
 
 from .common import tool
-from . import common
+from . import common, fs
 
 
 # ── portals: flatpak-info and the D-Bus proxy ──────────────────────────────
@@ -67,21 +67,26 @@ def dbus_proxy_argv(z: zonecfg.Zone, zrt: Path) -> list[str]:
     # /.flatpak-info: the portal reads /proc/<peer pid>/root/.flatpak-info,
     # and the peer it sees is the proxy (flatpak-run.c add_bwrap_wrapper).
     return [tool("bwrap"), "--unshare-all", "--share-net", "--die-with-parent",
-            "--ro-bind", "/nix/store", "/nix/store", "--bind", str(common.HOST_RT), str(common.HOST_RT),
+            *fs.system_binds(), "--bind", str(common.HOST_RT), str(common.HOST_RT),
             "--ro-bind", str(zrt / "flatpak-info"), "/.flatpak-info",
             "--", tool("xdg-dbus-proxy"), host_bus, str(zrt / "bus"), "--filter", *dbus_rules(z)]
 
 
 # ── links: an in-zone xdg-open that hands http(s) URLs to a zone's browser ─
-XDG_OPEN = """#!/run/current-system/sw/bin/sh
+XDG_OPEN = """#!/bin/sh
 # zone xdg-open (links = "{links}"): http(s) URLs open in zone {target}'s
 # browser through the zone's link socket; anything else goes to the real xdg-open.
 case "$1" in
   http://*|https://*)
     exec {python} -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect("/run/zone/links.sock"); s.sendall(sys.argv[1].encode()+b"\\n"); sys.exit(0 if s.recv(3)==b"ok\\n" else 1)' "$1" ;;
 esac
-exec /run/current-system/sw/bin/xdg-open "$@"
+exec {xdg_open} "$@"
 """
+
+
+def real_xdg_open() -> str:
+    """The zone's own xdg-open, which the shim hands anything but http(s) URLs."""
+    return "/run/current-system/sw/bin/xdg-open" if zonecfg.host_layout() == "nixos" else "/usr/bin/xdg-open"
 
 
 def link_target(z: zonecfg.Zone) -> str | None:
