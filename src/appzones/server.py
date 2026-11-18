@@ -1,4 +1,4 @@
-"""The zone supervisor (`appzones _supervise`), `_netsetup`, the agent socket, colours."""
+"""The zone server (`appzones serve`), `_netsetup`, the agent socket, colours."""
 from __future__ import annotations
 
 import os
@@ -7,6 +7,7 @@ import select
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -47,7 +48,37 @@ def sd_notify(msg: str) -> None:
             pass
 
 
-def supervise(name: str) -> int:
+def notify_fd_ok(fd: int) -> bool:
+    """FD is open and something can be written to it (a pipe, a FIFO, a file)."""
+    try:
+        mode = os.fstat(fd).st_mode
+    except OSError:
+        return False
+    return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode) or stat.S_ISCHR(mode)
+
+
+def notify_ready(name: str, notify_fd: int | None) -> None:
+    """The zone answers: tell systemd (sd_notify) and, with --notify-fd, a newline on that fd (s6)."""
+    sd_notify("READY=1\nSTATUS=zone " + name + " running")
+    if notify_fd is not None:
+        try:
+            os.write(notify_fd, b"\n")
+        except OSError as e:
+            print(f"[zone] {name}: could not write readiness to fd {notify_fd}: {e.strerror or e}", flush=True)
+        finally:
+            try:
+                os.close(notify_fd)
+            except OSError:
+                pass
+
+
+def supervise(name: str, notify_fd: int | None = None) -> int:
+    """The zone NAME, in the foreground (`appzones serve`): builds it, holds it, and
+    returns when it ends. SIGTERM or SIGINT stops it and its helpers."""
+    if notify_fd is not None:
+        if notify_fd < 3 or not notify_fd_ok(notify_fd):
+            die(f"--notify-fd {notify_fd}: not an open pipe, file or socket above 2")
+        os.set_inheritable(notify_fd, False)  # never into the zone or a helper
     cfg = load_cfg(quiet=False)
     if name not in cfg.zones:
         die(f"no zone {name!r} in {common.CONFIG}")
@@ -134,7 +165,7 @@ def supervise(name: str) -> int:
         shutil.rmtree(fp, ignore_errors=True)
         return 1
     if child.poll() is None:
-        sd_notify("READY=1\nSTATUS=zone " + name + " running")
+        notify_ready(name, notify_fd)
         print(f"[zone] {name} ready (network={network}, dns={s['dns']}, devices={','.join(s['devices']) or '-'})",
               flush=True)
         for app in s["autostart_apps"]:

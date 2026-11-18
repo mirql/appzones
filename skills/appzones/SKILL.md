@@ -88,6 +88,11 @@ appzones logs ZONE                       # its journal (the user can -f)
 appzones check --probe ZONE              # isolation probes inside a running zone
 ```
 
+**Run a zone without its systemd unit** (another process manager, a terminal):
+`appzones serve ZONE [--notify-fd N]` runs the zone in the foreground; SIGTERM or
+Ctrl-C stops it. Starting it is still rule 1's business only when it replaces a
+running zone.
+
 **Share a folder for a while**
 
 ```bash

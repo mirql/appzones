@@ -145,7 +145,7 @@ in
       serviceConfig = {
         Type = "notify";
         NotifyAccess = "main";
-        ExecStart = "${appzones} _supervise %i";
+        ExecStart = "${appzones} serve %i";
         Slice = "appzones.slice";
         # SIGTERM to the whole cgroup: apps save their state; then SIGKILL.
         # When bwrap (pid 1 of the zone) exits the kernel kills the rest.

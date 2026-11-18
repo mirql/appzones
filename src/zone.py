@@ -32,9 +32,13 @@
     appzones umount ZONE NAME [--lazy]     remove it; busy: lists what holds it (--lazy:
                                            detach now, open files keep it until they close)
     appzones mounts ZONE                   what is mounted in the zone
+    appzones serve ZONE [--notify-fd N]    the zone itself, in the foreground: builds it, holds it,
+                                           exits when it ends (SIGTERM/SIGINT: stop). For a process
+                                           manager or a terminal; appzones@ZONE.service runs it.
+                                           Ready: sd_notify READY=1 ($NOTIFY_SOCKET), and with
+                                           --notify-fd N a newline on fd N (s6 style)
 
 Internal (systemd and the supervisor):
-    appzones _supervise ZONE               the zone itself (appzones@ZONE.service's ExecStart)
     appzones _netsetup RULES INFO ZONE -- CMD
                                            load nft RULES in this netns, open INFO as fd 3, make
                                            ZONE's agent socket (for zone-init: $ZONE_CTL_FD), exec CMD
@@ -52,7 +56,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import zonecfg  # noqa: E402
-from appzones.common import die, load_cfg, load_zone  # noqa: E402
+from appzones.common import die  # noqa: E402
 from appzones import agent, client, mounts, server, upgrade  # noqa: E402
 
 
@@ -61,7 +65,7 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         return 0 if argv else 2
     cmd, rest = argv[0], argv[1:]
-    if cmd == "_autostart" or not (cmd.startswith("_") or cmd == "active"):
+    if cmd == "_autostart" or not (cmd.startswith("_") or cmd in ("active", "serve")):
         upgrade.migrate_state()
 
     def one() -> str:
@@ -69,16 +73,16 @@ def main(argv: list[str]) -> int:
             die(f"usage: appzones {cmd} ZONE")
         return rest[0]
 
-    def each(fn) -> int:
-        names = list(load_cfg(quiet=True).zones) if rest[:1] == ["--all"] else [one()]
-        for n in names:
-            if cmd != "stop" or rest[:1] != ["--all"] or agent.ping(n):
-                load_zone(n)
-                fn(n)
-        return 0
-
-    if cmd == "_supervise":
-        return server.supervise(one())
+    if cmd in ("serve", "_supervise"):  # _supervise: the name before 0.7, for units still running
+        name, fd = one(), None
+        opts = rest[1:]
+        while opts:
+            o = opts.pop(0)
+            v = o.split("=", 1)[1] if o.startswith("--notify-fd=") else opts.pop(0) if o == "--notify-fd" and opts else None
+            if not o.startswith("--notify-fd") or v is None or not v.isdigit():
+                die(f"usage: appzones serve ZONE [--notify-fd N] (not {o!r})")
+            fd = int(v)
+        return server.supervise(name, notify_fd=fd)
     if cmd == "_netsetup":
         i = rest.index("--")
         server.netsetup(rest[0], rest[1], rest[2], rest[i + 1:])
@@ -89,11 +93,11 @@ def main(argv: list[str]) -> int:
     if cmd == "which":
         return client.which(one())
     if cmd == "up":
-        return each(client.up)
+        return client.each_zone(cmd, rest, client.up)
     if cmd == "stop":
-        return each(client.stop_zone)
+        return client.each_zone(cmd, rest, client.stop_zone)
     if cmd == "restart":
-        return each(client.restart_zone)
+        return client.each_zone(cmd, rest, client.restart_zone)
     if cmd == "ping":
         r = agent.ping(one()); print(json.dumps(r)); return 0 if r else 1
     if cmd == "ps":

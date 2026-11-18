@@ -944,5 +944,23 @@ pkgs.testers.runNixOSTest {
         assert [(c["pid"], c["title"]) for c in ff_windows("ta")] == ta_before, ff_windows("ta")
         print("PASS  a second launch in tc opens in tc's Firefox, never ta's")
         u("appzones stop --all")
+
+    with subtest("appzones serve: a foreground zone server, outside its unit, s6-style readiness"):
+        appz = machine.succeed("readlink -f $(command -v appzones)").strip()
+        # KillMode=process: stopping the unit signals only `serve` itself, so anything
+        # it fails to clean up stays behind and is caught below
+        u("systemd-run --user --collect --unit=serve-td -p KillMode=process /bin/sh -c "
+          + shlex.quote(f"exec {appz} serve td --notify-fd 3 3>/tmp/td-ready"))
+        machine.wait_until_succeeds("test -s /tmp/td-ready", timeout=90)
+        assert machine.succeed("cat /tmp/td-ready") == "\n"
+        print("PASS  readiness: a newline on --notify-fd once the zone answers")
+        u("appzones ping td")
+        u("! systemctl --user is-active appzones@td.service")
+        ok("td", "true", "the zone runs apps without its systemd unit")
+        u("systemctl --user kill --kill-whom=main --signal=SIGTERM serve-td")
+        machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + "systemctl --user is-active serve-td"), timeout=60)
+        machine.wait_until_fails("pgrep -u alice -f 'dev.mirql.zone.td|appzones/td/|zone-td-'", timeout=30)
+        u("! appzones ping td")
+        print("PASS  SIGTERM to serve stops the zone and every helper (nothing left behind)")
   '';
 }

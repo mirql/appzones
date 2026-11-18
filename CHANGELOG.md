@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`appzones serve ZONE [--notify-fd N]`**: the zone itself, in the foreground, as a
+  public command (it was the internal `_supervise`). The systemd unit runs it, and so can
+  any process manager or a terminal. Readiness over sd_notify, and with `--notify-fd N` a
+  newline on fd N (s6 style); SIGTERM or SIGINT stops the zone. `_supervise` still works
+  for units that are running during the upgrade.
+
 ## 0.6.2
 
 - **Docs for AI tools**: https://mirql.github.io/appzones/llms.txt (an index of the docs,

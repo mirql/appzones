@@ -2,7 +2,7 @@
 
 ```
 systemd --user: appzones@work.service   (appzones.slice, Type=notify)
-└─ appzones _supervise work                       host side
+└─ appzones serve work                           host side
    ├─ zone-wayland      → wp_security_context_v1 listener (Hyprland hides
    │                      screencopy, data-control, layer-shell, virtual
    │                      input, global shortcuts, the window list)
@@ -16,6 +16,10 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify)
             └─ apps
 ```
 
+- `appzones serve ZONE` is the zone itself, in the foreground: the systemd unit
+  runs it, and so can any process manager or a terminal. It signals readiness
+  over sd_notify, and with `--notify-fd N` as a newline on fd N (s6 style).
+  SIGTERM or SIGINT stops the zone and its helpers.
 - The `appzones` CLI talks to zone-init over a socket the host makes,
   `$XDG_RUNTIME_DIR/appzones/NAME/agent.sock`, outside the zone. zone-init
   gets it as an inherited fd; there is no socket file inside the zone. zone-init

@@ -24,7 +24,7 @@ def supervisors() -> list[str]:
             argv = (d / "cmdline").read_bytes().split(b"\0")
         except OSError:
             continue
-        if b"_supervise" in argv and any(a.endswith(b"zone.py") for a in argv):
+        if (b"serve" in argv or b"_supervise" in argv) and any(a.endswith(b"zone.py") for a in argv):
             out.append(b" ".join(argv).decode(errors="replace"))
     return out
 

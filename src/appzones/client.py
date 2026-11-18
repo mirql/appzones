@@ -36,7 +36,7 @@ def up(name: str, quiet: bool = False) -> None:
     else:
         common.RT.mkdir(parents=True, exist_ok=True)
         log = open(common.RT / f"{name}.log", "ab")
-        subprocess.Popen([sys.executable, str(common.HERE / "zone.py"), "_supervise", name], stdout=log, stderr=log,
+        subprocess.Popen([sys.executable, str(common.HERE / "zone.py"), "serve", name], stdout=log, stderr=log,
                          stdin=subprocess.DEVNULL, start_new_session=True)
     for _ in range(200):
         if agent.ping(name):
@@ -237,11 +237,25 @@ def shell(name: str) -> int:
     return 0
 
 
+def each_zone(cmd: str, rest: list[str], fn) -> int:
+    """`appzones up|stop|restart ZONE|--all`: FN for one zone or every configured one.
+    `stop --all` skips zones that do not answer (nothing to stop); `stop ZONE` always tries."""
+    if not rest:
+        die(f"usage: appzones {cmd} ZONE|--all")
+    every = rest[0] == "--all"
+    for n in list(load_cfg(quiet=True).zones) if every else [rest[0]]:
+        if cmd == "stop" and every and not agent.ping(n):
+            continue
+        load_zone(n)
+        fn(n)
+    return 0
+
+
 def stop_zone(name: str) -> None:
     if use_systemd():
         systemctl("stop", f"appzones@{name}.service")
         return
-    out = subprocess.run(["pgrep", "-f", f"zone.py _supervise {name}$"], capture_output=True, text=True).stdout.split()
+    out = subprocess.run(["pgrep", "-f", f"zone.py (serve|_supervise) {name}$"], capture_output=True, text=True).stdout.split()
     for p in out:
         os.kill(int(p), signal.SIGTERM)
     for _ in range(100):

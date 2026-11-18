@@ -241,6 +241,50 @@ class ZonecfgTest(unittest.TestCase):
         self.assertEqual(sorted(pages - listed), [], "docs pages missing from docs/_data/llms.yml")
         self.assertEqual(sorted(listed - pages), [], "docs/_data/llms.yml names pages that do not exist")
 
+    def test_each_zone(self):
+        """up/stop/restart ZONE|--all; `stop --all` skips zones that do not answer, `stop ZONE` always tries."""
+        zone = self._zone_mod()
+        cfg = self.cfg('version = 1\n[zones.aa]\ncolour = "#111111"\n[zones.bb]\ncolour = "#222222"\n')
+        zone.load_cfg = lambda quiet=False: cfg
+        zone.load_zone = lambda name, quiet=True: cfg.zones[name]
+        zone.ping = lambda n: {"ok": True} if n == "aa" else None
+        for cmd, rest, want in [("stop", ["--all"], ["aa"]), ("stop", ["bb"], ["bb"]), ("up", ["--all"], ["aa", "bb"])]:
+            done = []
+            self.assertEqual(zone.each_zone(cmd, rest, done.append), 0)
+            self.assertEqual(done, want, (cmd, rest))
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            zone.each_zone("up", [], print)
+
+    def test_serve_readiness_fd(self):
+        """--notify-fd N: a newline on N once the zone answers, then N closed; a bad fd is refused."""
+        zone = self._zone_mod()
+        r, w = os.pipe()
+        self.assertTrue(zone.notify_fd_ok(w))
+        zone.notify_ready("aa", w)
+        self.assertEqual(os.read(r, 10), b"\n")
+        self.assertEqual(os.read(r, 10), b"")  # closed after the newline
+        os.close(r)
+        self.assertFalse(zone.notify_fd_ok(w))  # closed now
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            zone.supervise("aa", notify_fd=w)  # not open: refused before anything starts
+
+    def test_serve_arguments(self):
+        """`appzones serve ZONE [--notify-fd N]`; `_supervise ZONE` still works (units still running)."""
+        sys.path.insert(0, str(HERE))
+        import zone as entry
+        entry = importlib.reload(entry)
+        calls = []
+        entry.server.supervise = lambda name, notify_fd=None: calls.append((name, notify_fd)) or 0
+        entry.main(["serve", "aa"])
+        entry.main(["serve", "aa", "--notify-fd", "5"])
+        entry.main(["serve", "aa", "--notify-fd=6"])
+        entry.main(["_supervise", "bb"])
+        self.assertEqual(calls, [("aa", None), ("aa", 5), ("aa", 6), ("bb", None)])
+        for bad in (["serve"], ["serve", "aa", "--notify-fd"], ["serve", "aa", "--notify-fd", "x"], ["serve", "aa", "--other"]):
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                entry.main(bad)
+        importlib.reload(importlib.import_module("appzones.server"))
+
     def test_hyprland_zones_lua_is_a_copy(self):
         """contrib/hyprland/zones.lua (pre-0.6 name) is appzones.lua's code, past each file's header comment."""
         def code(name):

@@ -37,8 +37,8 @@ VM test.
 
 | path | what |
 |---|---|
-| `src/zone.py` | the entry point: usage text and `main()` (`appzones`, `_supervise`, `_netsetup`) |
-| `src/appzones/` | its modules: `client` (the commands), `server` (the supervisor, the unit's ExecStart), `fs` (theme, devices, the bwrap command line), `net` (nft, pasta, DNS), `portals` (D-Bus proxy, links), `agent` (talking to zone-init), `mounts`, `upgrade`, `common` (paths and settings; read as `common.X`, never copied) |
+| `src/zone.py` | the entry point: usage text and `main()` (`appzones`, `serve`, `_netsetup`) |
+| `src/appzones/` | its modules: `client` (the commands), `server` (`appzones serve`, the unit's ExecStart), `fs` (theme, devices, the bwrap command line), `net` (nft, pasta, DNS), `portals` (D-Bus proxy, links), `agent` (talking to zone-init), `mounts`, `upgrade`, `common` (paths and settings; read as `common.X`, never copied) |
 | `src/zone_init.py` | the agent inside a zone (PID 2 under bwrap) |
 | `src/zonecfg.py` | the `zones.toml` schema, the validator and the never-lists |
 | `src/zone_mount_helper.py` | the root step of `appzones mount`, run through sudo |
