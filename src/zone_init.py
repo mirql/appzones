@@ -6,7 +6,8 @@ path, $XDG_RUNTIME_DIR/appzones/ZONE/agent.sock on the host, is not in the
 zone, so nothing in the zone can replace it). One JSON request line per connection:
 
   {"op": "ping"}                         -> {"ok": true, "zone": Z, "pid": N}
-  {"op": "ps"}                           -> {"ok": true, "procs": [[pid, cmdline], ...]}
+  {"op": "ps"}                           -> {"ok": true, "procs": [[pid, cmdline], ...], "init": pid,
+                                              "helpers": [pid, ...]} (the zone's dbus-daemon: not an app)
   {"op": "run", "argv": [...], "env": {...}, "cwd": "...", "wait": bool, "bus": "host"|"zone"|"none"}
         with "wait", the client passes its stdin/stdout/stderr as SCM_RIGHTS
         (pipes or files only; never a tty), and gets {"exit": code} at the end.
@@ -440,7 +441,8 @@ def handle(conn: socket.socket):
             except OSError:
                 continue
             procs.append([p, cmd])
-        reply(conn, {"ok": True, "procs": procs, "init": os.getpid()}); conn.close()
+        helpers = [zbus.pid] if zbus and zbus.poll() is None else []  # not apps (linger)
+        reply(conn, {"ok": True, "procs": procs, "init": os.getpid(), "helpers": helpers}); conn.close()
     elif op == "run":
         op_run(conn, req, fds)
         return

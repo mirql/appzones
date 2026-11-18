@@ -92,8 +92,11 @@ appzones check --probe ZONE              # isolation probes inside a running zon
 **Run a zone without its systemd unit** (another process manager, a terminal):
 `appzones serve ZONE [--notify-fd N]` runs the zone in the foreground; SIGTERM or
 Ctrl-C stops it. `APPZONES_SUPERVISOR=auto|systemd|spawn` chooses who starts
-zones on demand (auto: the unit if installed); logs without systemd are in
-`~/.local/state/appzones/ZONE.log`. Starting it is still rule 1's business only when it replaces a
+zones on demand (auto: the unit if installed); a zone's own `supervisor` key
+beats it. Logs without systemd are in `~/.local/state/appzones/ZONE.log`.
+`linger = "10m"` makes a zone end 10 minutes after its last app (default: it
+stays); `start_timeout` (default `"30s"`) limits each startup step. These keys
+need `requires = 5`. Starting it is still rule 1's business only when it replaces a
 running zone.
 
 **Share a folder for a while**

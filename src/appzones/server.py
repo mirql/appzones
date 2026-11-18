@@ -141,6 +141,9 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         die(f"no zone {name!r} in {common.CONFIG}")
     z = cfg.zones[name]
     s = z.settings
+    global START_TIMEOUT
+    START_TIMEOUT = zonecfg.duration(s["start_timeout"]) or START_TIMEOUT
+    linger = zonecfg.duration(s["linger"])
     zdir, zrt = common.STATE / name, common.RT / name
     zdir.mkdir(parents=True, exist_ok=True)
     common.RT.mkdir(parents=True, exist_ok=True)
@@ -210,7 +213,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             str(fp / "bwrapinfo.json"), name, "--"] + inner
     if network == "internet":
         argv = net.pasta_argv(z) + argv
-    child = subprocess.Popen(argv)  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
+    # _netsetup's own deadline (bwrap clears the environment: it goes no further)
+    child = subprocess.Popen(argv, env=dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT)))  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
     if not offer_pidfd(name, child):
         print(f"[zone] {name}: _netsetup did not take the server's pidfd; stopping", flush=True)
         stop_all()
@@ -243,10 +247,22 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     # wait for the zone; a dead helper takes the zone down (a zone without
     # its proxy or Wayland socket is worse than a restart)
     rc = None
+    idle_since, next_check = time.monotonic(), 0.0
     while rc is None:
         rc = child.poll()
         if rc is not None:
             break
+        if linger and time.monotonic() >= next_check:
+            now = time.monotonic()
+            next_check = now + min(10.0, linger / 3)
+            if apps_running(name) is not False:  # an app, or no answer: not idle
+                idle_since = now
+            elif now - idle_since >= linger:
+                print(f"[zone] {name}: no app for {s['linger']} (linger); stopping", flush=True)
+                child.terminate()
+                wait_or_kill(child)
+                rc = 0  # ended as configured: not a failure, so no restart
+                break
         if any(h.poll() is not None for h in helpers):
             print("[zone] a helper (zone-wayland or xdg-dbus-proxy) exited; stopping the zone", flush=True)
             child.terminate()
@@ -264,6 +280,18 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     shutil.rmtree(fp, ignore_errors=True)
     fs.prepare_mnt(name, zdir)  # runtime mounts end with the zone
     return rc
+
+
+def apps_running(name: str) -> bool | None:
+    """Whether anything runs in zone NAME besides bwrap, zone-init and the zone's own
+    helpers (its D-Bus daemon); None when zone-init does not answer."""
+    try:
+        with agent.request(name, {"op": "ps"}) as sock:
+            r = agent.readline(sock)[0]
+    except (OSError, ValueError):
+        return None
+    skip = {1, r.get("init"), *r.get("helpers", [])}
+    return any(p[0] not in skip for p in r.get("procs", []))
 
 
 # A bind in bwrap_argv: PIN MODE RAW DEST, replaced by netsetup.
@@ -415,6 +443,11 @@ def receive_pidfd(name: str) -> int:
 
 
 def netsetup(rules: str, info: str, name: str, argv: list[str]) -> None:
+    global START_TIMEOUT
+    try:
+        START_TIMEOUT = float(os.environ.pop("ZONE_START_TIMEOUT", START_TIMEOUT))
+    except ValueError:
+        pass
     if rules != "-":
         r = subprocess.run([tool("nft"), "-f", rules])  # NOSONAR: argv list, no shell; rules written by appzones
         if r.returncode != 0:

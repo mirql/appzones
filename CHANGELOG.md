@@ -15,6 +15,14 @@ with the module nothing changes for you. Why, what is done and what is coming:
 https://mirql.github.io/appzones/without-systemd.html (milestone "0.7.0: zones
 without systemd", #50).
 
+- **Zone settings for the server** (zones release 5, `requires = 5`), per zone or in
+  `[defaults]`: `supervisor` (`auto` · `systemd` · `spawn`; the zone's own value
+  beats `$APPZONES_SUPERVISOR`), `start_timeout` (the limit for each startup
+  step, default `"30s"`), and `linger` (default `""`: the zone stays; `"10m"`:
+  the zone ends 10 minutes after its last app, as a success, so systemd does not
+  restart it). Changing `supervisor` or `start_timeout` does not mark a running
+  zone as stale.
+
 - **Who starts zones is chosen for you**: `APPZONES_SUPERVISOR=auto` (the new
   default) uses systemd when `appzones@.service` is installed and the user manager
   answers, otherwise appzones starts zones itself; `systemd` and `spawn` force

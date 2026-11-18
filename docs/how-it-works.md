@@ -47,8 +47,12 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   pasta closes inherited fds) and ends the zone when it becomes readable;
   zone-wayland gets SIGTERM when the server dies (`PR_SET_PDEATHSIG`); the
   D-Bus proxy is tied the same way. Waiting for zone-wayland's "ready", the
-  proxy's bus, the pidfd hand-over and zone-init's answer each have a 30-second
-  deadline; building `packages` comes before them and has none.
+  proxy's bus, the pidfd hand-over and zone-init's answer each have a deadline
+  (`start_timeout`, 30 seconds by default); building `packages` comes before
+  them and has none.
+- With `linger`, the server asks zone-init every few seconds what runs in the
+  zone (its own D-Bus daemon does not count). After `linger` with no app it
+  stops the zone and exits with status 0, so systemd does not restart it.
 - The `appzones` CLI talks to zone-init over a socket the host makes,
   `$XDG_RUNTIME_DIR/appzones/NAME/agent.sock`, outside the zone. zone-init
   gets it as an inherited fd; there is no socket file inside the zone. zone-init

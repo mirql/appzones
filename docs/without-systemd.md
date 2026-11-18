@@ -43,8 +43,9 @@ itself makes sure there is exactly one per zone and that nothing outlives it.
 - **No setting needed:** appzones uses systemd when its unit is installed, and
   starts zones itself otherwise. `stop`, `restart` and `logs` follow whoever runs
   a zone.
-- **Later in 0.7:** choosing the supervisor per zone, and a path to running
-  appzones outside NixOS.
+- **Per-zone choices** in `zones.toml`: `supervisor`, `start_timeout`, and
+  `linger` for a zone that should end by itself when no app runs in it.
+- **Later in 0.7:** a path to running appzones outside NixOS.
 
 ## What is done
 
@@ -55,7 +56,7 @@ itself makes sure there is exactly one per zone and that nothing outlives it.
 | ✓ | The zone ends with its server: zone-init watches a pidfd of the server, zone-wayland and the D-Bus proxy die with it; the startup waits (zone-wayland's "ready", the bus, the pidfd hand-over, zone-init's answer) have a 30-second deadline, building `packages` none | [#53](https://github.com/mirql/appzones/pull/53) |
 | ✓ | Start zones on demand without systemd: `appzones run`, `up` and `shell` start the zone when it does not answer (one server even with many clients at once), with logs in `~/.local/state/appzones/` | [#46](https://github.com/mirql/appzones/issues/46) |
 | ✓ | Supervisor mode `auto` (`APPZONES_SUPERVISOR`, also `systemd` or `spawn`): systemd when the unit is installed and the user manager answers, otherwise on demand; never both for one zone; `stop`, `restart`, `logs` follow whoever runs it; a warning when systemd has no `WAYLAND_DISPLAY` | [#47](https://github.com/mirql/appzones/issues/47) |
-| | Per-zone settings: `supervisor`, `start_timeout`, `linger` (end a zone after some idle time, only if you want that) | [#48](https://github.com/mirql/appzones/issues/48) |
+| ✓ | Per-zone settings (zones release 5): `supervisor`, `start_timeout` (the limit for each startup step), `linger` (end a zone after some time with no app, only if you want that) | [#48](https://github.com/mirql/appzones/issues/48) |
 | | Service files for runit, s6 and dinit; a try outside NixOS | [#49](https://github.com/mirql/appzones/issues/49) |
 
 ## Running a zone yourself today
@@ -105,7 +106,14 @@ appzones serve daily --notify-fd 3     # writes a newline on fd 3 once the zone 
 
 Zones stay **long-lived**: a zone runs until you stop it or your session ends.
 When the compositor goes away, the zone's Wayland helper exits and the zone stops
-with it.
+with it. To have a zone end by itself, give it a `linger` time:
+
+```toml
+[zones.untrusted]
+linger = "10m"         # ends 10 minutes after its last app exits
+supervisor = "spawn"   # this zone: always started by appzones, not systemd
+start_timeout = "1m"   # a slow machine: a minute for each startup step
+```
 
 ## What does not change
 

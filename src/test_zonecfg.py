@@ -483,7 +483,7 @@ os.write(w, b"\\n"); os.close(w)
                                               (False, [], True, "journalctl"), (False, [], False, "tail")]:
                 zone.unit_runs = lambda n, v=runs: v
                 zone.server_pids = lambda n, v=pids: v
-                zone.use_systemd = lambda v=systemd: v
+                zone.use_systemd = lambda z=None, v=systemd: v
                 with self.assertRaises(SystemExit):
                     zone.logs("aa", False)
                 self.assertEqual(ran.pop(), want, (runs, pids, systemd))
@@ -1192,6 +1192,78 @@ os.write(w, b"\\n"); os.close(w)
         # release 4: an older `appzones` must say "update appzones", not "unknown key"
         self.assertRefused(self.cfg('version = 1\nrequires = 3\n[zones.tt]\ncolour = "#112233"\n'
                                     'devices = ["usb"]\nusb = ["abcd"]\n').errors, "set requires = 4")
+
+    def test_server_settings(self):
+        """supervisor, start_timeout, linger: values, defaults, requires = 5."""
+        st = self.cfg('version = 1\n[zones.tt]\ncolour = "#112233"\n').zones["tt"].settings
+        self.assertEqual((st["supervisor"], st["start_timeout"], st["linger"]), ("auto", "30s", ""))
+        self.assertEqual(self.errs('supervisor = "spawn"\nstart_timeout = "2m"\nlinger = "10m"'), [])
+        self.assertEqual(self.errs('start_timeout = 45\nlinger = 600'), [])  # seconds
+        self.assertEqual(self.errs('', '[defaults]\nlinger = "1h"'), [])
+        for key, bad, needle in [("supervisor", '"runit"', "supervisor must be one of"),
+                                 ("start_timeout", '"0s"', "start_timeout must be a duration"),
+                                 ("start_timeout", '"2h"', "start_timeout must be between 1 s and 1 h"),
+                                 ("start_timeout", '""', "start_timeout must be a duration"),
+                                 ("start_timeout", '"30"', "start_timeout must be a duration"),
+                                 ("start_timeout", 'true', "start_timeout must be a duration"),
+                                 ("linger", '"5s"', "linger must be between 10 s and 168 h"),
+                                 ("linger", '"1d"', "linger must be a duration"),
+                                 ("linger", '-1', "linger must be a duration")]:
+            with self.subTest(key=key, bad=bad):
+                self.assertRefused(self.errs(f"{key} = {bad}"), needle)
+        self.assertEqual([self.z.duration(v) for v in ("30s", "10m", "2h", 45, "", "1.5m", 0, True)],
+                         [30.0, 600.0, 7200.0, 45.0, None, None, None, None])
+        self.assertRefused(self.cfg('version = 1\nrequires = 4\n[zones.tt]\ncolour = "#112233"\nlinger = "10m"\n')
+                           .errors, "set requires = 5")
+
+    def test_server_settings_use(self):
+        """The zone's supervisor beats $APPZONES_SUPERVISOR unless auto; the server-only settings
+        never make a running zone stale, linger once set does; apps_running skips the helpers."""
+        zone = self._zone_mod()
+
+        def z(**kw):
+            body = "".join(f'{k} = "{v}"\n' for k, v in kw.items())
+            return self.cfg(f'version = 1\n[zones.tt]\ncolour = "#112233"\n{body}').zones["tt"]
+
+        old = os.environ.get("APPZONES_SUPERVISOR")
+        try:
+            os.environ["APPZONES_SUPERVISOR"] = "systemd"
+            self.assertEqual(zone.supervisor(z(supervisor="spawn")), "spawn")
+            self.assertEqual(zone.supervisor(z()), "systemd")
+            zone.unit_installed = lambda: True
+            self.assertFalse(zone.use_systemd(z(supervisor="spawn")))
+            del os.environ["APPZONES_SUPERVISOR"]
+            self.assertEqual(zone.supervisor(z(supervisor="auto")), "auto")
+        finally:
+            os.environ.pop("APPZONES_SUPERVISOR", None)
+            if old is not None:
+                os.environ["APPZONES_SUPERVISOR"] = old
+        base = zone.settings_hash(z())
+        self.assertEqual(zone.settings_hash(z(supervisor="spawn", start_timeout="2m", linger="")), base)
+        self.assertNotEqual(zone.settings_hash(z(linger="10m")), base)
+        self.assertNotEqual(zone.settings_hash(z(dns="public")), base)
+        # apps_running: bwrap (1), zone-init and its helpers are not apps
+        replies = []
+
+        class Conn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        zone.request = lambda name, req, **kw: Conn()
+        zone.readline = lambda s, buf=b"": (replies.pop(0), b"")
+        replies.append({"procs": [[1, "bwrap"], [2, "zone_init.py"], [5, "dbus-daemon"]], "init": 2, "helpers": [5]})
+        self.assertFalse(zone.apps_running("tt"))
+        replies.append({"procs": [[1, "bwrap"], [2, "zone_init.py"], [7, "firefox"]], "init": 2, "helpers": []})
+        self.assertTrue(zone.apps_running("tt"))
+
+        def refused(name, req, **kw):
+            raise ConnectionRefusedError
+
+        zone.request = refused
+        self.assertIsNone(zone.apps_running("tt"))
 
     def test_usb_binds(self):
         """zone.usb_binds on a fake sysfs: only the matching device, its hidraw, never the others."""

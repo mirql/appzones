@@ -12,7 +12,7 @@ this `appzones` is release M: update appzones (and rebuild)" and lists what it d
 failing on an unknown key. A file that uses a newer setting without raising
 `requires` is an error, so the field stays true. Release 2 added `bus` and
 `requires`; release 3 `nix_ld`, `tmp` and `appzones mount`; release 4 the `usb`
-device and key; `appzones check` prints
+device and key; release 5 `supervisor`, `start_timeout` and `linger`; `appzones check` prints
 the tool's own release. (A `zone` (the old name) from
 before release 2 does not know `requires` either: it still says "unknown
 key" until it is updated once.) A real typo stays an error, with the nearest
@@ -45,6 +45,9 @@ known key suggested.
 | `tmp` | `"ram"` · `"disk"` | `ram`: `/tmp` is a fresh tmpfs at every start. `disk`: `/tmp` and `/var/tmp` are `~/.local/share/appzones/NAME/tmp` and `.../var-tmp` (0700): kept across restarts, readable from the host. Cleaned at each start, see [/tmp on disk](files.md#tmp-on-disk-tmp--disk) |
 | `home` | `""` | the zone's home; empty: `~/.local/share/appzones/NAME/home` |
 | `force_host` | `false` · `true` | allow `network = "host"` in `untrusted` |
+| `supervisor` | `"auto"` · `"systemd"` · `"spawn"` | who starts the zone when it is not running. `auto`: `$APPZONES_SUPERVISOR` if set, else systemd when `appzones@.service` is installed, else appzones itself. `systemd`: always its unit. `spawn`: always appzones itself (logs in `~/.local/state/appzones/`). The zone's own value beats `$APPZONES_SUPERVISOR`. See [Zones without systemd](../without-systemd.md) |
+| `start_timeout` | `"30s"` | the limit for each step of the start (Wayland helper, D-Bus proxy, network setup, zone-init's answer): `"45s"`, `"2m"` or a number of seconds, up to 1 h. Building `packages` has no limit |
+| `linger` | `""` | `""`: the zone stays until you stop it or the session ends. A duration (`"10m"`, `"1h"`, at least 10 s): the zone ends after that long with no app running in it (its own D-Bus daemon does not count). Under systemd it ends as a success, so it is not restarted |
 
 `[apps.ID]` (ID: lowercase, as zone names):
 

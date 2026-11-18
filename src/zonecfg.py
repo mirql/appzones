@@ -51,6 +51,31 @@ def _enum(*vals):
 def _bool(v):
     return None if isinstance(v, bool) else "must be true or false"
 
+_DURATION = re.compile(r"(\d+)([smh])")
+
+
+def duration(v) -> float | None:
+    """Seconds for a duration: "30s", "10m", "2h" or a whole number of seconds; None for ""."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return float(v) if v > 0 else None
+    m = _DURATION.fullmatch(v) if isinstance(v, str) else None
+    return float(int(m[1]) * {"s": 1, "m": 60, "h": 3600}[m[2]]) if m and int(m[1]) > 0 else None
+
+
+def _duration(lo: int, hi: int, empty: bool = False):
+    def check(v):
+        if empty and v == "":
+            return None
+        d = duration(v)
+        if d is None:
+            return 'must be a duration such as "30s", "10m" or "1h"' + (' or ""' if empty else "")
+        if not lo <= d <= hi:
+            return f"must be between {lo} s and {hi // 3600} h" if hi >= 3600 else f"must be between {lo} and {hi} s"
+        return None
+    return check
+
 def _strlist(v):
     return None if isinstance(v, list) and all(isinstance(x, str) for x in v) else "must be a list of strings"
 
@@ -162,6 +187,12 @@ KEYS: dict[str, tuple[object, object, str]] = {
     "home": ("", _str, "zone home; default ~/.local/share/appzones/<zone>/home"),
     "colour": ("", _str, "#rrggbb, required, unique"),
     "force_host": (False, _bool, "allow network=host in a zone named untrusted"),
+    "supervisor": ("auto", _enum("auto", "systemd", "spawn"), "who starts the zone: auto ($APPZONES_SUPERVISOR, "
+                                                              "else systemd when its unit is installed, else appzones) "
+                                                              "| systemd | spawn (appzones itself)"),
+    "start_timeout": ("30s", _duration(1, 3600), "the limit for each step of the start (building packages has none)"),
+    "linger": ("", _duration(10, 7 * 86400, empty=True), "\"\" (the zone stays) | a duration, e.g. \"10m\": end "
+                                                          "the zone after that long with no app running"),
 }
 APP_KEYS = {"command", "desktop", "zones", "args", "bus"}
 
@@ -169,10 +200,11 @@ APP_KEYS = {"command", "desktop", "zones", "args", "bus"}
 # repo moves faster than a system rebuild). A file names the release it
 # needs (`requires = N`); an older tool then says "update appzones" instead
 # of "unknown key". Bump RELEASE when a key or value is added, and record it here.
-RELEASE = 4
+RELEASE = 5
 SINCE = {"requires": 2, "bus": 2, "apps.bus": 2, "bus = \"zone\"": 2, "bus = \"none\"": 2,
          "nix_ld": 3, "tmp": 3,  # release 3 also added zone mount/umount/mounts (no key)
-         "usb": 4}  # release 4: the "usb" device and its usb key
+         "usb": 4,  # release 4: the "usb" device and its usb key
+         "supervisor": 5, "start_timeout": 5, "linger": 5}
 
 # nix-ld on the host (programs.nix-ld.enable): the shim at the FHS loader
 # path, and the directory with the real loader (ld.so) and its libraries.

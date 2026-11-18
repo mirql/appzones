@@ -26,8 +26,8 @@ from . import agent, common, server
 def up(name: str, quiet: bool = False) -> None:
     if agent.ping(name):
         return
-    load_zone(name)
-    if not use_systemd():
+    z = load_zone(name)
+    if not use_systemd(z):
         spawn(name, quiet)
         return
     if not quiet:
@@ -157,6 +157,7 @@ def claim(name: str, quiet: bool = False, wait: bool = True) -> tuple[int, int] 
     os.chmod(common.RT, 0o700)
     started = time.monotonic()
     waited_note = False
+    limit: float | None = None
     while True:
         if agent.ping(name):
             return None
@@ -167,7 +168,9 @@ def claim(name: str, quiet: bool = False, wait: bool = True) -> tuple[int, int] 
             os.close(lock)  # someone else starts it, or runs it: wait for it to answer
             if not wait:
                 return None
-            if time.monotonic() - started > 2 * server.START_TIMEOUT:
+            if limit is None:  # twice the zone's limit for one step
+                limit = 2 * (zonecfg.duration(load_zone(name).settings["start_timeout"]) or server.START_TIMEOUT)
+            if time.monotonic() - started > limit:
                 pids = server_pids(name)
                 die(f"zone {name} is held by a server" + (f" (pid {', '.join(map(str, pids))})" if pids else "")
                     + f" but does not answer; see `appzones logs {name}`")
@@ -712,7 +715,7 @@ def autostart() -> int:
     for n, z in cfg.zones.items():
         if z.settings["autostart"]:
             print(f"autostart: zone {n}")
-            if use_systemd():
+            if use_systemd(z):
                 systemctl("start", "--no-block", f"appzones@{n}.service", check=False)
             else:
                 try:  # start them all first: a slow one (packages) holds up no other
@@ -769,9 +772,9 @@ def active(follow: bool, as_json: bool) -> int:  # NOSONAR: an exit status: 0 is
 
 
 def logs(name: str, follow: bool) -> int:
-    load_zone(name)
+    z = load_zone(name)
     # the log of whoever runs the zone; when it does not run, of whoever would start it
-    if not unit_runs(name) and (server_pids(name) or not use_systemd()):
+    if not unit_runs(name) and (server_pids(name) or not use_systemd(z)):
         os.execvp("tail", ["tail", "-n", "200", *(["-F"] if follow else []), str(common.log_path(name))])
     os.execvp("journalctl", ["journalctl", "--user", "-u", f"appzones@{name}.service", "-n", "200", "--no-pager",
                              *(["-f"] if follow else [])])

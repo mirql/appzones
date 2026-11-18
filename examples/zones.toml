@@ -6,7 +6,7 @@
 # Each zone starts with a fresh home in ~/.local/share/appzones/<zone>/home: no
 # app data moves in from the host, host apps stay as they are.
 version = 1
-requires = 4                   # the zones release this file needs (`appzones check` prints its own); an older
+requires = 5                   # the zones release this file needs (`appzones check` prints its own); an older
                                # `appzones` then says "update appzones" instead of "unknown key"
 
 [defaults]                     # every zone starts from these; a zone overrides any key
@@ -34,6 +34,9 @@ nix_ld      = false            # true: generic Linux binaries (downloaded CLIs) 
 tmp         = "ram"            # ram (fresh tmpfs each start) | disk (~/.local/share/appzones/<zone>/tmp, kept; unused 14 days: removed)
 home        = ""               # default ~/.local/share/appzones/<zone>/home
 force_host  = false            # allow network = "host" in the zone named untrusted
+supervisor  = "auto"           # who starts the zone: auto ($APPZONES_SUPERVISOR, else systemd when its unit is installed, else appzones) | systemd | spawn
+start_timeout = "30s"          # the limit for each step of the start (building packages has none)
+linger      = ""               # "" (the zone stays until stopped) | e.g. "10m": end the zone after that long with no app running
 
 # ── zones ───────────────────────────────────────────────────────────────
 [zones.daily]                  # messengers, personal browsing, media

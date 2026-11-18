@@ -79,16 +79,25 @@ def load_zone(name: str, quiet: bool = True) -> zonecfg.Zone:
     return cfg.zones[name]
 
 
+# read only when a zone starts, so changing them needs no restart; linger counts once set
+SERVER_ONLY = ("supervisor", "start_timeout")
+
+
 def settings_hash(z: zonecfg.Zone) -> str:
-    return hashlib.sha256(json.dumps(z.settings, sort_keys=True).encode()).hexdigest()
+    """What a running zone was built from: `stale` compares it with the config."""
+    s = {k: v for k, v in z.settings.items() if k not in SERVER_ONLY and not (k == "linger" and v == "")}
+    return hashlib.sha256(json.dumps(s, sort_keys=True).encode()).hexdigest()
 
 
 SUPERVISORS = ("auto", "systemd", "spawn")
 
 
-def supervisor() -> str:
-    """Who starts zones, from $APPZONES_SUPERVISOR: auto (the default), systemd, or spawn
-    (appzones starts them itself; `none` means the same)."""
+def supervisor(z: zonecfg.Zone | None = None) -> str:
+    """Who starts zone Z: its `supervisor` setting, unless that is auto; then
+    $APPZONES_SUPERVISOR: auto (the default), systemd, or spawn (appzones starts zones
+    itself; `none` means the same)."""
+    if z is not None and z.settings.get("supervisor", "auto") != "auto":
+        return z.settings["supervisor"]
     v = (zonecfg.env("SUPERVISOR") or "auto").strip().lower()
     v = "spawn" if v == "none" else v
     if v not in SUPERVISORS:
@@ -111,10 +120,10 @@ def unit_installed() -> bool:
     return _unit[0]
 
 
-def use_systemd() -> bool:
-    """Zones that are not running are started through systemd (else: by appzones). Zones
+def use_systemd(z: zonecfg.Zone | None = None) -> bool:
+    """Zone Z, when not running, is started through systemd (else: by appzones). Zones
     that run stay with whoever started them: see client.unit_runs."""
-    s = supervisor()
+    s = supervisor(z)
     return s == "systemd" or (s == "auto" and unit_installed())
 
 

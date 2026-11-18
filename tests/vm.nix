@@ -140,7 +140,7 @@ let
 
   zonesToml = pkgs.writeText "zones.toml" ''
     version = 1
-    requires = 4
+    requires = 5
     [defaults]
     devices = []
     [zones.ta]
@@ -187,6 +187,16 @@ let
     colour = "#f5c2e7"
     devices = ["usb"]
     usb = ["dead"]
+    [zones.tl]
+    colour = "#eba0ac"
+    network = "none"
+    supervisor = "spawn"
+    start_timeout = "20s"
+    linger = "10s"
+    [zones.tm]
+    colour = "#b4befe"
+    network = "none"
+    linger = "10s"
     [apps.firefox]
     command = ["firefox"]
     zones = ["ta", "tc"]
@@ -1096,5 +1106,27 @@ pkgs.testers.runNixOSTest {
         if had:
             u("systemctl --user set-environment " + shlex.quote(had))
         print("PASS  a user manager without WAYLAND_DISPLAY: start warns")
+
+    with subtest("zone settings: supervisor, linger"):
+        # supervisor = "spawn" in the zone: appzones starts it, though the unit is installed
+        u("appzones up tl && appzones ping tl")
+        assert not unit_active("tl") and servers("tl") == 1
+        print("PASS  supervisor = spawn in the zone: appzones starts it, not the unit")
+        # linger = "10s": the zone stays while an app runs, and ends 10 s after the last one
+        u("appzones run tl -- sleep 20")
+        machine.sleep(16)
+        u("appzones ping tl")
+        machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + "appzones ping tl"), timeout=60)
+        assert servers("tl") == 0
+        u("grep -q 'no app for 10s (linger); stopping' ~/.local/state/appzones/tl.log")
+        print("PASS  linger: the zone stayed while its app ran, then ended on its own")
+        # under systemd: ends with success, not restarted
+        u("appzones up tm")
+        assert unit_active("tm")
+        machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + "systemctl --user is-active appzones@tm.service"), timeout=60)
+        r = u("systemctl --user show appzones@tm.service -p Result -p NRestarts --value").split()
+        assert r == ["success", "0"], r
+        u("! appzones ping tm")
+        print("PASS  linger under systemd: the unit ends with success and is not restarted")
   '';
 }
