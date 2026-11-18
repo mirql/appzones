@@ -39,7 +39,7 @@ Internal (systemd and the supervisor):
 
 Config: ~/.config/appzones/zones.toml ($APPZONES_CONFIG). State: ~/.local/share/appzones.
 Before 0.6: ~/.config/zones and ~/.local/share/zones (read, and moved; see migrate_state).
-Guide: docs/guide.md.
+Docs: https://mirql.github.io/appzones/ (docs/ in the repo).
 """
 from __future__ import annotations
 
@@ -744,7 +744,7 @@ def dbus_rules(z: zonecfg.Zone) -> list[str]:
               "--talk=org.kde.StatusNotifierWatcher", f"--own=dev.mirql.zone.{z.name}.*"]
     # no org.mpris.MediaPlayer2.*: owning implies talking, and that name is
     # shared by the host's and every zone's players; a zone opts in per
-    # player with dbus.own (docs/guide.md "D-Bus")
+    # player with dbus.own (docs/configuration/dbus.md)
     # each Mozilla app's remote name in this zone only: never org.mozilla.firefox.*,
     # which the host's Firefox and every other zone's would share
     rules += [f"--own=org.mozilla.{moz_remoting_name(z.name, a)}.*" for a in MOZ_APPS]
@@ -1354,7 +1354,7 @@ binds     = []
 """
 
 
-NEW_FILE = """# ~/.config/appzones/zones.toml (written by `appzones new`; reference: appzones docs/guide.md)
+NEW_FILE = """# ~/.config/appzones/zones.toml (written by `appzones new`; reference: https://mirql.github.io/appzones/configuration/reference.html)
 version = 1
 """
 

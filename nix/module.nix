@@ -1,4 +1,4 @@
-# NixOS module for appzones (docs/guide.md).
+# NixOS module for appzones (https://mirql.github.io/appzones/, docs/getting-started/install.md).
 #
 # Installs the `appzones` tool and the systemd user units that run a zone:
 # appzones@NAME.service (one long-lived sandbox per zone, in appzones.slice) and
@@ -37,7 +37,7 @@ in
         `users` when user is null) run exactly the appzones mount helper as
         root without a password. The helper only mounts a directory the
         caller can read (never-list checked) at
-        ~/.local/share/appzones/ZONE/mnt/NAME (docs/guide.md "Runtime mounts").
+        ~/.local/share/appzones/ZONE/mnt/NAME (docs/configuration/files.md, "Runtime mounts").
       '';
     };
 

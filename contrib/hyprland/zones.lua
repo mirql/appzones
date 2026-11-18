@@ -2,7 +2,7 @@
 -- that loads it keeps working; point it at appzones.lua instead. A full copy,
 -- not a loader: Nix may copy this file into the store on its own. Removed in
 -- a later release; test_zonecfg checks the copy matches appzones.lua.
--- (appzones docs/guide.md "Hyprland"; tested in tests/vm.nix).
+-- (appzones docs/desktop.md; tested in tests/vm.nix).
 --
 -- The zone comes from the host-side cgroup of the window's pid
 -- (.../appzones.slice/appzones@NAME.service), which systemd sets and a zone process

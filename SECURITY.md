@@ -30,7 +30,7 @@ updated, and credit you in the advisory unless you prefer otherwise.
 
 ## Known limits (not vulnerabilities by themselves)
 
-These are documented in the guide's "Honest limits": zones share your uid
+These are documented in "Security and limits" (docs/security.md): zones share your uid
 and kernel (a kernel bug escapes everything), an app can read everything in
 its own zone, draw windows that look like anything, read the clipboard
 through a focused window, and use the internet as the host. A report that

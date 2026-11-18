@@ -11,7 +11,7 @@
   <a href="https://github.com/mirql/appzones/releases"><img alt="Release" src="https://img.shields.io/github/v/release/mirql/appzones"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
   <a href="#install"><img alt="NixOS flake and module" src="https://img.shields.io/badge/NixOS-flake%20%2B%20module-5277C3?logo=nixos&logoColor=white"></a>
-  <a href="docs/guide.md"><img alt="Wayland" src="https://img.shields.io/badge/Wayland-wp__security__context__v1-FFBC00"></a>
+  <a href="docs/getting-started/install.md"><img alt="Wayland" src="https://img.shields.io/badge/Wayland-wp__security__context__v1-FFBC00"></a>
   <br>
   <a href="https://github.com/mirql/appzones/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/mirql/appzones"></a>
   <a href="https://github.com/mirql/appzones/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/mirql/appzones"></a>
@@ -250,15 +250,17 @@ Then copy [`examples/minimal.toml`](examples/minimal.toml) to
 # Set up appzones
 
 Set up **appzones** on this NixOS machine: <https://github.com/mirql/appzones>
-(long-lived sandboxes for desktop apps). Read its `README.md` and
-`docs/guide.md` first ([raw guide](https://raw.githubusercontent.com/mirql/appzones/main/docs/guide.md)).
+(long-lived sandboxes for desktop apps). Read its `README.md` and the docs
+first: [install](https://raw.githubusercontent.com/mirql/appzones/main/docs/getting-started/install.md),
+[configuration reference](https://raw.githubusercontent.com/mirql/appzones/main/docs/configuration/reference.md),
+[desktop](https://raw.githubusercontent.com/mirql/appzones/main/docs/desktop.md) (raw markdown; the site is https://mirql.github.io/appzones/).
 
 1. **Check first**, and tell me what you find before changing anything:
    - x86_64 NixOS configured with flakes (find my flake and this host's config);
    - a Wayland compositor with `wp_security_context_v1` (Hyprland, sway, KWin, ...);
      window borders and tags per zone need Hyprland;
    - unprivileged user namespaces, `xdg-desktop-portal`, PipeWire;
-   - an nftables firewall, or the kernel modules in the guide's "Kernel modules".
+   - an nftables firewall, or the kernel modules in the install page's "Kernel modules".
 2. **Add the flake input** `appzones` (`github:mirql/appzones`, with
    `inputs.nixpkgs.follows = "nixpkgs"`), import `appzones.nixosModules.default`,
    and set `programs.appzones.enable = true` and `programs.appzones.user` to my user.
@@ -270,7 +272,7 @@ Set up **appzones** on this NixOS machine: <https://github.com/mirql/appzones>
    put it where my dotfiles manage `~/.config`). Add binds only for folders I
    name; never my whole home, `~/.ssh`, or a folder where programs keep sockets.
 5. **Optional:** if I use Hyprland, load `contrib/hyprland/appzones.lua` from my
-   Hyprland config; if I use Waybar, add the custom module from the guide ("Hyprland").
+   Hyprland config; if I use Waybar, add the custom module from the desktop page.
 6. **Build without switching** (`nixos-rebuild build --flake .#<host>`), then run
    `./result/sw/bin/appzones check`. Show me what you changed and what it reports.
 7. **Do not switch yourself.** Give me the switch command, and tell me that a
@@ -300,12 +302,12 @@ Or copy `skills/appzones/SKILL.md` into your agent's skills folder.
 > escapes everything. A compromised app can still read everything in its own
 > zone, draw windows that look like anything (learn your border colours),
 > and use the internet as you. X11-only apps don't run yet.
-> See "Honest limits" in the [guide](docs/guide.md#honest-limits).
+> See [Security and limits](docs/security.md) in the docs.
 
 ## Docs
 
-- [Guide](docs/guide.md): every command and `zones.toml` key, D-Bus, USB
-  devices, runtime mounts, how a zone is built.
+- [Docs](https://mirql.github.io/appzones/) ([in the repo](docs/guide.md)): install, recipes, every `zones.toml`
+  key, D-Bus, USB devices, runtime mounts, troubleshooting, how a zone is built.
 - [examples/minimal.toml](examples/minimal.toml): a first config that works anywhere.
 - [examples/zones.toml](examples/zones.toml): every key, commented.
 
@@ -329,7 +331,7 @@ Issues, ideas and PRs are welcome. Good places to start:
   colours. Sway, niri or KWin hooks would help.
 - **Other distributions.** Only NixOS is packaged.
 - **aarch64.** Nothing has been tried there yet.
-- **Docs.** If something in the [guide](docs/guide.md) was unclear to you,
+- **Docs.** If something in the [docs](https://mirql.github.io/appzones/) was unclear to you,
   it will be to the next person too.
 
 Questions go to [Discussions](https://github.com/mirql/appzones/discussions).

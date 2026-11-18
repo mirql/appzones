@@ -49,7 +49,7 @@ VM test.
 | `assets/concept/concept.py` | the README's concept animation (writes `concept-{dark,light}.svg`) |
 | `contrib/hyprland/appzones.lua` | window tags and border colours for Hyprland |
 | `docs/index.md`, `docs/_config.yml` | the docs site, mirql.github.io/appzones (GitHub Pages builds `docs/` on main) |
-| `docs/guide.md`, `examples/zones.toml` | user docs and the full example |
+| `docs/**/*.md`, `examples/zones.toml` | user docs (the site's pages; `docs/guide.md` is their contents) and the full example |
 
 ## Rules for changes
 
@@ -59,14 +59,14 @@ VM test.
   should assert that something is **refused**, not only that the happy
   path works.
 - **New config key or value.** Bump `RELEASE` in `src/zonecfg.py`, record
-  the key in `SINCE`, and document it in `docs/guide.md` ("Configuration
-  reference") and `examples/zones.toml`.
+  the key in `SINCE`, and document it in `docs/configuration/reference.md` and
+  `examples/zones.toml`.
 - **Never-lists** (paths, D-Bus names, environment) only grow by default.
   Removing an entry needs an explicit reason in the PR.
 - **`zone_mount_helper.py` runs as root.** Keep it small, keep it
   clearing every `APPZONES_*` and `ZONES_*` variable before it imports anything, and
   explain in the PR why a caller still cannot abuse it.
-- **Docs.** If behaviour changes, update `docs/guide.md` in the same PR.
+- **Docs.** If behaviour changes, update its page in `docs/` in the same PR.
   Add a line under "Unreleased" in [CHANGELOG.md](CHANGELOG.md).
 - **Style.** Python: standard library only (the package has no Python
   dependencies), type hints where they help. Nix: `just fmt`.

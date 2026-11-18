@@ -8,7 +8,7 @@ nav_order: 1
 **Long-lived sandboxes for your desktop apps, dev tools and AI agents on Linux.**
 {: .fs-6 .fw-300 }
 
-[Read the guide](guide.html){: .btn .btn-primary .mr-2 } [GitHub](https://github.com/mirql/appzones){: .btn }
+[Get started](getting-started.html){: .btn .btn-primary .mr-2 } [GitHub](https://github.com/mirql/appzones){: .btn }
 
 [![Release](https://img.shields.io/github/v/release/mirql/appzones?labelColor=181825&color=cba6f7)](https://github.com/mirql/appzones/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-89b4fa?labelColor=181825)](https://github.com/mirql/appzones/blob/main/LICENSE)
@@ -47,8 +47,8 @@ imports = [ inputs.appzones.nixosModules.default ];
 programs.appzones.enable = true;
 ```
 
-Then `appzones new daily -y` and `appzones check`. Everything else is in the
-[guide](guide.html).
+Then `appzones new daily -y` and `appzones check`. The [install page](getting-started/install.html)
+has the details; [recipes](recipes.html) show what zones are good for.
 
 ## More
 

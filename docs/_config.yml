@@ -31,17 +31,110 @@ gh_edit_branch: main
 gh_edit_source: docs
 gh_edit_view_mode: edit
 
-# guide.md keeps no front matter (it reads as plain markdown on GitHub)
+# Pages keep no front matter (they read as plain markdown on GitHub): their
+# titles and the sidebar come from here.
 defaults:
   - scope:
       path: ""
     values:
       layout: default
   - scope:
+      path: getting-started.md
+    values:
+      title: Getting started
+      nav_order: 2
+      has_children: true
+      has_toc: false
+  - scope:
+      path: getting-started/install.md
+    values:
+      title: Install
+      nav_order: 1
+      parent: Getting started
+  - scope:
+      path: getting-started/first-zones.md
+    values:
+      title: First zones
+      nav_order: 2
+      parent: Getting started
+  - scope:
+      path: getting-started/upgrading.md
+    values:
+      title: Upgrading
+      nav_order: 3
+      parent: Getting started
+  - scope:
+      path: recipes.md
+    values:
+      title: Recipes
+      nav_order: 3
+  - scope:
+      path: configuration.md
+    values:
+      title: Configuration
+      nav_order: 4
+      has_children: true
+      has_toc: false
+  - scope:
+      path: configuration/reference.md
+    values:
+      title: Reference
+      nav_order: 1
+      parent: Configuration
+  - scope:
+      path: configuration/files.md
+    values:
+      title: Files and folders
+      nav_order: 2
+      parent: Configuration
+  - scope:
+      path: configuration/devices.md
+    values:
+      title: Devices and USB
+      nav_order: 3
+      parent: Configuration
+  - scope:
+      path: configuration/dbus.md
+    values:
+      title: D-Bus
+      nav_order: 4
+      parent: Configuration
+  - scope:
+      path: configuration/nix-ld.md
+    values:
+      title: Generic binaries
+      nav_order: 5
+      parent: Configuration
+  - scope:
+      path: desktop.md
+    values:
+      title: Desktop
+      nav_order: 5
+  - scope:
+      path: troubleshooting.md
+    values:
+      title: Troubleshooting
+      nav_order: 6
+  - scope:
+      path: how-it-works.md
+    values:
+      title: How it works
+      nav_order: 7
+  - scope:
+      path: security.md
+    values:
+      title: Security and limits
+      nav_order: 8
+  - scope:
+      path: development.md
+    values:
+      title: Contributing
+      nav_order: 9
+  - scope:
       path: guide.md
     values:
       title: Guide
-      nav_order: 2
+      nav_exclude: true
 
 exclude:
   - "*.cast"

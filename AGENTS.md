@@ -4,8 +4,10 @@
   inside a zone, `zonecfg.py` schema and validator, `zone_mount_helper.py`
   the root step of `appzones mount`, `zone-wayland/` the security-context
   helper). Nix: `nix/package.nix`, `nix/module.nix`, `tests/vm.nix`.
-- User docs: `docs/guide.md`. When behaviour or a config key changes, update
-  it and `examples/zones.toml`.
+- User docs: the pages in `docs/` (the site https://mirql.github.io/appzones/; sidebar and titles in
+  `docs/_config.yml`). When behaviour or a config key changes, update the page
+  it belongs on (keys: `docs/configuration/reference.md`) and `examples/zones.toml`.
+  `docs/recipes.md` repeats the README's recipes: change both.
 - `skills/appzones/SKILL.md` is the skill users give their own agents. When a
   command, a flag, a config key or a path changes, update it in the same PR.
 - The README's terminal GIFs (`docs/demo-*.gif`) are recorded in a VM from

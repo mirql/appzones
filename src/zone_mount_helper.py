@@ -14,7 +14,7 @@ not exist: appzones has not moved it yet), which a running zone sees as
 /mnt/host/NAME (zone.py binds .../ZONE/mnt read-only at /mnt/host; a host
 mount below it propagates into the zone).
 
-Why a caller cannot abuse it (docs/guide.md "Runtime mounts"):
+Why a caller cannot abuse it (docs/configuration/files.md, "Runtime mounts"):
 - who: the caller is SUDO_UID (sudo sets it; the caller cannot). Never root
   itself. A zone cannot run sudo at all: no_new_privs, and no /run/wrappers.
 - what is mounted: SOURCE is opened *as the caller* (its uid, gid and

@@ -5,6 +5,11 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **The docs are split into pages** (https://mirql.github.io/appzones/): getting started, recipes,
+  configuration (reference, files, devices, D-Bus, generic binaries), desktop,
+  troubleshooting (new), how it works, security, contributing. `docs/guide.md`
+  is now their contents page.
+
 - **A docs site**: https://mirql.github.io/appzones/ (the guide, with search), built by
   GitHub Pages from `docs/`.
 

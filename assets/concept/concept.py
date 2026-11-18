@@ -11,7 +11,7 @@ scripts, but CSS animations play). The story, in one loop:
   3. it can still reach the internet;
   4. the caption says what that means.
 
-Every claim is one the README and the guide already make. Where
+Every claim is one the README and the docs already make. Where
 animations don't run, the picture shows the end state: every attempt and its
 result at once. With prefers-reduced-motion it still plays (browsers on Linux
 report that whenever GTK animations are off, and the README would never move),

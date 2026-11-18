@@ -1,5 +1,5 @@
 # ~/.config/appzones/zones.toml: an example with every key (reference:
-# docs/guide.md "Configuration reference").
+# docs/configuration/reference.md).
 # Edited by hand. `appzones check` validates it. Changes apply at the next
 # `appzones restart <zone>`; `appzones run` warns when a running zone is stale, and
 # `appzones run --restart` restarts a zone with no app in it.

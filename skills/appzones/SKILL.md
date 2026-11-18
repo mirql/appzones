@@ -12,9 +12,11 @@ own window border colour. A zone is a systemd user unit
 xdg-dbus-proxy and the Wayland security context. Zones are declared in one
 TOML file; the `appzones` CLI starts them and runs things inside.
 
-Guide (every command and key): https://github.com/mirql/appzones/blob/main/docs/guide.md
-(raw: https://raw.githubusercontent.com/mirql/appzones/main/docs/guide.md).
-Read its section when a task needs a key or a detail not covered here.
+Docs: https://mirql.github.io/appzones/ . When a task needs a key or a detail not covered here, read
+the page as raw markdown: https://raw.githubusercontent.com/mirql/appzones/main/docs/configuration/reference.md (every key),
+`.../configuration/files.md` (binds, mounts), `.../configuration/dbus.md`,
+`.../configuration/devices.md` (USB), `.../troubleshooting.md`, `.../desktop.md`
+(Hyprland), `.../security.md` (limits).
 
 ## Rules (read first)
 
@@ -144,7 +146,7 @@ services. Rule 4's warning about writable binds applies.
 | Chromium or Electron apps refuse to start | Their sandbox needs nested user namespaces | `userns = true` (the default) |
 | No sound, mic, camera or screen sharing | Not in `devices` | Add `audio`, `mic`, `camera`, `screencast` as needed (rule 2 for `mic`/`camera`) |
 | An X11-only app, a Flatpak app, an AppImage | X11-only apps do not run yet; Flatpak apps need the host's Flatpak; AppImages need FUSE | Run Flatpaks on the host; AppImages with `--appimage-extract-and-run` |
-| A window has no zone border colour | Borders and tags need Hyprland and `contrib/hyprland/appzones.lua` | See the guide's "Hyprland" section |
+| A window has no zone border colour | Borders and tags need Hyprland and `contrib/hyprland/appzones.lua` | See the docs' desktop page |
 
 ## Config keys at a glance
 

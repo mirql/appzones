@@ -1,5 +1,5 @@
 -- appzones.lua: mark every window by the app zone its process runs in
--- (appzones docs/guide.md "Hyprland"; tested in tests/vm.nix).
+-- (appzones docs/desktop.md; tested in tests/vm.nix).
 --
 -- The zone comes from the host-side cgroup of the window's pid
 -- (.../appzones.slice/appzones@NAME.service), which systemd sets and a zone process
