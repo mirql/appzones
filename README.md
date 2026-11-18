@@ -36,7 +36,7 @@ An app zone is a place your apps live in: `daily` for messengers, `work`
 for Slack and the work browser, `untrusted` for links you don't trust,
 `dev` for `npm install`. Each zone has its own home, its own network rules
 and its own window border colour. You declare them in one TOML file; they
-run as systemd user units.
+run as systemd user units, or without systemd, started on demand.
 
 <p align="center">
   <picture>

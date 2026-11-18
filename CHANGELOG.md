@@ -15,7 +15,15 @@ with the module nothing changes for you. Why, what is done and what is coming:
 https://mirql.github.io/appzones/without-systemd.html (milestone "0.7.0: zones
 without systemd", #50).
 
-- **Zones start on demand without systemd** (`APPZONES_SUPERVISOR=none` for now):
+- **Who starts zones is chosen for you**: `APPZONES_SUPERVISOR=auto` (the new
+  default) uses systemd when `appzones@.service` is installed and the user manager
+  answers, otherwise appzones starts zones itself; `systemd` and `spawn` force
+  one. A running zone stays with whoever started it: `stop`, `restart` and `logs`
+  follow it, and `stop` now also ends a zone served outside its unit (a terminal,
+  another process manager) instead of refusing. Starting through systemd warns
+  when the user manager has no `WAYLAND_DISPLAY`.
+
+- **Zones start on demand without systemd** (`APPZONES_SUPERVISOR=spawn`):
   `appzones run`, `up` and `shell` start a zone that does not answer, like tmux or
   gpg-agent. The client takes the zone's lock and hands it to a detached
   `appzones serve`, so many clients at once still get one server; a client killed

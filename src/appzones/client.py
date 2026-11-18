@@ -32,6 +32,7 @@ def up(name: str, quiet: bool = False) -> None:
         return
     if not quiet:
         warn(f"starting zone {name}")
+    _check_manager_env()
     r = systemctl("start", f"appzones@{name}.service", check=False)
     if r.returncode != 0:
         die(f"zone {name} failed to start; see `appzones logs {name}`\n{r.stderr.strip()}")
@@ -40,6 +41,26 @@ def up(name: str, quiet: bool = False) -> None:
             return
         time.sleep(0.05)
     die(f"zone {name} did not answer within 10 s; see `appzones logs {name}`")
+
+
+def _check_manager_env() -> None:
+    """Zones started by systemd get the user manager's environment: without WAYLAND_DISPLAY
+    there, their apps get no Wayland."""
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        return
+    r = systemctl("show-environment", check=False)
+    if r.returncode == 0 and not any(l.startswith("WAYLAND_DISPLAY=") for l in r.stdout.splitlines()):
+        warn("the systemd user manager has no WAYLAND_DISPLAY, so zones it starts have no Wayland; "
+             "import it (`systemctl --user import-environment WAYLAND_DISPLAY`, or start the session "
+             "with uwsm), or set APPZONES_SUPERVISOR=spawn")
+
+
+def unit_runs(name: str) -> bool:
+    """Zone NAME runs (or starts or stops) in its systemd unit."""
+    if not common.unit_installed():
+        return False
+    r = systemctl("is-active", f"appzones@{name}.service", check=False)
+    return r.stdout.strip() in ("active", "activating", "deactivating", "reloading", "refreshing")
 
 
 def _log_tail(name: str, lines: int = 15, since: int = 0) -> str:
@@ -420,62 +441,75 @@ def server_pids(name: str) -> list[int]:
     return out
 
 
-def stop_zone(name: str) -> None:
-    if use_systemd():
-        systemctl("stop", f"appzones@{name}.service")
-    else:
-        pfds = []
-        for pid in server_pids(name):
-            try:
-                pfd = os.pidfd_open(pid)
-            except OSError:
-                continue  # gone already
-            try:
-                if _is_server(pid, name):  # still the same process: the pidfd pins it
-                    signal.pidfd_send_signal(pfd, signal.SIGTERM)
-                    pfds.append(pfd)
-                    continue
-            except ProcessLookupError:
-                pass  # exited just now
-            except OSError as e:
-                warn(f"zone {name}: could not signal its server (pid {pid}): {e.strerror or e}")
-            os.close(pfd)
-        # until the servers have exited: their cleanup must not overlap a new start (restart)
+def _signal_servers(name: str) -> None:
+    """SIGTERM to zone NAME's servers outside its unit; until they have exited, so their
+    cleanup does not overlap a new start (restart)."""
+    pfds = []
+    for pid in server_pids(name):
         try:
-            end = time.monotonic() + 20
-            poll = select.poll()
-            for p in pfds:
-                poll.register(p, select.POLLIN)  # a pidfd is readable once the process exits
-            while pfds:
-                ready = poll.poll(max(0, int((end - time.monotonic()) * 1000)))
-                if not ready:
-                    die(f"zone {name}: its server did not exit within 20 s after SIGTERM")
-                for p, _ in ready:
-                    poll.unregister(p)
-                    pfds.remove(p)
-                    os.close(p)
-        finally:
-            for p in pfds:
+            pfd = os.pidfd_open(pid)
+        except OSError:
+            continue  # gone already
+        try:
+            if _is_server(pid, name):  # still the same process: the pidfd pins it
+                signal.pidfd_send_signal(pfd, signal.SIGTERM)
+                pfds.append(pfd)
+                continue
+        except ProcessLookupError:
+            pass  # exited just now
+        except OSError as e:
+            warn(f"zone {name}: could not signal its server (pid {pid}): {e.strerror or e}")
+        os.close(pfd)
+    # until the servers have exited: their cleanup must not overlap a new start (restart)
+    try:
+        end = time.monotonic() + 20
+        poll = select.poll()
+        for p in pfds:
+            poll.register(p, select.POLLIN)  # a pidfd is readable once the process exits
+        while pfds:
+            ready = poll.poll(max(0, int((end - time.monotonic()) * 1000)))
+            if not ready:
+                die(f"zone {name}: its server did not exit within 20 s after SIGTERM")
+            for p, _ in ready:
+                poll.unregister(p)
+                pfds.remove(p)
                 os.close(p)
+    finally:
+        for p in pfds:
+            os.close(p)
+
+
+def stop_zone(name: str) -> None:
+    """Stops zone NAME wherever it runs: its unit, or a server appzones started (or one
+    run in a terminal or by another process manager)."""
+    if unit_runs(name):
+        systemctl("stop", f"appzones@{name}.service")
+    _signal_servers(name)
     for _ in range(100):
         if not agent.ping(name):
             return
         time.sleep(0.1)
-    die(f"zone {name} still answers: it runs outside {'its unit' if use_systemd() else 'appzones'} "
-        f"(an `appzones serve {name}` in a terminal or another process manager); stop it there "
-        "(SIGTERM or Ctrl-C)")
+    die(f"zone {name} still answers, but appzones found no server of it to stop; stop it where it "
+        "runs (SIGTERM or Ctrl-C)")
 
 
 def restart_zone(name: str) -> None:
-    if use_systemd():
+    """Restarts zone NAME with whoever ran it: its unit, or appzones (a zone that did not
+    run starts as `up` would start it)."""
+    if unit_runs(name):
         systemctl("restart", f"appzones@{name}.service")
         for _ in range(200):
             if agent.ping(name):
                 return
             time.sleep(0.05)
         return
+    outside = bool(server_pids(name))
     stop_zone(name)
-    up(name, quiet=True)
+    if outside:
+        load_zone(name)
+        spawn(name, quiet=True)
+    else:
+        up(name, quiet=True)
 
 
 def zone_list(as_json: bool = False) -> int:
@@ -734,7 +768,8 @@ def active(follow: bool, as_json: bool) -> int:
 
 def logs(name: str, follow: bool) -> int:
     load_zone(name)
-    if not use_systemd():
+    # the log of whoever runs the zone; when it does not run, of whoever would start it
+    if not unit_runs(name) and (server_pids(name) or not use_systemd()):
         os.execvp("tail", ["tail", "-n", "200", *(["-F"] if follow else []), str(common.log_path(name))])
     os.execvp("journalctl", ["journalctl", "--user", "-u", f"appzones@{name}.service", "-n", "200", "--no-pager",
                              *(["-f"] if follow else [])])

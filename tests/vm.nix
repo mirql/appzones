@@ -973,16 +973,12 @@ pkgs.testers.runNixOSTest {
         assert n == "0", n
         u("appzones ping td && systemctl --user reset-failed appzones@td.service")
         print("PASS  appzones@td.service against a served zone: exit 75, no restart (NRestarts=0); the zone still answers")
-        rc, out = u("appzones stop td 2>&1", check=False)
-        print(out)
-        assert rc != 0 and "still answers" in out and "appzones serve td" in out, (rc, out)
-        print("PASS  stop through the unit fails clearly for a zone served outside it")
-        # without systemd, stop finds exactly this zone's `serve` and signals it
-        u("APPZONES_SUPERVISOR=none appzones stop td")
+        # stop follows who runs the zone: here the serve, not the unit
+        u("appzones stop td")
         machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + "systemctl --user is-active serve-td"), timeout=60)
         machine.wait_until_fails("pgrep -u alice -f 'dev.mirql.zone.td|appzones/td/|zone-td-'", timeout=30)
         u("! appzones ping td")
-        print("PASS  stop without systemd ends serve; the zone and every helper are gone (nothing left behind)")
+        print("PASS  stop ends a serve run outside the unit; the zone and every helper are gone (nothing left behind)")
 
     with subtest("crash containment: kill -9 of the server leaves nothing behind"):
         appz = machine.succeed("readlink -f $(command -v appzones)").strip()
@@ -1012,7 +1008,7 @@ pkgs.testers.runNixOSTest {
             print(f"PASS  {z} starts again at once (the lock went with the killed server)")
 
     with subtest("start on demand without systemd"):
-        S = "APPZONES_SUPERVISOR=none "
+        S = "APPZONES_SUPERVISOR=spawn "
 
         def servers(z):
             return int(machine.succeed(f"pgrep -u alice -fc 'zone.py serve {z}( |$)' || true").strip() or 0)
@@ -1037,7 +1033,7 @@ pkgs.testers.runNixOSTest {
         zw = machine.succeed("ls /nix/store/*-zone-wayland*/bin/zone-wayland | head -1").strip()
         machine.succeed(f"printf '#!/bin/sh\\nsleep 4\\nexec {zw} \"$@\"\\n' >/tmp/slow-zw && chmod 755 /tmp/slow-zw")
         u("systemd-run --user --collect --unit=client-tb -p KillMode=process "
-          "-E APPZONES_SUPERVISOR=none -E APPZONES_BIN_ZONE_WAYLAND=/tmp/slow-zw $(readlink -f $(command -v appzones)) up tb")
+          "-E APPZONES_SUPERVISOR=spawn -E APPZONES_BIN_ZONE_WAYLAND=/tmp/slow-zw $(readlink -f $(command -v appzones)) up tb")
         machine.wait_until_succeeds("pgrep -u alice -f 'zone.py serve tb '", timeout=30)
         u("! appzones ping tb")
         u("systemctl --user kill --kill-whom=main -s KILL client-tb")
@@ -1056,5 +1052,49 @@ pkgs.testers.runNixOSTest {
         machine.succeed(f"kill -CONT {init[0]}")
         print("PASS  a stuck zone: the client reports it, no second server")
         u(S + "appzones stop tb && ! appzones ping tb")
+
+    with subtest("supervisor: auto picks the unit or appzones; never both; stop, restart, logs follow"):
+        SP = "APPZONES_SUPERVISOR=spawn "
+
+        def unit_active(z):
+            return u(f"systemctl --user is-active appzones@{z}.service || true").strip() == "active"
+
+        # a zone appzones started: the unit cannot start a second server, and does not loop
+        u(SP + "appzones up tb")
+        assert not unit_active("tb") and servers("tb") == 1
+        u("! systemctl --user start appzones@tb.service")
+        machine.sleep(5)  # longer than RestartSec
+        assert u("systemctl --user show appzones@tb.service -p NRestarts --value").strip() == "0"
+        u("systemctl --user reset-failed appzones@tb.service")
+        assert servers("tb") == 1
+        print("PASS  the unit against a zone appzones started: fails once, NRestarts=0, one server")
+        # stop, restart and logs (default auto, the unit installed) follow who runs it
+        u("appzones logs tb | tail -1 | grep -qxF \"$(tail -1 ~/.local/state/appzones/tb.log)\"")
+        u("appzones restart tb && appzones ping tb")
+        assert not unit_active("tb") and servers("tb") == 1
+        u("appzones stop tb && ! appzones ping tb")
+        assert servers("tb") == 0
+        u("appzones up tb")
+        assert unit_active("tb")
+        u(SP + "appzones stop tb && ! appzones ping tb")
+        assert not unit_active("tb") and servers("tb") == 0
+        print("PASS  logs, restart and stop follow who runs the zone: appzones' server, or the unit")
+        # auto without the unit (masked here): appzones starts the zone
+        u("mkdir -p ~/.config/systemd/user && ln -sf /dev/null ~/.config/systemd/user/appzones@.service "
+          "&& systemctl --user daemon-reload")
+        u("appzones up tb && appzones ping tb")
+        assert not unit_active("tb") and servers("tb") == 1
+        u("appzones stop tb && rm ~/.config/systemd/user/appzones@.service && systemctl --user daemon-reload")
+        print("PASS  auto without the unit: appzones starts the zone itself")
+        # the user manager without WAYLAND_DISPLAY: a clear warning on start
+        had = u("systemctl --user show-environment | grep '^WAYLAND_DISPLAY=' || true").strip()
+        u("systemctl --user unset-environment WAYLAND_DISPLAY")
+        out = u("WAYLAND_DISPLAY=wayland-9 appzones up tb 2>&1")
+        print(out)
+        assert "no WAYLAND_DISPLAY" in out, out
+        u("appzones stop tb")
+        if had:
+            u("systemctl --user set-environment " + shlex.quote(had))
+        print("PASS  a user manager without WAYLAND_DISPLAY: start warns")
   '';
 }

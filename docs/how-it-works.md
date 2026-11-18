@@ -1,7 +1,8 @@
 # How it works
 
 ```
-systemd --user: appzones@work.service   (appzones.slice, Type=notify)
+systemd --user: appzones@work.service   (appzones.slice, Type=notify;
+│                                         or started by appzones itself)
 └─ appzones serve work                           host side
    ├─ zone-wayland      → wp_security_context_v1 listener (Hyprland hides
    │                      screencopy, data-control, layer-shell, virtual
@@ -26,7 +27,13 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify)
   zone untouched. With `--lock-fd N` a caller hands over a lock it took: fd N is
   inherited across `exec` (not close-on-exec), and the lock lives as long as any
   copy of it, so the caller closes its own (or `exec`s into `serve`).
-- Without systemd (`APPZONES_SUPERVISOR=none`), `appzones run`, `up` and `shell`
+- Who starts a zone that does not answer: `APPZONES_SUPERVISOR=auto` (the
+  default) uses the unit when it is installed and the user manager answers
+  (`systemctl --user show -p LoadState appzones@probe.service` is `loaded`),
+  else appzones; `systemd` and `spawn` force one. A running zone stays with
+  whoever runs it: `stop`, `restart` and `logs` check the unit first, then
+  servers outside it.
+- Without systemd (`spawn`), `appzones run`, `up` and `shell`
   start the zone themselves when it does not answer: the client takes the
   zone's lock and starts `appzones serve ZONE --lock-fd L --notify-fd W`
   detached (its own session, cwd `/`, output to

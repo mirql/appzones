@@ -402,6 +402,101 @@ os.write(w, b"\\n"); os.close(w)
             else:
                 os.environ["XDG_STATE_HOME"] = old
 
+    def test_supervisor(self):
+        """APPZONES_SUPERVISOR: auto (default) uses systemd when the unit is installed and the
+        user manager answers; systemd; spawn (or none); anything else is an error."""
+        import subprocess as sp
+        zone = self._zone_mod()
+        old = os.environ.pop("APPZONES_SUPERVISOR", None)
+        try:
+            for setting, installed, want in [(None, True, True), (None, False, False), ("auto", True, True),
+                                             ("systemd", False, True), ("spawn", True, False), ("none", True, False),
+                                             ("Spawn", True, False)]:
+                if setting is None:
+                    os.environ.pop("APPZONES_SUPERVISOR", None)
+                else:
+                    os.environ["APPZONES_SUPERVISOR"] = setting
+                zone.unit_installed = lambda v=installed: v
+                self.assertEqual(zone.use_systemd(), want, (setting, installed))
+            os.environ["APPZONES_SUPERVISOR"] = "runit"
+            with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+                zone.use_systemd()
+            self.assertIn("auto, systemd, spawn", err.getvalue())
+        finally:
+            os.environ.pop("APPZONES_SUPERVISOR", None)
+            if old is not None:
+                os.environ["APPZONES_SUPERVISOR"] = old
+        # unit_installed asks systemctl once; no systemctl or no manager: not installed
+        bin_ = Path(self.tmp.name) / "bin"
+        bin_.mkdir()
+        path = os.environ["PATH"]
+        try:
+            for script, want in [("echo loaded", True), ("echo not-found", False),
+                                 ("echo 'Failed to connect to bus' >&2; exit 1", False), (None, False)]:
+                zone = self._zone_mod()
+                (bin_ / "systemctl").unlink(missing_ok=True)
+                if script:
+                    (bin_ / "systemctl").write_text(f"#!/bin/sh\n{script}\n")
+                    (bin_ / "systemctl").chmod(0o755)
+                os.environ["PATH"] = str(bin_)
+                self.assertEqual(zone.unit_installed(), want, script)
+                (bin_ / "systemctl").unlink(missing_ok=True)
+                self.assertEqual(zone.unit_installed(), want)  # asked once
+        finally:
+            os.environ["PATH"] = path
+        # who runs a zone decides stop and logs
+        zone = self._zone_mod()
+        zone.load_zone = lambda name, quiet=True: None
+        zone.ping = lambda n: None
+        calls = []
+        zone.systemctl = lambda *a, check=True: calls.append(a) or sp.CompletedProcess(a, 0, "", "")
+        zone.server_pids = lambda n: []
+        zone.unit_runs = lambda n: True
+        zone.stop_zone("aa")
+        self.assertEqual(calls, [("stop", "appzones@aa.service")])
+        calls.clear()
+        zone.unit_runs = lambda n: False
+        zone.stop_zone("aa")
+        self.assertEqual(calls, [])
+        ran = []
+
+        def execvp(f, argv):
+            ran.append(f)
+            raise SystemExit
+
+        zone.os.execvp, real = execvp, os.execvp
+        try:
+            for runs, pids, systemd, want in [(True, [], False, "journalctl"), (False, [1], True, "tail"),
+                                              (False, [], True, "journalctl"), (False, [], False, "tail")]:
+                zone.unit_runs = lambda n, v=runs: v
+                zone.server_pids = lambda n, v=pids: v
+                zone.use_systemd = lambda v=systemd: v
+                with self.assertRaises(SystemExit):
+                    zone.logs("aa", False)
+                self.assertEqual(ran.pop(), want, (runs, pids, systemd))
+        finally:
+            os.execvp = real
+
+    def test_manager_env_warning(self):
+        import subprocess as sp
+        zone = self._zone_mod()
+        old = os.environ.get("WAYLAND_DISPLAY")
+        try:
+            os.environ["WAYLAND_DISPLAY"] = "wayland-1"
+            for manager_env, warned in [("PATH=/bin\n", True), ("PATH=/bin\nWAYLAND_DISPLAY=wayland-1\n", False)]:
+                zone.systemctl = lambda *a, check=True, e=manager_env: sp.CompletedProcess(a, 0, e, "")
+                with contextlib.redirect_stderr(io.StringIO()) as err:
+                    zone._check_manager_env()
+                self.assertEqual("no WAYLAND_DISPLAY" in err.getvalue(), warned)
+            del os.environ["WAYLAND_DISPLAY"]  # no Wayland here: nothing to say
+            zone.systemctl = lambda *a, check=True: sp.CompletedProcess(a, 0, "PATH=/bin\n", "")
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                zone._check_manager_env()
+            self.assertEqual(err.getvalue(), "")
+        finally:
+            if old is not None:
+                os.environ["WAYLAND_DISPLAY"] = old
+
     def test_spawn_log_rotation(self):
         zone = self._zone_mod()
         zone.LOG_DIR = Path(self.tmp.name) / "state"

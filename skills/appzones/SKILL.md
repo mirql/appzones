@@ -7,8 +7,9 @@ description: Run, inspect and configure app zones with the `appzones` CLI (long-
 
 appzones runs desktop apps in **zones**: long-lived sandboxes, each with its
 own home (`~/.local/share/appzones/NAME/home`), its own network rules and its
-own window border colour. A zone is a systemd user unit
-(`appzones@NAME.service`) built from bubblewrap, pasta + nftables,
+own window border colour. A zone is one process, `appzones serve NAME`, run by
+its systemd user unit (`appzones@NAME.service`) when that is installed, else
+started by appzones on demand; built from bubblewrap, pasta + nftables,
 xdg-dbus-proxy and the Wayland security context. Zones are declared in one
 TOML file; the `appzones` CLI starts them and runs things inside.
 
@@ -84,13 +85,15 @@ interactive and needs a real terminal: leave it to the user.
 
 ```bash
 appzones ps ZONE                         # processes in the zone
-appzones logs ZONE                       # its journal (the user can -f)
+appzones logs ZONE                       # its journal or log file (the user can -f)
 appzones check --probe ZONE              # isolation probes inside a running zone
 ```
 
 **Run a zone without its systemd unit** (another process manager, a terminal):
 `appzones serve ZONE [--notify-fd N]` runs the zone in the foreground; SIGTERM or
-Ctrl-C stops it. Starting it is still rule 1's business only when it replaces a
+Ctrl-C stops it. `APPZONES_SUPERVISOR=auto|systemd|spawn` chooses who starts
+zones on demand (auto: the unit if installed); logs without systemd are in
+`~/.local/state/appzones/ZONE.log`. Starting it is still rule 1's business only when it replaces a
 running zone.
 
 **Share a folder for a while**

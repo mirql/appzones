@@ -83,8 +83,39 @@ def settings_hash(z: zonecfg.Zone) -> str:
     return hashlib.sha256(json.dumps(z.settings, sort_keys=True).encode()).hexdigest()
 
 
+SUPERVISORS = ("auto", "systemd", "spawn")
+
+
+def supervisor() -> str:
+    """Who starts zones, from $APPZONES_SUPERVISOR: auto (the default), systemd, or spawn
+    (appzones starts them itself; `none` means the same)."""
+    v = (zonecfg.env("SUPERVISOR") or "auto").strip().lower()
+    v = "spawn" if v == "none" else v
+    if v not in SUPERVISORS:
+        die(f"APPZONES_SUPERVISOR={v!r}: use one of {', '.join(SUPERVISORS)}")
+    return v
+
+
+_unit: list[bool] = []
+
+
+def unit_installed() -> bool:
+    """The appzones@.service template is installed and the user's systemd answers."""
+    if not _unit:
+        try:
+            r = subprocess.run(["systemctl", "--user", "show", "-p", "LoadState", "--value",
+                                "appzones@probe.service"], capture_output=True, text=True, timeout=10)
+            _unit.append(r.returncode == 0 and r.stdout.strip() == "loaded")
+        except (OSError, subprocess.TimeoutExpired):
+            _unit.append(False)
+    return _unit[0]
+
+
 def use_systemd() -> bool:
-    return (zonecfg.env("SUPERVISOR") or "systemd") == "systemd"
+    """Zones that are not running are started through systemd (else: by appzones). Zones
+    that run stay with whoever started them: see client.unit_runs."""
+    s = supervisor()
+    return s == "systemd" or (s == "auto" and unit_installed())
 
 
 def systemctl(*args: str, check: bool = True) -> subprocess.CompletedProcess:
