@@ -34,7 +34,9 @@
 
 Internal (systemd and the supervisor):
     appzones _supervise ZONE               the zone itself (appzones@ZONE.service's ExecStart)
-    appzones _netsetup RULES INFO -- CMD   load nft RULES in this netns, open INFO as fd 3, exec CMD
+    appzones _netsetup RULES INFO AGENT -- CMD
+                                           load nft RULES in this netns, open INFO as fd 3, listen
+                                           on AGENT (for zone-init: $ZONE_CTL_FD), exec CMD
     appzones _autostart                    write launcher entries, start zones with autostart = true
 
 Config: ~/.config/appzones/zones.toml ($APPZONES_CONFIG). State: ~/.local/share/appzones.
@@ -646,7 +648,9 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
             warn(f"usb: no device matches {', '.join(s['usb'])} now; the zone starts without one "
                  f"(plug it in, then `appzones restart {z.name}`)")
     a += ["--ro-bind-try", "/sys/devices/system/cpu", "/sys/devices/system/cpu"]
-    a += ["--bind", str(zrt / "ctl"), "/run/zone"]
+    # read-only: nothing in the zone may put a file here (the agent's socket is
+    # an inherited fd, see netsetup; links.sock is the host's and stays reachable)
+    a += ["--ro-bind", str(zrt / "ctl"), "/run/zone"]
     if (zrt / "ctl/bin").is_dir():
         # the xdg-open shim: first on PATH, so never writable from inside
         a += ["--ro-bind", str(zrt / "ctl/bin"), "/run/zone/bin"]
@@ -931,7 +935,7 @@ def supervise(name: str) -> int:
     # pasta closes inherited fds, so the info fd is opened by _netsetup, in
     # pasta's namespace, right before it execs bwrap.
     argv = [sys.executable, str(HERE / "zone.py"), "_netsetup", str(zrt / "nft.rules") if network == "internet" else "-",
-            str(fp / "bwrapinfo.json"), "--"] + inner
+            str(fp / "bwrapinfo.json"), str(zrt / "agent.sock"), "--"] + inner
     if network == "internet":
         argv = pasta_argv(z) + argv
     child = subprocess.Popen(argv)
@@ -1012,7 +1016,27 @@ def pin_binds(argv: list[str]) -> list[str]:
     return out
 
 
-def netsetup(rules: str, info: str, argv: list[str]) -> None:
+def agent_listener(path: str) -> int:
+    """zone-init's control socket, made here on the host side: a path outside
+    everything bound into the zone, so no process in the zone can replace it,
+    and handed to zone-init as an inherited fd ($ZONE_CTL_FD)."""
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    old = os.umask(0o177)
+    try:
+        s.bind(path)
+    finally:
+        os.umask(old)
+    s.listen(16)
+    fd = s.detach()
+    os.set_inheritable(fd, True)
+    return fd
+
+
+def netsetup(rules: str, info: str, agent: str, argv: list[str]) -> None:
     if rules != "-":
         r = subprocess.run([tool("nft"), "-f", rules])
         if r.returncode != 0:
@@ -1022,7 +1046,10 @@ def netsetup(rules: str, info: str, argv: list[str]) -> None:
         os.dup2(fd, 3)
         os.close(fd)
     os.set_inheritable(3, True)
-    argv = pin_binds(argv)  # after fd 3: pinned descriptors are 4 and up
+    ctl = agent_listener(agent)
+    i = argv.index("--")
+    argv = argv[:i] + ["--setenv", "ZONE_CTL_FD", str(ctl)] + argv[i:]
+    argv = pin_binds(argv)  # after fd 3 and the agent's: pinned descriptors come next
     os.execvp(argv[0], argv)
 
 
@@ -1030,7 +1057,7 @@ def netsetup(rules: str, info: str, argv: list[str]) -> None:
 def request(name: str, req: dict, fds: list[int] | None = None, timeout: float | None = 5.0) -> socket.socket:
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
-    s.connect(str(RT / name / "ctl" / "ctl.sock"))
+    s.connect(str(RT / name / "agent.sock"))  # host side only, see agent_listener
     data = (json.dumps(req) + "\n").encode()
     if fds:
         socket.send_fds(s, [data], fds)
@@ -1760,7 +1787,7 @@ def main(argv: list[str]) -> int:
         return supervise(one())
     if cmd == "_netsetup":
         i = rest.index("--")
-        netsetup(rest[0], rest[1], rest[i + 1:])
+        netsetup(rest[0], rest[1], rest[2], rest[i + 1:])
     if cmd == "_autostart":
         return autostart()
     if cmd == "list":

@@ -1,7 +1,9 @@
 """zone-init: the agent inside a zone.
 
 Runs as PID 2 of the zone's pid namespace (bwrap is PID 1 and reaps).
-Listens on /run/zone/ctl.sock. One JSON request line per connection:
+Listens on a socket the host made and handed over as fd $ZONE_CTL_FD (its
+path, $XDG_RUNTIME_DIR/appzones/ZONE/agent.sock on the host, is not in the
+zone, so nothing in the zone can replace it). One JSON request line per connection:
 
   {"op": "ping"}                         -> {"ok": true, "zone": Z, "pid": N}
   {"op": "ps"}                           -> {"ok": true, "procs": [[pid, cmdline], ...]}
@@ -44,7 +46,6 @@ import subprocess
 import sys
 import termios
 
-SOCK = "/run/zone/ctl.sock"
 ZONE = os.environ.get("ZONE", "?")
 # Mozilla apps own org.mozilla.<remoting name>.<profile> on the host bus for
 # their "already running" remote. Every zone's profile is named the same, so
@@ -171,8 +172,8 @@ def ensure_zone_bus():
 def no_bus(argv):
     """argv wrapped so the app sees no bus socket at all: a nested bwrap (own
     user + mount namespace) whose $XDG_RUNTIME_DIR holds the zone's other
-    sockets, not bus and not zone-bus, and whose /run/zone has no ctl.sock
-    (through it the app could ask zone-init for a process on the host bus).
+    sockets, not bus and not zone-bus. (zone-init's own socket is not in the
+    zone at all.)
     The link socket and the xdg-open shim stay."""
     bwrap = os.environ.get("ZONE_BWRAP") or "bwrap"
     a = [bwrap, "--dev-bind", "/", "/", "--perms", "0700", "--tmpfs", ZRT]
@@ -536,16 +537,31 @@ def reap():
             close_shell(pid)
 
 
+def harden_self():
+    """Not dumpable: processes in the zone (same uid, no capabilities) cannot
+    ptrace zone-init, read its memory or take its fds (pidfd_getfd), so they
+    cannot use its control socket. Apps it starts are dumpable again after exec."""
+    PR_SET_DUMPABLE = 4
+    import ctypes
+    if ctypes.CDLL(None, use_errno=True).prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+        log("could not make zone-init non-dumpable; refusing to run")
+        sys.exit(1)
+
+
+def listener() -> socket.socket:
+    """The control socket the host handed over ($ZONE_CTL_FD); never a path in the zone."""
+    raw = os.environ.pop("ZONE_CTL_FD", "")
+    if not raw.isdigit():
+        log("no $ZONE_CTL_FD from the host; refusing to run")
+        sys.exit(1)
+    fd = int(raw)
+    os.set_inheritable(fd, False)  # never into an app
+    return socket.socket(fileno=fd)
+
+
 def main():
-    os.makedirs(os.path.dirname(SOCK), exist_ok=True)
-    try:
-        os.unlink(SOCK)
-    except FileNotFoundError:
-        pass
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(SOCK)
-    os.chmod(SOCK, 0o600)
-    srv.listen(16)
+    harden_self()
+    srv = listener()
     r, w = os.pipe()
     os.set_blocking(w, False)
     signal.set_wakeup_fd(w)
@@ -553,7 +569,7 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     sel.register(srv, selectors.EVENT_READ, ("srv", 0))
     sel.register(r, selectors.EVENT_READ, ("sig", 0))
-    log(f"zone {ZONE} ready on {SOCK}")
+    log(f"zone {ZONE} ready (control socket: fd from the host)")
     while True:
         for key, _ in sel.select():
             kind, pid = key.data

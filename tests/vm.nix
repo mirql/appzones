@@ -497,6 +497,12 @@ pkgs.testers.runNixOSTest {
         refused("ta", "ls -d /nix/var", "/nix/var absent")
         ok("ta", "grep -q 'CapEff:.0000000000000000' /proc/self/status", "capabilities empty")
         ok("ta", "grep -q 'NoNewPrivs:.1' /proc/self/status", "no_new_privs")
+        # zone-init's control socket: made by the host, outside the zone; nothing in
+        # the zone can replace it or take it from zone-init
+        machine.succeed("test -S /run/user/1000/appzones/ta/agent.sock")
+        refused("ta", "test -e /run/zone/ctl.sock", "no control socket path in the zone")
+        refused("ta", "touch /run/zone/planted", "/run/zone is read-only")
+        refused("ta", "cat /proc/2/environ >/dev/null", "zone-init (pid 2) is not dumpable: not readable from the zone")
         refused("ta", "env | grep -E 'HYPRLAND|SSH_AUTH|TOKEN'", "no HYPRLAND_INSTANCE_SIGNATURE (the manager has it)")
         host_mid = machine.succeed("cat /etc/machine-id").strip()
         ok("ta", f"[ \"$(cat /etc/machine-id)\" != {host_mid} ]", "own machine-id")

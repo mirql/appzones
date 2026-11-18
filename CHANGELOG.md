@@ -5,6 +5,13 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.6.1
+
+- zone-init's control socket is created by the host, outside the zone
+  (`$XDG_RUNTIME_DIR/appzones/NAME/agent.sock`), and handed to zone-init as an
+  fd; `/run/zone` is read-only inside the zone, and zone-init cannot be traced
+  from inside it. Restart running zones after upgrading.
+
 - **The docs are split into pages** (https://mirql.github.io/appzones/): getting started, recipes,
   configuration (reference, files, devices, D-Bus, generic binaries), desktop,
   troubleshooting (new), how it works, security, contributing. `docs/guide.md`
