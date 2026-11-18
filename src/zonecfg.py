@@ -167,7 +167,7 @@ KEYS: dict[str, tuple[object, object, str]] = {
     "network": ("internet", _enum("none", "internet", "host"), "none | internet | host"),
     "netbird": (False, _bool, "with network=internet: also reach the NetBird mesh (the network of the host's "
                                "NetBird interface, never the host itself)"),
-    "dns": ("host", _enum("host", "public"), "host (the host's resolver) | public (1.1.1.1)"),
+    "dns": ("host", _enum("host", "public"), "host (the host's resolver) | public (1.1.1.1, then 1.0.0.1)"),
     "links": ("portal", _links, "where links open: portal (host browser) | zone | zone:NAME"),
     "keyring": ("basic", _enum("basic", "zone"), "basic (fixed-key store) | zone (own keyring daemon, not built yet)"),
     "devices": (["gpu", "audio"], _devices, "any of " + " ".join(DEVICES)),

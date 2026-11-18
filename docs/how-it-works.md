@@ -69,10 +69,12 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   zone's network). Each query goes over `dns.sock` to the zone's server on the
   host, which asks the host's resolver (`dns = "host"`: the first nameserver in
   the host's `/etc/resolv.conf`, also a loopback one such as systemd-resolved's
-  `127.0.0.53`) or 1.1.1.1 (`dns = "public"`). Only standard queries, at most 4
-  KB, 64 at a time, only to that resolver. The zone cannot reach the resolver
-  itself: the deny list refuses the host and the LAN. pasta does no DNS, so
-  any pasta version works.
+  `127.0.0.53`) or 1.1.1.1, then 1.0.0.1 (`dns = "public"`). Only standard
+  queries, at most 4 KB, 64 at a time and 100 a second on average, only to
+  that resolver. A resolver on the host or the LAN stays unreachable from the
+  zone directly (the deny list refuses both); a public one like 1.1.1.1 is on
+  the internet, which the zone reaches anyway. pasta does no DNS, so any pasta
+  version works.
 
 - `/run/user/1000` inside is an empty tmpfs that holds only the zone's
   sockets: `wayland-0`, `bus`, `zone-bus/` once an app uses the zone's own

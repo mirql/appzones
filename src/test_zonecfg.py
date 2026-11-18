@@ -980,6 +980,19 @@ os.write(w, b"\\n"); os.close(w)
             self.assertFalse(zone.is_query(query(3)[:4] + b"\x00\x00" + query(3)[6:]))
             self.assertFalse(zone.is_query(query(3) + b"\0" * 5000))
             self.assertIsNone(zone_init.dns_forward(answer(query(4), 1)))
+            # the budget: a burst, then the rate
+            b = zone.Budget(rate=1000.0, burst=3)
+            self.assertEqual([b.take() for _ in range(4)], [True, True, True, False])
+            time.sleep(0.01)
+            self.assertTrue(b.take())
+            # one query never takes longer than the deadline, also when nothing answers
+            silent = so.socket(so.AF_INET, so.SOCK_DGRAM)
+            silent.bind(("127.0.0.1", 0))
+            zone.PORT, zone.DEADLINE, zone.UDP_TIMEOUT = silent.getsockname()[1], 0.6, 0.25
+            t0 = time.monotonic()
+            self.assertIsNone(zone.resolve(["127.0.0.1", "127.0.0.1"], query(5)))
+            self.assertLess(time.monotonic() - t0, 0.9)
+            silent.close()
         finally:
             srv.close()
             udp.close()

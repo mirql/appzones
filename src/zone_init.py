@@ -593,7 +593,7 @@ def dns_forward(msg):
     """The answer to MSG from the host side, or None."""
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-            s.settimeout(10)
+            s.settimeout(12)  # longer than the host side's deadline for one query (8 s)
             s.connect(DNS_SOCK)
             s.sendall(struct.pack(">H", len(msg)) + msg)
             head = _recv_exact(s, 2)

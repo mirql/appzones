@@ -150,7 +150,7 @@ services. Rule 4's warning about writable binds applies.
 
 | Symptom | Why | What to do |
 |---|---|---|
-| A site or name does not resolve in the zone, but works elsewhere | `dns = "host"` uses the host's resolver, with its ad blocking and blocklists | Check on the host (`getent hosts NAME`). Either allow it in the host's DNS, or set `dns = "public"` for that zone (1.1.1.1, minimal `/etc/hosts`; internal names then do not resolve) |
+| A site or name does not resolve in the zone, but works elsewhere | `dns = "host"` uses the host's resolver, with its ad blocking and blocklists | Check on the host (`getent hosts NAME`). Either allow it in the host's DNS, or set `dns = "public"` for that zone (1.1.1.1 or 1.0.0.1, minimal `/etc/hosts`; internal names then do not resolve) |
 | LAN, router, `localhost`, the host's services or a tailnet unreachable | By design: `network = "internet"` refuses all of them | For a NetBird mesh: `netbird = true`. `network = "host"` only with the user's yes (rule 2) |
 | `zone X cannot see FILE (not inside its binds)` | The file is outside the zone | `appzones mount`, a bind, or the app's file chooser (portal) |
 | `refused: ... never enters a zone` | The never-list | Do not work around it (rule 3); tell the user why |

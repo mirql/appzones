@@ -11,7 +11,7 @@ appzones check --probe ZONE   # validate the config and run isolation probes ins
 
 | Symptom | Why | What to do |
 |---|---|---|
-| A site or name does not resolve in a zone, but works elsewhere | `dns = "host"` uses the host's resolver, with its ad blocking and blocklists (including `/etc/hosts`) | Check on the host: `getent hosts NAME`. Allow the name in the host's DNS, or set `dns = "public"` for that zone (1.1.1.1 and a minimal `/etc/hosts`; internal names then do not resolve) |
+| A site or name does not resolve in a zone, but works elsewhere | `dns = "host"` uses the host's resolver, with its ad blocking and blocklists (including `/etc/hosts`) | Check on the host: `getent hosts NAME`. Allow the name in the host's DNS, or set `dns = "public"` for that zone (1.1.1.1 or 1.0.0.1, and a minimal `/etc/hosts`; internal names then do not resolve) |
 | The LAN, the router, `localhost`, the host's own services or a tailnet are unreachable | By design: `network = "internet"` refuses all of them ([reference](configuration/reference.md)) | For a NetBird mesh: `netbird = true`. `network = "host"` gives the zone the host's whole network; think twice |
 | `zone X cannot see FILE (not inside its binds)` | The file is outside the zone | [`appzones mount`](configuration/files.md#runtime-mounts), a bind, or the app's file chooser |
 | `refused: ... never enters a zone` | The never-list (`~/.ssh`, shell config, `/run/secrets`, your `deniedPaths`, ...) | Pick a smaller folder that holds only what the zone needs |

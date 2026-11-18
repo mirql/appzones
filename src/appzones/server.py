@@ -214,9 +214,6 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         extra_path = fs.package_paths(z, zdir) if s["packages"] else []
         target = portals.link_target(z)
         links_srv = None
-        dns_srv = None  # noqa: F841  (answers in its own threads; held open until the server exits)
-        if s["network"] == "internet":
-            dns_srv = dns.serve(zrt / "ctl" / "dns.sock", dns.upstreams(z))  # noqa: F841
         if target:
             (zrt / "ctl/bin").mkdir()
             xo = zrt / "ctl/bin/xdg-open"
@@ -262,6 +259,9 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     if stopped:  # asked to stop before the zone itself was started
         return abort("")
     # _netsetup's own deadline (bwrap clears the environment: it goes no further)
+    # the zone's DNS answers in threads: started only now, after every launch with a
+    # preexec_fn (die_with), which is not safe once a process has threads
+    dns_srv = dns.serve(zrt / "ctl" / "dns.sock", dns.upstreams(z)) if network == "internet" else None  # noqa: F841
     child = subprocess.Popen(argv, env=dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT)))  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
     if not offer_pidfd(name, child):
         return abort("_netsetup did not take the server's pidfd")
@@ -409,7 +409,8 @@ def read_line(fd: int, timeout: float) -> bytes | None:
 
 def die_with(server: int):
     """A preexec_fn: the child gets SIGKILL when SERVER dies (PR_SET_PDEATHSIG), and exits
-    if it died already. The server is single-threaded, so preexec_fn is safe here."""
+    if it died already. Only for launches before the server starts threads (the zone's
+    DNS): preexec_fn is not safe in a process with threads."""
     def arm():
         import ctypes
         PR_SET_PDEATHSIG = 1
