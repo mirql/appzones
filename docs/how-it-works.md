@@ -25,6 +25,12 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify)
   zone untouched. With `--lock-fd N` a caller hands over a lock it took: fd N is
   inherited across `exec` (not close-on-exec), and the lock lives as long as any
   copy of it, so the caller closes its own (or `exec`s into `serve`).
+- The zone ends with its server, however the server ends (also `kill -9`):
+  zone-init holds a pidfd of the server (handed over a unix socket, since
+  pasta closes inherited fds) and ends the zone when it becomes readable;
+  zone-wayland gets SIGTERM when the server dies (`PR_SET_PDEATHSIG`); the
+  D-Bus proxy's bwrap has `--die-with-parent`. Every startup step has a
+  30-second limit.
 - The `appzones` CLI talks to zone-init over a socket the host makes,
   `$XDG_RUNTIME_DIR/appzones/NAME/agent.sock`, outside the zone. zone-init
   gets it as an inherited fd; there is no socket file inside the zone. zone-init

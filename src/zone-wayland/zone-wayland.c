@@ -10,6 +10,8 @@
 // of a pipe whose write end only this process holds, so when it exits (or
 // is killed with its zone) the compositor stops accepting on the socket.
 // It prints "ready" on stdout once the context is committed.
+// With $ZONE_WAYLAND_PARENT (the server's pid) it gets SIGTERM when that
+// process dies (PR_SET_PDEATHSIG), and exits at once if it died already.
 // Same pattern as flatpak's common/flatpak-run-wayland.c.
 #define _GNU_SOURCE
 #include <errno.h>
@@ -17,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -39,6 +42,12 @@ int main(int argc, char **argv) {
   if (argc != 4) {
     fprintf(stderr, "usage: zone-wayland SOCKET_PATH APP_ID INSTANCE_ID\n");
     return 2;
+  }
+  const char *parent = getenv("ZONE_WAYLAND_PARENT");
+  if (parent) {
+    // the server's death ends this helper; checked after prctl: no gap
+    if (prctl(PR_SET_PDEATHSIG, SIGTERM) < 0) { perror("prctl"); return 1; }
+    if (getppid() != (pid_t)atol(parent)) { fprintf(stderr, "zone-wayland: server gone\n"); return 1; }
   }
   const char *path = argv[1];
   struct wl_display *dpy = wl_display_connect(NULL);

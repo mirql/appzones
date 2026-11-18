@@ -343,6 +343,35 @@ class ZonecfgTest(unittest.TestCase):
                 p.kill()
                 p.wait()
 
+    def test_server_pidfd_handoff(self):
+        """The server hands _netsetup a pidfd of itself over a unix socket; it says when the server exits."""
+        import threading
+        zone = self._zone_mod()
+        zone.RT = Path(self.tmp.name) / "rt"
+        (zone.RT / "aa").mkdir(parents=True)
+
+        class Alive:  # stands in for the _netsetup child
+            def poll(self):
+                return None
+        got = []
+        t = threading.Thread(target=lambda: got.append(zone.receive_pidfd("aa")))
+        t.start()
+        self.assertTrue(zone.offer_pidfd("aa", Alive()))
+        t.join(10)
+        fd = got[0]
+        try:
+            self.assertTrue(os.get_inheritable(fd))  # meant for zone-init, through bwrap
+            import select as sl
+            self.assertEqual(sl.select([fd], [], [], 0)[0], [])  # this process is alive: not readable
+        finally:
+            os.close(fd)
+        self.assertFalse(zone.handoff_path("aa").exists())  # the socket is gone again
+
+        class Exited:
+            def poll(self):
+                return 1
+        self.assertFalse(zone.offer_pidfd("aa", Exited()))
+
     def test_server_command(self):
         """Only the process's own script counts; an installed appzones from the store counts too."""
         zone = self._zone_mod()

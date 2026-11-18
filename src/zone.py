@@ -44,7 +44,8 @@
 Internal (systemd and the supervisor):
     appzones _netsetup RULES INFO ZONE -- CMD
                                            load nft RULES in this netns, open INFO as fd 3, make
-                                           ZONE's agent socket (for zone-init: $ZONE_CTL_FD), exec CMD
+                                           ZONE's agent socket (for zone-init: $ZONE_CTL_FD), take
+                                           its server's pidfd ($ZONE_SERVER_FD), exec CMD
     appzones _autostart                    write launcher entries, start zones with autostart = true
 
 Config: ~/.config/appzones/zones.toml ($APPZONES_CONFIG). State: ~/.local/share/appzones.
