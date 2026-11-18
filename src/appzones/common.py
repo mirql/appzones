@@ -117,7 +117,9 @@ def server_command(argv: list[str], cwd: str) -> tuple[str, str] | None:
     return None
 
 
-LOG_DIR = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "appzones"
+_state = os.environ.get("XDG_STATE_HOME", "")
+# a relative XDG_STATE_HOME is ignored, as the XDG spec says (and the never-list does)
+LOG_DIR = (Path(_state) if os.path.isabs(_state) else HOME / ".local/state") / "appzones"
 LOG_MAX = 2 * 1024 * 1024  # a log is rotated (to NAME.log.1) at a start when it is bigger
 
 

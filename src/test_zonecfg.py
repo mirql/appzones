@@ -410,6 +410,13 @@ os.write(w, b"\\n"); os.close(w)
         os.close(zone._open_log("aa"))
         self.assertEqual(zone.log_path("aa").stat().st_size, 0)
         self.assertEqual((zone.LOG_DIR / "aa.log.1").stat().st_size, zone.LOG_MAX + 1)
+        # a failed start right after a rotation still shows this attempt's output
+        self._fake_server(zone, "import sys\nprint('boom after rotation', flush=True)\nsys.exit(1)\n")
+        zone.log_path("cc").write_bytes(b"old\n" * (zone.LOG_MAX // 4 + 1))
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            zone.spawn("cc")
+        self.assertIn("boom after rotation", err.getvalue())
+        self.assertNotIn("old", err.getvalue().split("log (")[1].split("\n", 1)[1])
 
     def test_server_pids(self):
         """stop without systemd finds exactly this appzones' `zone.py serve NAME`, also from a
