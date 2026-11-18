@@ -305,6 +305,8 @@ class ZonecfgTest(unittest.TestCase):
             (["python3", "/nix/store/abc-appzones-0.6.0/libexec/appzones/zone.py", "_supervise", "cc"], ("_supervise", "cc")),
             (["python3", "/nix/store/abc-x/libexec/other/zone.py", "serve", "cc"], None),
             (["python3", here, "serve"], None),
+            (["python3", "-X", "dev", here, "serve", "aa"], ("serve", "aa")),         # an option with a value
+            (["python3", "-m", "x", here, "serve", "aa"], None),
         ]
         for argv, want in cases:
             with self.subTest(argv=argv):

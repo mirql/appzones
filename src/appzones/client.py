@@ -296,15 +296,21 @@ def stop_zone(name: str) -> None:
                     continue
             except ProcessLookupError:
                 pass  # exited just now
+            except OSError as e:
+                warn(f"zone {name}: could not signal its server (pid {pid}): {e.strerror or e}")
             os.close(pfd)
         # until the servers have exited: their cleanup must not overlap a new start (restart)
         try:
             end = time.monotonic() + 20
+            poll = select.poll()
+            for p in pfds:
+                poll.register(p, select.POLLIN)  # a pidfd is readable once the process exits
             while pfds:
-                ready, _, _ = select.select(pfds, [], [], max(0.0, end - time.monotonic()))
+                ready = poll.poll(max(0, int((end - time.monotonic()) * 1000)))
                 if not ready:
                     die(f"zone {name}: its server did not exit within 20 s after SIGTERM")
-                for p in ready:
+                for p, _ in ready:
+                    poll.unregister(p)
                     pfds.remove(p)
                     os.close(p)
         finally:

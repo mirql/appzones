@@ -101,7 +101,9 @@ def server_command(argv: list[str], cwd: str) -> tuple[str, str] | None:
     `_supervise ZONE`. Only the process's own script counts, never later arguments."""
     i = 1
     while i < len(argv) and argv[i].startswith("-"):
-        i += 1
+        if argv[i] in ("-c", "-m"):  # code or a module, not a script
+            return None
+        i += 2 if argv[i] in ("-X", "-W", "-Q") else 1  # options that take a value
     if i >= len(argv):
         return None
     script, rest = argv[i], argv[i + 1:i + 3]
