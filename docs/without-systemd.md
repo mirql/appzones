@@ -69,7 +69,9 @@ appzones stop daily
 ```
 
 Many clients at once still get exactly one server per zone: the zone's lock
-decides who starts it, and the others wait for it to answer.
+decides who starts it, and the others wait for it to answer. A waiting client
+gives up after about 60 seconds (a first start that builds `packages` can take
+longer); run the command again once the zone answers.
 
 Or run the zone itself: `appzones serve` is the zone. Run it in a terminal to
 watch a zone start and stop (Ctrl-C ends it):

@@ -20,7 +20,8 @@ without systemd", #50).
   gpg-agent. The client takes the zone's lock and hands it to a detached
   `appzones serve`, so many clients at once still get one server; a client killed
   during the start leaves the zone starting. Logs in
-  `~/.local/state/appzones/ZONE.log` (rotated at each start); `appzones logs` and
+  `$XDG_STATE_HOME/appzones/ZONE.log` (by default `~/.local/state`; moved to
+  `ZONE.log.1` at a start when over 2 MB), on the never-list; `appzones logs` and
   autostart follow.
 
 - **The zone ends with its server**, however the server ends: outside systemd, a

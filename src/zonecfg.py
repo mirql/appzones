@@ -200,12 +200,16 @@ def denied_paths() -> list[Path]:
            # anything the host runs or reads as code or config at login: a
            # writable bind of one of these is a way out of the zone
            ".config/appzones", ".local/share/appzones", ".config/zones", ".local/share/zones",  # also pre-0.6
+           ".local/state/appzones",  # every zone's log, when appzones starts zones itself
            ".config/hypr", ".config/systemd", ".config/autostart",
            ".config/environment.d", ".config/uwsm", ".local/share/applications", ".local/bin", ".bin",
            ".bashrc", ".bash_profile", ".profile", ".zshrc", ".zshenv", ".zprofile", ".config/fish",
            ".config/nix", ".config/git", ".gitconfig", ".config/kwalletrc"]
     out = [Path(p) for p in ("/run/secrets", "/run/user", "/var/lib/sops-nix", "/etc/ssh", "/nix/var")]
     out += [h / r for r in rel]
+    state = os.environ.get("XDG_STATE_HOME")
+    if state and os.path.isabs(state):
+        out.append(Path(state) / "appzones")  # the logs, at a custom state location
     out += host_denied_paths()
     # globbed ones: ~/.local/share/opencode*, ~/.claude*
     for parent, pat in ((h / ".local/share", "opencode*"), (h, ".claude*")):

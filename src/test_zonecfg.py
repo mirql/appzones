@@ -364,6 +364,40 @@ time.sleep(30)
         self.assertIn("did not start", err.getvalue())
         self.assertIn("boom: no such zone", err.getvalue())
 
+    def test_spawn_paths(self):
+        """The detached server (cwd /) gets the config and state as absolute paths; an unusable
+        log path is a clear error; the logs are on the never-list."""
+        zone = self._zone_mod()
+        self._fake_server(zone, """import fcntl, os, sys, time
+a = sys.argv[1:]
+w = int(a[a.index("--notify-fd") + 1])
+print("CONFIG", os.environ.get("APPZONES_CONFIG"), flush=True)
+os.write(w, b"\\n"); os.close(w)
+""")
+        cwd = os.getcwd()
+        os.chdir(self.tmp.name)
+        try:
+            zone.CONFIG = Path("rel/zones.toml")
+            with contextlib.redirect_stderr(io.StringIO()):
+                zone.spawn("aa")
+        finally:
+            os.chdir(cwd)
+        self.assertIn(f"CONFIG {Path(self.tmp.name).resolve() / 'rel/zones.toml'}", zone.log_path("aa").read_text().replace(self.tmp.name, str(Path(self.tmp.name).resolve())))
+        zone.log_path("bb").mkdir(parents=True)  # not a file
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            zone.spawn("bb")
+        self.assertIn("cannot open its log", err.getvalue())
+        # a zone can never bind the logs
+        (self.home / ".local/state/appzones").mkdir(parents=True)
+        self.assertRefused(self.errs('binds = [{ path = "~/.local/state", mode = "ro" }]'), "never enters a zone")
+        custom = Path(self.tmp.name) / "xstate"
+        (custom / "appzones").mkdir(parents=True)
+        os.environ["XDG_STATE_HOME"] = str(custom)
+        try:
+            self.assertIn(custom / "appzones", self.z.denied_paths())
+        finally:
+            del os.environ["XDG_STATE_HOME"]
+
     def test_spawn_log_rotation(self):
         zone = self._zone_mod()
         zone.LOG_DIR = Path(self.tmp.name) / "state"

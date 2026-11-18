@@ -30,8 +30,11 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify)
   start the zone themselves when it does not answer: the client takes the
   zone's lock and starts `appzones serve ZONE --lock-fd L --notify-fd W`
   detached (its own session, cwd `/`, output to
-  `~/.local/state/appzones/ZONE.log`, rotated at each start), then waits for
-  readiness. Other clients wait for the zone to answer.
+  `$XDG_STATE_HOME/appzones/ZONE.log`, by default `~/.local/state/appzones/`;
+  at a start, a log over 2 MB is moved to `ZONE.log.1`), then waits for
+  readiness. Other clients wait for the zone to answer, and give up after about
+  60 seconds (try again once it answers). The log directory is on the
+  never-list: no zone can bind it.
 - The zone ends with its server, however the server ends (also `kill -9`):
   zone-init holds a pidfd of the server (handed over a unix socket, since
   pasta closes inherited fds) and ends the zone when it becomes readable;

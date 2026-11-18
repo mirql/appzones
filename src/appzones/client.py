@@ -43,10 +43,14 @@ def up(name: str, quiet: bool = False) -> None:
 
 
 def _log_tail(name: str, lines: int = 15) -> str:
+    """The last LINES of the zone's log, from a bounded read at its end."""
     try:
-        return "\n".join("  " + l for l in common.log_path(name).read_text(errors="replace").splitlines()[-lines:])
+        with open(common.log_path(name), "rb") as f:
+            f.seek(max(0, f.seek(0, os.SEEK_END) - 16384))
+            text = f.read().decode(errors="replace")
     except OSError:
         return ""
+    return "\n".join("  " + l for l in text.splitlines()[-lines:])
 
 
 def _open_log(name: str) -> int:
@@ -65,9 +69,20 @@ def _start_server(name: str, lock: int) -> int:
     """Start `appzones serve NAME` detached (its own session, cwd /, stdin /dev/null, the
     log for output), handing it the LOCK we hold and a readiness pipe; returns the pipe's
     read end. A client killed after this does not stop the server."""
+    if not zonecfg.NAME_RE.fullmatch(name):
+        die(f"not a zone name: {name!r}")
+    try:
+        log = _open_log(name)
+    except OSError as e:
+        die(f"zone {name}: cannot open its log {common.log_path(name)}: {e.strerror or e}")
     r, w = os.pipe()
-    log = _open_log(name)
     env = {k: v for k, v in os.environ.items() if k not in ("NOTIFY_SOCKET", "LISTEN_FDS", "LISTEN_PID")}
+    # the server runs in /: the config and state it reads must not be relative paths
+    env["APPZONES_CONFIG"] = str(Path(common.CONFIG).absolute())
+    env.pop("ZONES_CONFIG", None)
+    if zonecfg.env("STATE"):
+        env["APPZONES_STATE"] = str(Path(common.STATE).absolute())
+        env.pop("ZONES_STATE", None)
     argv = [sys.executable, "-B", str(common.HERE / "zone.py"), "serve", name, "--lock-fd", str(lock),
             "--notify-fd", str(w)]
     pid = os.fork()
@@ -90,6 +105,15 @@ def _start_server(name: str, lock: int) -> int:
 def spawn(name: str, quiet: bool = False) -> None:
     """Without systemd: start zone NAME's server ourselves, or wait for the one that is
     starting. The zone's lock decides who starts it: exactly one server per zone."""
+    r = claim(name, quiet)
+    if r is not None:
+        wait_ready(name, r, quiet)
+
+
+def claim(name: str, quiet: bool = False, wait: bool = True) -> int | None:
+    """Start zone NAME's server if nobody runs or starts it: its readiness pipe, or None
+    when the zone answers (or, with WAIT, once it does; without WAIT, at once when
+    someone else is starting it)."""
     path = server.lock_path(name)
     common.RT.mkdir(parents=True, exist_ok=True)
     os.chmod(common.RT, 0o700)
@@ -97,12 +121,14 @@ def spawn(name: str, quiet: bool = False) -> None:
     waited_note = False
     while True:
         if agent.ping(name):
-            return
+            return None
         lock = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             os.close(lock)  # someone else starts it, or runs it: wait for it to answer
+            if not wait:
+                return None
             if time.monotonic() - started > 2 * server.START_TIMEOUT:
                 pids = server_pids(name)
                 die(f"zone {name} is held by a server" + (f" (pid {', '.join(map(str, pids))})" if pids else "")
@@ -114,18 +140,25 @@ def spawn(name: str, quiet: bool = False) -> None:
             continue
         if agent.ping(name):  # answered in between (an older server without a lock)
             os.close(lock)
-            return
+            return None
         break
     if not quiet:
         warn(f"starting zone {name}")
     try:
-        r = _start_server(name, lock)
+        return _start_server(name, lock)
     finally:
         os.close(lock)  # the server holds it now
+
+
+def wait_ready(name: str, r: int, quiet: bool = False) -> None:
+    """Until zone NAME's server signals readiness on R; dies with the end of its log when
+    it ended first. No total limit: the server has per-step deadlines, packages may build."""
     try:
         note = time.monotonic() + 3
-        while True:  # no total limit: the server has its own per-step deadlines, packages may build
-            ready, _, _ = select.select([r], [], [], 1.0)
+        poll = select.poll()
+        poll.register(r, select.POLLIN)
+        while True:
+            ready = poll.poll(1000)
             if ready:
                 if os.read(r, 1) == b"\n":
                     return
@@ -621,6 +654,7 @@ def apps() -> int:
 
 def autostart() -> int:
     cfg = load_cfg(quiet=True)
+    starting: list[tuple[str, int]] = []
     server.write_colours(cfg)
     apps()
     for n, z in cfg.zones.items():
@@ -629,10 +663,17 @@ def autostart() -> int:
             if use_systemd():
                 systemctl("start", "--no-block", f"appzones@{n}.service", check=False)
             else:
-                try:
-                    up(n, quiet=True)
+                try:  # start them all first: a slow one (packages) holds up no other
+                    r = claim(n, quiet=True, wait=False)
+                    if r is not None:
+                        starting.append((n, r))
                 except SystemExit:
                     pass  # said why; the other zones still start
+    for n, r in starting:
+        try:
+            wait_ready(n, r, quiet=True)
+        except SystemExit:
+            pass
     return 0
 
 
