@@ -46,6 +46,7 @@ import struct
 import subprocess
 import sys
 import termios
+import threading
 
 ZONE = os.environ.get("ZONE", "?")
 # Mozilla apps own org.mozilla.<remoting name>.<profile> on the host bus for
@@ -579,8 +580,154 @@ def server_watch() -> int:
     return fd
 
 
+# ── DNS (network = "internet") ─────────────────────────────────────────────
+# zone-init answers DNS at $ZONE_DNS (127.0.0.53) and hands each query over the
+# host's /run/zone/dns.sock to the zone's server, which asks the host's resolver
+# (appzones/dns.py). Not pasta's forwarder: that needs a recent pasta.
+DNS_SOCK = "/run/zone/dns.sock"
+DNS_MAX = 4096
+dns_slots = threading.BoundedSemaphore(64)
+
+
+def dns_forward(msg):
+    """The answer to MSG from the host side, or None."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(10)
+            s.connect(DNS_SOCK)
+            s.sendall(struct.pack(">H", len(msg)) + msg)
+            head = _recv_exact(s, 2)
+            return _recv_exact(s, struct.unpack(">H", head)[0]) if head else None
+    except OSError:
+        return None
+
+
+def _recv_exact(s, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = s.recv(n - len(buf))
+        if not chunk:
+            return None
+        buf += chunk
+    return buf
+
+
+def _skip_name(msg, i):
+    """The offset after the domain name at I (labels, or a compression pointer)."""
+    while i < len(msg):
+        n = msg[i]
+        if n == 0:
+            return i + 1
+        if n & 0xC0 == 0xC0:
+            return i + 2
+        i += 1 + n
+    raise ValueError("name past the end")
+
+
+def udp_limit(query):
+    """The largest UDP answer the client takes: its EDNS size (OPT record), else 512."""
+    try:
+        qd, an, ns, ar = struct.unpack(">HHHH", query[4:12])
+        i = 12
+        for _ in range(qd):
+            i = _skip_name(query, i) + 4
+        for _ in range(an + ns + ar):
+            j = _skip_name(query, i)
+            rtype, rclass = struct.unpack(">HH", query[j:j + 4])
+            if rtype == 41:  # OPT: the class is the UDP size
+                return max(512, min(rclass, DNS_MAX))
+            i = j + 8 + 2 + struct.unpack(">H", query[j + 8:j + 10])[0]
+    except (ValueError, struct.error, IndexError):
+        pass
+    return 512
+
+
+def truncate(answer):
+    """ANSWER cut to its header and question, with TC set: the client asks again over TCP."""
+    try:
+        qd = struct.unpack(">H", answer[4:6])[0]
+        i = 12
+        for _ in range(qd):
+            i = _skip_name(answer, i) + 4
+        return answer[:2] + bytes([answer[2] | 0x02, answer[3]]) + struct.pack(">HHHH", qd, 0, 0, 0) + answer[12:i]
+    except (ValueError, struct.error, IndexError):
+        return answer[:2] + bytes([answer[2] | 0x02, answer[3]]) + struct.pack(">HHHH", 0, 0, 0, 0)
+
+
+def _dns_udp_one(sock, query, addr):
+    try:
+        ans = dns_forward(query)
+        if ans:
+            sock.sendto(ans if len(ans) <= udp_limit(query) else truncate(ans), addr)
+    except OSError:
+        pass
+    finally:
+        dns_slots.release()
+
+
+def _dns_udp(sock):
+    while True:
+        try:
+            query, addr = sock.recvfrom(DNS_MAX)
+        except OSError:
+            continue
+        if len(query) < 12 or not dns_slots.acquire(blocking=False):
+            continue  # too many at once: the client asks again
+        threading.Thread(target=_dns_udp_one, args=(sock, query, addr), daemon=True).start()
+
+
+def _dns_tcp_conn(conn):
+    try:
+        with conn:
+            conn.settimeout(10)
+            while True:
+                head = _recv_exact(conn, 2)
+                if not head:
+                    return
+                n = struct.unpack(">H", head)[0]
+                query = _recv_exact(conn, n) if n <= DNS_MAX else None
+                ans = dns_forward(query) if query else None
+                if not ans:
+                    return
+                conn.sendall(struct.pack(">H", len(ans)) + ans)
+    except OSError:
+        pass
+    finally:
+        dns_slots.release()
+
+
+def _dns_tcp(lsock):
+    while True:
+        try:
+            conn, _ = lsock.accept()
+        except OSError:
+            continue
+        if not dns_slots.acquire(blocking=False):
+            conn.close()
+            continue
+        threading.Thread(target=_dns_tcp_conn, args=(conn,), daemon=True).start()
+
+
+def start_dns(addr):
+    """Answer DNS at ADDR:53, UDP and TCP, in threads."""
+    try:
+        u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        u.bind((addr, 53))
+        t = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        t.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        t.bind((addr, 53))
+        t.listen(16)
+    except OSError as e:
+        log(f"DNS at {addr}:53 not started: {e.strerror or e}; names do not resolve in this zone")
+        return
+    threading.Thread(target=_dns_udp, args=(u,), daemon=True).start()
+    threading.Thread(target=_dns_tcp, args=(t,), daemon=True).start()
+
+
 def main():
     harden_self()
+    if os.environ.get("ZONE_DNS"):
+        start_dns(os.environ["ZONE_DNS"])
     srv = listener()
     server = server_watch()
     r, w = os.pipe()

@@ -77,7 +77,7 @@ runCommand "appzones-${version}"
     # unit tests of the validator (and parts of the appzones modules), against a fake home and sysfs
     work=$(mktemp -d)
     mkdir -p $work/src $work/examples $work/contrib/hyprland
-    cp ${src}/zonecfg.py ${src}/zone.py ${src}/zone_mount_helper.py ${src}/test_zonecfg.py $work/src/
+    cp ${src}/zonecfg.py ${src}/zone.py ${src}/zone_init.py ${src}/zone_mount_helper.py ${src}/test_zonecfg.py $work/src/
     cp -r --no-preserve=mode ${src}/appzones $work/src/appzones
     cp ${examples}/*.toml $work/examples/
     cp ${hyprland}/*.lua $work/contrib/hyprland/

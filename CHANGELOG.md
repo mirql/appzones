@@ -5,6 +5,16 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **A zone answers its own DNS** (#64): zone-init listens on `127.0.0.53` in
+  the zone and hands each query over `/run/zone/dns.sock` to the zone's server,
+  which asks the host's resolver (`dns = "host"`, also a loopback one like
+  systemd-resolved's) or 1.1.1.1 (`dns = "public"`). Before, pasta forwarded
+  DNS, which needs a 2024 pasta (`--dns-host`): Ubuntu 24.04's could not do
+  `dns = "public"`, Debian 12's no DNS at all. Now any pasta works; tested on
+  both. Only standard queries, at most 4 KB, 64 at a time, only to that
+  resolver; UDP answers too big for the client come back truncated, then whole
+  over TCP.
+
 - **A zone's file system on other distributions** (0.8 milestone "zones beyond
   NixOS", #62): without `/run/current-system`, a zone gets the host's `/usr`
   read-only and `/bin`, `/sbin`, `/lib*` as the host has them, the `/etc` files

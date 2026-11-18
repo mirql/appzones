@@ -18,7 +18,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 # the modules behind `appzones` (src/zone.py was split into these, #35), common first:
 # the others read its settings at call time
-ZONE_MODULES = ["common", "net", "fs", "portals", "agent", "server", "client", "mounts", "upgrade"]
+ZONE_MODULES = ["common", "net", "fs", "portals", "agent", "server", "client", "mounts", "upgrade", "dns"]
 
 
 class _Zone:
@@ -895,6 +895,95 @@ os.write(w, b"\\n"); os.close(w)
         self.assertIn("skipping ~/.icons", err.getvalue())
         self.assertIn("skipping ~/.local/share/fonts", err.getvalue())
         self.assertFalse((zdir / "theme/.icons").exists())
+
+    def test_zone_dns(self):
+        """zone-init -> dns.sock -> the server -> the resolver and back: answers by id, TCP after a
+        truncated UDP answer, only standard queries; inside the zone, an answer too big for the
+        client's UDP size goes back truncated."""
+        import socket as so
+        import struct as st
+        import threading as th
+        import zone_init
+        zone = self._zone_mod()
+
+        def query(qid, name="example.com", edns=None):
+            q = st.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 1 if edns else 0)
+            q += b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\0" + st.pack(">HH", 1, 1)
+            if edns:
+                q += b"\0" + st.pack(">HHIH", 41, edns, 0, 0)
+            return q
+
+        def answer(q, n, tc=False):
+            """Q answered with N A records (header flags: response, maybe TC)."""
+            qend = 12 + q[12:].index(b"\0") + 1 + 4
+            head = q[:2] + st.pack(">H", 0x8180 | (0x0200 if tc else 0)) + st.pack(">HHHH", 1, n, 0, 0)
+            return head + q[12:qend] + b"".join(b"\xc0\x0c" + st.pack(">HHIH", 1, 1, 60, 4) + bytes([192, 0, 2, i % 250])
+                                               for i in range(n))
+
+        # a fake resolver: UDP truncates big answers, TCP gives them whole; one wrong id first
+        udp = so.socket(so.AF_INET, so.SOCK_DGRAM)
+        udp.bind(("127.0.0.1", 0))
+        port = udp.getsockname()[1]
+        tcp = so.socket(so.AF_INET, so.SOCK_STREAM)
+        tcp.setsockopt(so.SOL_SOCKET, so.SO_REUSEADDR, 1)
+        tcp.bind(("127.0.0.1", port))
+        tcp.listen(4)
+        want = {"example.com": 2, "big.example": 200}
+
+        def name_of(q):
+            i, parts = 12, []
+            while q[i]:
+                parts.append(q[i + 1:i + 1 + q[i]].decode())
+                i += 1 + q[i]
+            return ".".join(parts)
+
+        def serve_udp():
+            while True:
+                q, a = udp.recvfrom(4096)
+                n = want[name_of(q)]
+                udp.sendto(b"\xff\xff" + answer(q, 1)[2:], a)  # someone else's id: ignored
+                udp.sendto(answer(q, 0, tc=True) if n > 20 else answer(q, n), a)
+
+        def serve_tcp():
+            while True:
+                c, _ = tcp.accept()
+                with c:
+                    n = st.unpack(">H", c.recv(2))[0]
+                    q = c.recv(n)
+                    r = answer(q, want[name_of(q)])
+                    c.sendall(st.pack(">H", len(r)) + r)
+
+        for f in (serve_udp, serve_tcp):
+            th.Thread(target=f, daemon=True).start()
+        zone.PORT = port
+        sock = Path(self.tmp.name) / "dns.sock"
+        srv = zone.serve(sock, ["127.0.0.1"])
+        zone_init.DNS_SOCK = str(sock)
+        try:
+            r = zone_init.dns_forward(query(0x1111))
+            self.assertEqual((r[:2], st.unpack(">H", r[6:8])[0]), (b"\x11\x11", 2))
+            big = zone_init.dns_forward(query(0x2222, "big.example"))  # truncated over UDP: whole over TCP
+            self.assertEqual(st.unpack(">H", big[6:8])[0], 200)
+            self.assertGreater(len(big), 512)
+            # inside the zone: the client's UDP size decides
+            self.assertEqual(zone_init.udp_limit(query(1)), 512)
+            self.assertEqual(zone_init.udp_limit(query(1, edns=1232)), 1232)
+            self.assertEqual(zone_init.udp_limit(query(1, edns=65000)), 4096)
+            self.assertEqual(zone_init.udp_limit(b"\x00" * 5), 512)
+            t = zone_init.truncate(big)
+            self.assertTrue(t[2] & 0x02)
+            self.assertEqual(st.unpack(">HHHH", t[4:12]), (1, 0, 0, 0))
+            self.assertEqual(t[12:], query(0x2222, "big.example")[12:])
+            # not a standard query: no answer (a response, an UPDATE, no question, too big)
+            self.assertFalse(zone.is_query(answer(query(3), 1)))
+            self.assertFalse(zone.is_query(query(3)[:2] + b"\x28\x00" + query(3)[4:]))
+            self.assertFalse(zone.is_query(query(3)[:4] + b"\x00\x00" + query(3)[6:]))
+            self.assertFalse(zone.is_query(query(3) + b"\0" * 5000))
+            self.assertIsNone(zone_init.dns_forward(answer(query(4), 1)))
+        finally:
+            srv.close()
+            udp.close()
+            tcp.close()
 
     def test_resolv_conf(self):
         zone = self._zone_mod()

@@ -357,8 +357,22 @@ pkgs.testers.runNixOSTest {
       # the host bus (thunar.service, xfconf)
       programs.thunar.enable = true;
 
+      # The host's resolver on its loopback (as dnsmasq's 127.0.0.1 or
+      # systemd-resolved's 127.0.0.53 on many hosts): a zone reaches it only
+      # through its server (dns.py). big.example's TXT answer is bigger than
+      # a UDP answer may be: truncated over UDP, whole over TCP.
+      services.dnsmasq = {
+        enable = true;
+        settings = {
+          no-resolv = true;
+          address = [ "/zone-test.example/192.0.2.99" ];
+          txt-record = map (i: "big.example,${lib.strings.replicate 200 "x"}${toString i}") (lib.range 1 8);
+        };
+      };
+
       environment.systemPackages = with pkgs; [
         hyprland # hyprctl on PATH (`appzones active`)
+        dig # DNS checks in a zone
         runit # process managers for contrib/'s service files
         s6
         dinit
@@ -1259,5 +1273,25 @@ pkgs.testers.runNixOSTest {
         wait_down("tb")
         u("systemctl --user stop tree-dinit")
         print("PASS  dinit: appzones@NAME starts once the zone answers; dinitctl restart works; a stopped or lingered-out zone is not restarted")
+
+    with subtest("DNS in the zone: zone-init, the server, the host's resolver"):
+        def zdig(args, check=True):
+            return u(f"appzones run --wait tc -- dig +time=3 +tries=1 {args} </dev/null 2>&1", check=check)
+
+        # (inside sh -c: `run` refuses a host path as an argument)
+        u("appzones run --wait tc -- sh -c 'grep -qx \"nameserver 127.0.0.53\" /etc/resolv.conf' </dev/null 2>&1")
+        out = u("appzones run --wait tc -- getent hosts zone-test.example </dev/null 2>&1")
+        assert "192.0.2.99" in out, out
+        assert zdig("+short zone-test.example").strip() == "192.0.2.99"
+        assert zdig("+tcp +short zone-test.example").strip() == "192.0.2.99"
+        print("PASS  DNS in a zone: names from the host's loopback resolver, over UDP and TCP")
+        out = zdig("big.example TXT")
+        print(out)
+        assert "Truncated, retrying in TCP mode" in out and out.count("\tTXT\t") == 8, out
+        print("PASS  DNS in a zone: an answer too big for UDP comes truncated, then whole over TCP")
+        rc, out = zdig("@192.0.2.1 +short zone-test.example", check=False)
+        assert rc != 0 and "192.0.2.99" not in out, (rc, out)
+        print("PASS  DNS in a zone: the host's resolver at its own address stays unreachable")
+        u("appzones stop tc")
   '';
 }

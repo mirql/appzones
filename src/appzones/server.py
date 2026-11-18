@@ -19,7 +19,7 @@ from pathlib import Path
 import zonecfg
 
 from .common import die, load_cfg, settings_hash, tool
-from . import agent, common, fs, net, portals
+from . import dns, agent, common, fs, net, portals
 
 
 # ── supervisor ─────────────────────────────────────────────────────────────
@@ -214,6 +214,9 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         extra_path = fs.package_paths(z, zdir) if s["packages"] else []
         target = portals.link_target(z)
         links_srv = None
+        dns_srv = None  # noqa: F841  (answers in its own threads; held open until the server exits)
+        if s["network"] == "internet":
+            dns_srv = dns.serve(zrt / "ctl" / "dns.sock", dns.upstreams(z))  # noqa: F841
         if target:
             (zrt / "ctl/bin").mkdir()
             xo = zrt / "ctl/bin/xdg-open"
@@ -495,6 +498,13 @@ def netsetup(rules: str, info: str, name: str, argv: list[str]) -> None:
         r = subprocess.run([tool("nft"), "-f", rules])  # NOSONAR: argv list, no shell; rules written by appzones
         if r.returncode != 0:
             die("nft rules failed to load; refusing to start the zone without them")
+        # zone-init, without privileges, answers the zone's DNS on port 53 (dns.py)
+        try:
+            with open("/proc/sys/net/ipv4/ip_unprivileged_port_start", "w") as f:
+                f.write("53")
+        except OSError as e:
+            print(f"[zone] {name}: cannot allow port 53 in the zone's network ({e.strerror or e}); "
+                  "names will not resolve", flush=True)
     fd = os.open(info, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # NOSONAR: a path the server passes, in its own runtime directory
     if fd != 3:
         os.dup2(fd, 3)

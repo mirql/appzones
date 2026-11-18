@@ -69,8 +69,6 @@ def nft_rules(z: zonecfg.Zone) -> str:
   chain out {{
     type filter hook output priority 0; policy accept;
     oif "lo" accept
-    ip daddr {common.DNS_ADDR} udp dport 53 accept
-    ip daddr {common.DNS_ADDR} tcp dport 53 accept
 {rules}    ip daddr {{ 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,
                192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 }} reject
     ip6 daddr {{ ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 }} reject
@@ -80,16 +78,14 @@ def nft_rules(z: zonecfg.Zone) -> str:
 
 
 def pasta_argv(z: zonecfg.Zone) -> list[str]:
-    a = [tool("pasta"), "--config-net", "--no-map-gw", "-t", "none", "-u", "none", "-T", "none", "-U", "none",
-         "--dns-forward", common.DNS_ADDR, "-q", "-f"]
-    # pasta skips loopback nameservers from resolv.conf ("Couldn't get any
-    # nameserver address"), so name the resolver explicitly.
-    a += ["--dns-host", "1.1.1.1" if z.settings["dns"] == "public" else host_resolver()]  # NOSONAR: the public resolver when dns = "public"
-    return a + ["--"]
+    # no DNS from pasta (--dns none: also no "Couldn't get any nameserver" warning):
+    # the zone answers its own DNS (dns.py), so any pasta version works (2023 on)
+    return [tool("pasta"), "--config-net", "--no-map-gw", "-t", "none", "-u", "none", "-T", "none", "-U", "none",
+            "--dns", "none", "-q", "-f", "--"]
 
 
 def resolv_conf(s: dict) -> str:
-    """The zone's /etc/resolv.conf. internet: pasta's forwarder (which goes to
+    """The zone's /etc/resolv.conf. internet: zone-init's DNS (dns.py: on to
     host_resolver() or 1.1.1.1); host: the same choice, direct; none: empty."""
     if s["network"] == "internet":
         return f"nameserver {common.DNS_ADDR}\n"

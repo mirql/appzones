@@ -62,7 +62,17 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   gets it as an inherited fd; there is no socket file inside the zone. zone-init
   is not dumpable, so apps in the zone cannot trace it or take that fd.
 - `/run/zone` inside is read-only: the `xdg-open` shim (`bin/`) and the
-  host's `links.sock`, through which clicked links leave the zone.
+  host's `links.sock`, through which clicked links leave the zone, and
+  `dns.sock`, through which DNS queries do.
+- DNS (`network = "internet"`): the zone's `resolv.conf` names `127.0.0.53`,
+  where zone-init answers (UDP and TCP; `_netsetup` allows port 53 in the
+  zone's network). Each query goes over `dns.sock` to the zone's server on the
+  host, which asks the host's resolver (`dns = "host"`: the first nameserver in
+  the host's `/etc/resolv.conf`, also a loopback one such as systemd-resolved's
+  `127.0.0.53`) or 1.1.1.1 (`dns = "public"`). Only standard queries, at most 4
+  KB, 64 at a time, only to that resolver. The zone cannot reach the resolver
+  itself: the deny list refuses the host and the LAN. pasta does no DNS, so
+  any pasta version works.
 
 - `/run/user/1000` inside is an empty tmpfs that holds only the zone's
   sockets: `wayland-0`, `bus`, `zone-bus/` once an app uses the zone's own

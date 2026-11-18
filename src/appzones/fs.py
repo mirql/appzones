@@ -457,6 +457,7 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
         "PATH": ":".join(extra_path + ["/run/zone/bin", sysenv["PATH"]]),
         "LANG": os.environ.get("LANG", "C.UTF-8"), "TZ": os.environ.get("TZ", ":/etc/localtime"),
         "XDG_RUNTIME_DIR": common.ZRT, "ZONE": z.name, "TERM": "xterm-256color",
+        **({"ZONE_DNS": common.DNS_ADDR} if network == "internet" else {}),
         "XDG_DATA_DIRS": sysenv["XDG_DATA_DIRS"],
         "XDG_CONFIG_DIRS": "/etc/xdg", "XDG_SESSION_TYPE": "wayland",
         "NIXOS_OZONE_WL": "1", "MOZ_ENABLE_WAYLAND": "1", "QT_QPA_PLATFORM": "wayland;xcb",
