@@ -5,6 +5,8 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.6.2
+
 - **Docs for AI tools**: https://mirql.github.io/appzones/llms.txt (an index of the docs,
   with raw Markdown links) and https://mirql.github.io/appzones/llms-full.txt (every guide
   page in one file), generated from the docs pages by the site build.
