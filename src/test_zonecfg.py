@@ -451,6 +451,7 @@ os.write(w, b"\\n"); os.close(w)
         calls = []
         zone.systemctl = lambda *a, check=True: calls.append(a) or sp.CompletedProcess(a, 0, "", "")
         zone.server_pids = lambda n: []
+        real_unit_runs = zone.unit_runs
         zone.unit_runs = lambda n: True
         zone.stop_zone("aa")
         self.assertEqual(calls, [("stop", "appzones@aa.service")])
@@ -458,6 +459,18 @@ os.write(w, b"\\n"); os.close(w)
         zone.unit_runs = lambda n: False
         zone.stop_zone("aa")
         self.assertEqual(calls, [])
+        # unit_runs asks about the zone's own unit, also when the template is not installed
+        zone.unit_installed = lambda: False
+        zone.unit_runs = real_unit_runs
+        zone.systemctl = lambda *a, check=True: sp.CompletedProcess(a, 0, "active\n" if a[1] == "appzones@aa.service" else "inactive\n", "")
+        self.assertTrue(zone.unit_runs("aa"))
+        self.assertFalse(zone.unit_runs("bb"))
+
+        def no_systemctl(*a, check=True):
+            raise FileNotFoundError("systemctl")
+
+        zone.systemctl = no_systemctl
+        self.assertFalse(zone.unit_runs("aa"))
         ran = []
 
         def execvp(f, argv):

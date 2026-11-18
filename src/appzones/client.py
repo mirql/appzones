@@ -56,10 +56,12 @@ def _check_manager_env() -> None:
 
 
 def unit_runs(name: str) -> bool:
-    """Zone NAME runs (or starts or stops) in its systemd unit."""
-    if not common.unit_installed():
+    """Zone NAME runs (or starts or stops) in its systemd unit. Asks about that unit itself:
+    it can run while the template is masked or gone."""
+    try:
+        r = systemctl("is-active", f"appzones@{name}.service", check=False)
+    except OSError:  # no systemctl
         return False
-    r = systemctl("is-active", f"appzones@{name}.service", check=False)
     return r.stdout.strip() in ("active", "activating", "deactivating", "reloading", "refreshing")
 
 
