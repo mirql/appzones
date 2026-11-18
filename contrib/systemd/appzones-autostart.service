@@ -3,7 +3,10 @@
 Description=App zones: launcher entries and autostart zones
 After=graphical-session.target
 PartOf=graphical-session.target
-ConditionPathExists=%h/.config/appzones/zones.toml
+# "|": either (the second is the pre-0.6 place, still read); a config elsewhere
+# ($APPZONES_CONFIG): change this line
+ConditionPathExists=|%h/.config/appzones/zones.toml
+ConditionPathExists=|%h/.config/zones/zones.toml
 
 [Service]
 Type=oneshot

@@ -18,8 +18,10 @@ without systemd", #50).
 - **Service files for other process managers** in `contrib/` (and the package's
   `share/appzones/contrib`): runit and s6 service directories, a dinit file
   (`appzones@ZONE`), and the systemd units for other distributions. `appzones
-  serve` now exits 0 when it is stopped (SIGTERM, SIGINT), so a manager restarts
-  a zone only after a failure. Zones still need NixOS: the zone's file system uses
+  serve`'s exit status now says how it ended: 0 for good (SIGINT, which
+  `appzones stop` now sends, Ctrl-C, or `linger`), 143 stopped by SIGTERM (a
+  manager's stop or restart; the unit counts it as success), 75 already served;
+  a stop during the start is no longer a failure. Zones still need NixOS: the zone's file system uses
   its layout (#22).
 
 - **Zone settings for the server** (zones release 5, `requires = 5`), per zone or in

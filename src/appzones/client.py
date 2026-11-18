@@ -447,7 +447,7 @@ def server_pids(name: str) -> list[int]:
 
 
 def _signal_servers(name: str) -> None:
-    """SIGTERM to zone NAME's servers outside its unit; until they have exited, so their
+    """SIGINT (stop for good) to zone NAME's servers outside its unit; until they have exited, so their
     cleanup does not overlap a new start (restart)."""
     pfds = []
     for pid in server_pids(name):
@@ -457,7 +457,7 @@ def _signal_servers(name: str) -> None:
             continue  # gone already
         try:
             if _is_server(pid, name):  # still the same process: the pidfd pins it
-                signal.pidfd_send_signal(pfd, signal.SIGTERM)
+                signal.pidfd_send_signal(pfd, signal.SIGINT)  # for good: see server.supervise
                 pfds.append(pfd)
                 continue
         except ProcessLookupError:
@@ -474,7 +474,7 @@ def _signal_servers(name: str) -> None:
         while pfds:
             ready = poll.poll(max(0, int((end - time.monotonic()) * 1000)))
             if not ready:
-                die(f"zone {name}: its server did not exit within 20 s after SIGTERM")
+                die(f"zone {name}: its server did not exit within 20 s after SIGINT")
             for p, _ in ready:
                 poll.unregister(p)
                 pfds.remove(p)

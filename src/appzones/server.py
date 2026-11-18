@@ -175,6 +175,25 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     child: subprocess.Popen | None = None
 
     stopped: list[int] = []  # a stop asked for by SIGTERM or SIGINT
+    fp: Path | None = None
+
+    def stop_code() -> int:
+        """SIGINT (`appzones stop`, Ctrl-C) ends the zone for good: 0. SIGTERM (a process
+        manager's stop or restart): 143, so the manager does what it was asked."""
+        return 0 if stopped[-1] == signal.SIGINT else 128 + stopped[-1]
+
+    def abort(msg: str) -> int:
+        """End a start that failed, or was stopped (then it is not a failure)."""
+        stop_all()
+        if child:
+            wait_or_kill(child)
+        if fp:
+            shutil.rmtree(fp, ignore_errors=True)
+        if stopped:
+            print(f"[zone] {name}: stopped while starting", flush=True)
+            return stop_code()
+        print(f"[zone] {name}: {msg}; stopping", flush=True)
+        return 1
 
     def stop_all(*_):
         if child and child.poll() is None:
@@ -195,7 +214,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
                              env=dict(os.environ, ZONE_WAYLAND_PARENT=str(os.getpid())))
         helpers.append(h)
         if read_line(h.stdout.fileno(), START_TIMEOUT) != b"ready":
-            stop_all(); die(f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
+            return abort(f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
     else:
         print(f"[zone] no WAYLAND_DISPLAY: zone {name} starts without a Wayland socket", flush=True)
     if os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
@@ -204,7 +223,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         end = time.monotonic() + START_TIMEOUT
         while not (zrt / "bus").exists():
             if time.monotonic() > end or helpers[-1].poll() is not None:
-                stop_all(); die("xdg-dbus-proxy did not create the zone's bus")
+                return abort("xdg-dbus-proxy did not create the zone's bus")
             time.sleep(0.05)
     network = s["network"]
     (zrt / "nft.rules").write_text(net.nft_rules(z))
@@ -219,14 +238,12 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             str(fp / "bwrapinfo.json"), name, "--"] + inner
     if network == "internet":
         argv = net.pasta_argv(z) + argv
+    if stopped:  # asked to stop before the zone itself was started
+        return abort("")
     # _netsetup's own deadline (bwrap clears the environment: it goes no further)
     child = subprocess.Popen(argv, env=dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT)))  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
     if not offer_pidfd(name, child):
-        print(f"[zone] {name}: _netsetup did not take the server's pidfd; stopping", flush=True)
-        stop_all()
-        wait_or_kill(child)
-        shutil.rmtree(fp, ignore_errors=True)
-        return 1
+        return abort("_netsetup did not take the server's pidfd")
     # ready: zone-init answers; then the autostart apps
     end, answered = time.monotonic() + START_TIMEOUT, False
     while time.monotonic() < end and child.poll() is None:
@@ -235,11 +252,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             break
         time.sleep(0.05)
     if child.poll() is None and not answered:
-        print(f"[zone] {name}: zone-init did not answer within {START_TIMEOUT:.0f} s; stopping", flush=True)
-        stop_all()
-        wait_or_kill(child)
-        shutil.rmtree(fp, ignore_errors=True)
-        return 1
+        return abort(f"zone-init did not answer within {START_TIMEOUT:.0f} s")
     if child.poll() is None:
         notify_ready(name, notify_fd)
         print(f"[zone] {name} ready (network={network}, dns={s['dns']}, devices={','.join(s['devices']) or '-'})",
@@ -288,8 +301,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     stop_all()
     shutil.rmtree(fp, ignore_errors=True)
     fs.prepare_mnt(name, zdir)  # runtime mounts end with the zone
-    # stopped as asked is a clean end (status 0): a process manager restarts only failures
-    return 0 if stopped and rc is not None else rc
+    # a stop that was asked for is not a failure: a process manager restarts only failures
+    return stop_code() if stopped else rc
 
 
 def apps_running(name: str) -> bool | None:

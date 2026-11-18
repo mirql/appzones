@@ -156,6 +156,8 @@ in
         RestartSec = 2;
         # 75: the zone is already served (e.g. started without systemd): never a restart loop
         RestartPreventExitStatus = 75;
+        # 143: stopped by SIGTERM (this stop), a clean end
+        SuccessExitStatus = 143;
       };
     };
 

@@ -11,9 +11,11 @@
     once per zone as `appzones-NAME` (the zone's name comes from the directory's).
   - `dinit/appzones`: one file for every zone, started as `appzones@NAME`.
 
-`appzones serve` exits 0 when it is stopped (SIGTERM, SIGINT) or ends by
-itself (`linger`), 75 when the zone already runs elsewhere, and something
-else on a failure. The files restart a zone only on a failure.
+`appzones serve` exits 0 when it ends for good (SIGINT: `appzones stop`,
+Ctrl-C; or `linger`), 143 when stopped by SIGTERM (the manager's own stop or
+restart), 75 when the zone already runs elsewhere, and something else on a
+failure. The files keep a zone down after 0 and 75 and let the manager decide
+otherwise.
 
 Start the process manager from your graphical session (after the compositor),
 so zones get `WAYLAND_DISPLAY` and the session bus: a zone needs both, and it

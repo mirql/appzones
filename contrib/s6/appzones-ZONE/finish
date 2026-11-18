@@ -1,7 +1,7 @@
 #!/bin/sh
-# $1: how `appzones serve` ended. 0: stopped, or ended by itself (linger);
-# 75: the zone already runs elsewhere. Neither is a failure: exit 125 keeps it
-# down until `s6-svc -u`. Anything else: s6 starts the zone again.
+# $1: how `appzones serve` ended. 0: ended for good (`appzones stop`, linger);
+# 75: the zone already runs elsewhere. Then exit 125 keeps it down until
+# `s6-svc -u`. 143 (SIGTERM: s6-svc -d or -r) and failures: s6 does what it wants.
 case "$1" in
   0 | 75) exit 125 ;;
 esac

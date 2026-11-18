@@ -113,14 +113,16 @@ appzones serve daily --notify-fd 3     # writes a newline on fd 3 once the zone 
 ## A process manager of your own
 
 `contrib/` (in the package: `share/appzones/contrib/`) has ready service files.
-Each runs `appzones serve ZONE`, and each restarts a zone only after a failure:
-`serve` exits 0 when it is stopped or ends by itself (`linger`), and 75 when the
-zone already runs elsewhere.
+Each runs `appzones serve ZONE`. `serve` exits 0 when the zone ends for good
+(`appzones stop`, Ctrl-C, `linger`), 143 when the manager stops or restarts it
+(SIGTERM), and 75 when the zone already runs elsewhere; the files keep a zone
+down after 0 and 75, restart it after a failure, and otherwise do what you tell
+the manager.
 
 | Manager | Files | Start a zone |
 |---|---|---|
 | runit | `runit/appzones-ZONE/`: copy it as `appzones-daily` into your service directory | `sv up appzones-daily` |
-| s6 | `s6/appzones-ZONE/`: copy it as `appzones-daily`; readiness through `notification-fd` | `s6-svc -u appzones-daily`, `s6-svwait -U` |
+| s6 | `s6/appzones-ZONE/`: copy it as `appzones-daily`; readiness through `notification-fd` | `s6-svc -u appzones-daily`, then `s6-svwait -U appzones-daily` |
 | dinit | `dinit/appzones`: one file for every zone | `dinitctl start appzones@daily` |
 | systemd | `systemd/`: the units the NixOS module installs, for other distributions | `systemctl --user start appzones@daily` |
 

@@ -21,9 +21,11 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   without systemd](without-systemd.md)): the systemd unit
   runs it, and so can any process manager or a terminal. It signals readiness
   over sd_notify, and with `--notify-fd N` as a newline on fd N (s6 style).
-  SIGTERM or SIGINT stops the zone and its helpers. Exit status: 0 when stopped
-  that way or ended by `linger`, 75 when the zone is already served, anything
-  else a failure (the files in `contrib/` restart only those). One server per zone: it
+  SIGTERM or SIGINT stops the zone and its helpers. Exit status: 0 when the zone
+  ended for good (SIGINT: `appzones stop`, Ctrl-C; or `linger`), 143 when
+  stopped by SIGTERM (a process manager's stop or restart), 75 when the zone is
+  already served, anything else a failure. A stop during the start ends it the
+  same way, not as a failure. One server per zone: it
   holds `$XDG_RUNTIME_DIR/appzones/NAME.lock` (released when it exits); a
   second `serve` exits with status 75, "already served", and leaves the running
   zone untouched. With `--lock-fd N` a caller hands over a lock it took: fd N is
