@@ -1156,12 +1156,17 @@ pkgs.testers.runNixOSTest {
         r = u("systemctl --user show appzones@tb.service -p Result --value").strip()
         assert r == "success", r
         print("PASS  systemd: stopping the unit ends it as a success (SuccessExitStatus=143)")
-        # a stop while the zone starts (zone-wayland slowed down): SIGINT (appzones stop)
-        # exits 0, SIGTERM 143; neither is a failure
+        # a stop while the zone starts: zone-wayland waits at a gate that never opens, so
+        # the start is surely still going on. SIGINT (appzones stop) exits 0, SIGTERM
+        # 143; neither is a failure
+        zw = machine.succeed("ls /nix/store/*-zone-wayland*/bin/zone-wayland | head -1").strip()
+        machine.succeed("printf '#!/bin/sh\\ntouch /tmp/zw-entered\\nwhile [ ! -e /tmp/zw-go ]; do sleep 0.1; done\\n"
+                        f"exec {zw} \"$@\"\\n' >/tmp/gated-zw && chmod 755 /tmp/gated-zw")
         for how, want in [("appzones stop tb", "0"), ("systemctl --user kill -s TERM --kill-whom=main serve-slow", "143")]:
-            u("systemd-run --user --unit=serve-slow -p RemainAfterExit=yes -E APPZONES_BIN_ZONE_WAYLAND=/tmp/slow-zw "
+            u("rm -f /tmp/zw-entered /tmp/zw-go")
+            u("systemd-run --user --unit=serve-slow -p RemainAfterExit=yes -E APPZONES_BIN_ZONE_WAYLAND=/tmp/gated-zw "
               "$(readlink -f $(command -v appzones)) serve tb")
-            machine.wait_until_succeeds("pgrep -u alice -f 'zone.py serve tb( |$)'", timeout=30)
+            machine.wait_until_succeeds("test -e /tmp/zw-entered", timeout=30)
             u("! appzones ping tb")
             u(how)
             wait_down("tb")
