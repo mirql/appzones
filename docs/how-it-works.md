@@ -16,7 +16,8 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify)
             └─ apps
 ```
 
-- `appzones serve ZONE` is the zone itself, in the foreground: the systemd unit
+- `appzones serve ZONE` is the zone itself, in the foreground (why: [Zones
+  without systemd](without-systemd.md)): the systemd unit
   runs it, and so can any process manager or a terminal. It signals readiness
   over sd_notify, and with `--notify-fd N` as a newline on fd N (s6 style).
   SIGTERM or SIGINT stops the zone and its helpers. One server per zone: it

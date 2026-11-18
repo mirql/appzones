@@ -47,6 +47,9 @@
     - file: desktop.md
       title: Desktop
       about: Hyprland window tags and border colours, a Waybar module
+    - file: without-systemd.md
+      title: Zones without systemd
+      about: why 0.7 makes systemd optional, what is done, what is coming, appzones serve
     - file: how-it-works.md
       title: How it works
       about: how a zone is built (bubblewrap, pasta, nftables, xdg-dbus-proxy, the Wayland security context)

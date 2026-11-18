@@ -5,6 +5,16 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+**0.7: zones without systemd.** Until now every zone was a systemd user unit, and
+the unit did real work: it cleaned up the zone's processes, restarted it, kept its
+logs. That tied appzones to systemd and to its NixOS module, and it hid problems:
+outside the unit, a killed zone server left the zone running. 0.7 makes a zone one
+plain process, `appzones serve`, that any process manager or a terminal can run, and
+makes appzones itself keep one server per zone and leave nothing behind. On NixOS
+with the module nothing changes for you. Why, what is done and what is coming:
+https://mirql.github.io/appzones/without-systemd.html (milestone "0.7.0: zones
+without systemd", #50).
+
 - **The zone ends with its server**, however the server ends: outside systemd, a
   killed `appzones serve` used to leave zone-init, bwrap and pasta running.
   zone-init now holds a pidfd of the server and ends the zone when the server is

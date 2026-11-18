@@ -121,6 +121,11 @@ defaults:
       title: How it works
       nav_order: 7
   - scope:
+      path: without-systemd.md
+    values:
+      title: Without systemd
+      nav_order: 7.5
+  - scope:
       path: security.md
     values:
       title: Security and limits
