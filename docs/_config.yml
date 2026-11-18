@@ -8,8 +8,13 @@ baseurl: /appzones
 remote_theme: just-the-docs/just-the-docs@v0.12.0
 plugins:
   - jekyll-remote-theme
+  # on by default on GitHub Pages; named here so a local build matches
+  - jekyll-optional-front-matter
+  - jekyll-relative-links
 
-color_scheme: dark
+color_scheme: appzones # docs/_sass/color_schemes/appzones.scss
+logo: /assets/images/appzones-dark.svg # assets/logo/wordmark.py writes it
+favicon_ico: /assets/images/favicon.svg
 search_enabled: true
 heading_anchors: true
 aux_links:
@@ -28,6 +33,10 @@ gh_edit_view_mode: edit
 
 # guide.md keeps no front matter (it reads as plain markdown on GitHub)
 defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
   - scope:
       path: guide.md
     values:

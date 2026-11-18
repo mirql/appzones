@@ -1,0 +1,20 @@
+// appzones: Catppuccin Mocha, the palette of the zone colours, the terminal
+// demos and the concept animation.
+@import "./color_schemes/dark";
+
+$body-background-color: #1e1e2e; // base
+$sidebar-color: #181825; // mantle
+$body-heading-color: #f2ebff; // the wordmark's "app"
+$body-text-color: #bac2de; // subtext1
+$link-color: #89b4fa; // blue
+$nav-child-link-color: #a6adc8; // subtext0
+$base-button-color: #313244; // surface0
+$btn-primary-color: #8839ef; // mauve, dark enough for white text
+$code-background-color: #11111b; // crust
+$code-linenumber-color: #6c7086; // overlay0
+$feedback-color: #11111b;
+$table-background-color: #181825;
+$search-background-color: #181825;
+$search-result-preview-color: #a6adc8;
+$border-color: #313244;
+$mono-font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", menlo, consolas, monospace;

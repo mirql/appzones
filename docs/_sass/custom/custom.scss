@@ -1,0 +1,112 @@
+// The appzones look on top of just-the-docs (color scheme: appzones).
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+// the zone colours, as in the wordmark: daily, work, untrusted, dev, agents
+$zones: #a6e3a1, #89b4fa, #f38ba8, #f9e2af, #cba6f7;
+
+h1,
+h2,
+h3,
+.site-title {
+  font-family: $mono-font-family;
+  letter-spacing: -0.01em;
+}
+
+.main-content h1 {
+  font-weight: 700;
+}
+
+// h2: a thin bar in the zone colours, like the windows' borders
+.main-content h2 {
+  padding-bottom: 0.35em;
+  margin-top: 2.2em;
+  border-bottom: 3px solid transparent;
+  border-image: linear-gradient(
+      90deg,
+      nth($zones, 1) 0 20%,
+      nth($zones, 2) 20% 40%,
+      nth($zones, 3) 40% 60%,
+      nth($zones, 4) 60% 80%,
+      nth($zones, 5) 80% 100%
+    )
+    1;
+}
+
+.main-content h3 {
+  color: #cba6f7;
+}
+
+// the header logo: the pixel wordmark, crisp
+.site-logo {
+  background-size: contain;
+  image-rendering: pixelated;
+}
+
+.site-title {
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+}
+
+// navigation: the current page in the "agents" mauve
+.nav-list .nav-list-item .nav-list-link.active {
+  color: #cba6f7;
+  font-weight: 700;
+}
+
+// code: rounded, with a frame
+div.highlighter-rouge,
+figure.highlight {
+  border: 1px solid #313244;
+  border-radius: 8px;
+}
+
+code {
+  border-radius: 4px;
+}
+
+:not(pre, figure) > code {
+  color: #f5c2e7; // pink
+  background-color: #11111b;
+  border-color: #313244;
+}
+
+// tables: the header row a step darker
+.main-content th {
+  background-color: #11111b;
+  color: #cdd6f4;
+}
+
+// buttons
+.btn {
+  border-radius: 8px;
+  font-family: $mono-font-family;
+  font-weight: 700;
+}
+
+.btn-primary {
+  background-image: none;
+  box-shadow: 0 0 0 1px #cba6f7 inset;
+}
+
+// images (the concept animation, the GIFs): framed
+.main-content img {
+  border-radius: 8px;
+}
+
+blockquote {
+  border-left: 3px solid #cba6f7;
+  color: #a6adc8;
+}

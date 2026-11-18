@@ -1,6 +1,7 @@
 """The appzones wordmark: a pixel font, "zones" in the zone border colours.
 
-    python3 assets/logo/wordmark.py    # writes appzones-{dark,light}.svg and social-preview.svg here
+    python3 assets/logo/wordmark.py    # writes appzones-{dark,light}.svg and social-preview.svg here,
+                                       # and the docs site's logo and favicon (docs/assets/images)
     rsvg-convert assets/logo/social-preview.svg -o assets/logo/social-preview.png
 
 social-preview.png is the repository's social preview (Settings -> Social
@@ -68,8 +69,23 @@ def social() -> str:
             f'fill="#c9d1d9">{TAGLINE}</text></svg>\n')
 
 
+def favicon() -> str:
+    """The "z" in the daily green and the pink dot, on the site's background."""
+    t = THEMES["dark"]
+    rects = [f'<rect x="{1 + dx}" y="{y - 1}" width="1.02" height="1.02" fill="{t["zones"][0]}"/>'
+             for y, row in enumerate(GLYPHS["z"]) for dx, c in enumerate(row) if c == "#"]
+    rects.append(f'<rect x="8" y="6" width="2.02" height="2.02" fill="{t["dot"]}"/>')
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 13 12" shape-rendering="crispEdges">'
+            f'<rect x="-1" y="-1" width="13" height="12" rx="2.5" fill="#1e1e2e"/>{"".join(rects)}</svg>\n')
+
+
 if __name__ == "__main__":
     here = Path(__file__).resolve().parent
     for theme in THEMES:
         (here / f"appzones-{theme}.svg").write_text(svg(theme))
     (here / "social-preview.svg").write_text(social())
+    # the docs site (docs/, GitHub Pages) serves only that folder: its own copies
+    site = here.parent.parent / "docs/assets/images"
+    site.mkdir(parents=True, exist_ok=True)
+    (site / "appzones-dark.svg").write_text(svg("dark"))
+    (site / "favicon.svg").write_text(favicon())
