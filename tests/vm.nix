@@ -359,6 +359,9 @@ pkgs.testers.runNixOSTest {
 
       environment.systemPackages = with pkgs; [
         hyprland # hyprctl on PATH (`appzones active`)
+        runit # process managers for contrib/'s service files
+        s6
+        dinit
         gnome-text-editor
         eog
         foot
@@ -1128,5 +1131,69 @@ pkgs.testers.runNixOSTest {
         assert r == ["success", "0"], r
         u("! appzones ping tm")
         print("PASS  linger under systemd: the unit ends with success and is not restarted")
+
+    with subtest("process managers: runit, s6 and dinit run zones with contrib's files"):
+        C = "$(dirname $(readlink -f $(command -v appzones)))/../share/appzones/contrib"
+
+        def wait_up(z):
+            machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + f"appzones ping {z}"), timeout=90)
+
+        def wait_down(z):
+            machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + f"appzones ping {z}"), timeout=60)
+            machine.wait_until_fails(f"pgrep -u alice -f 'zone.py serve {z}( |$)'", timeout=30)
+
+        def server_pid(z):
+            return machine.succeed(f"pgrep -u alice -f 'zone.py serve {z}( |$)'").strip()
+
+        # runit: a failure is restarted; appzones stop and sv down keep it down
+        u(f"rm -rf /tmp/rsv && mkdir /tmp/rsv && cp -r {C}/runit/appzones-ZONE /tmp/rsv/appzones-tb && chmod -R u+w /tmp/rsv")
+        u("systemd-run --user --collect --unit=tree-runit runsvdir /tmp/rsv")
+        wait_up("tb")
+        assert servers("tb") == 1 and not unit_active("tb")
+        pid = server_pid("tb")
+        machine.succeed(f"kill -9 {pid}")
+        machine.wait_until_succeeds(f"p=$(pgrep -u alice -f 'zone.py serve tb( |$)') && [ \"$p\" != {pid} ]", timeout=60)
+        wait_up("tb")
+        u("appzones stop tb")
+        machine.sleep(4)  # longer than runit's restart delay
+        u("! appzones ping tb && sv status /tmp/rsv/appzones-tb | grep -q '^down'")
+        assert servers("tb") == 0
+        u("sv up /tmp/rsv/appzones-tb")
+        wait_up("tb")
+        u("sv down /tmp/rsv/appzones-tb")
+        wait_down("tb")
+        u("systemctl --user stop tree-runit")
+        print("PASS  runit: runs the zone, restarts it after kill -9, keeps it down after appzones stop and sv down")
+        # s6: readiness through notification-fd; finish keeps a stopped zone down
+        u(f"rm -rf /tmp/s6 && mkdir /tmp/s6 && cp -r {C}/s6/appzones-ZONE /tmp/s6/appzones-tb && chmod -R u+w /tmp/s6")
+        u("systemd-run --user --collect --unit=tree-s6 s6-svscan /tmp/s6")
+        machine.wait_until_succeeds("test -p /tmp/s6/appzones-tb/supervise/control", timeout=30)
+        u("s6-svwait -U -t 90000 /tmp/s6/appzones-tb && appzones ping tb")
+        u("appzones stop tb")
+        machine.sleep(4)
+        u("! appzones ping tb && [ $(s6-svstat -o up /tmp/s6/appzones-tb) = false ]")
+        u("s6-svc -u /tmp/s6/appzones-tb && s6-svwait -U -t 90000 /tmp/s6/appzones-tb && appzones ping tb")
+        u("s6-svc -d /tmp/s6/appzones-tb && s6-svwait -D -t 30000 /tmp/s6/appzones-tb")
+        wait_down("tb")
+        u("systemctl --user stop tree-s6")
+        print("PASS  s6: ready when the zone answers (s6-svwait -U); stays down after appzones stop; s6-svc -d stops it")
+        # dinit: one file for every zone (appzones@NAME); linger ends a zone for good
+        u(f"rm -rf /tmp/dinit.d && mkdir /tmp/dinit.d && cp {C}/dinit/appzones /tmp/dinit.d/ "
+          "&& printf 'type = internal\\n' >/tmp/dinit.d/boot")
+        u("systemd-run --user --collect --unit=tree-dinit dinit --user --services-dir /tmp/dinit.d --socket-path /tmp/dinit.sock")
+        machine.wait_until_succeeds("test -S /tmp/dinit.sock", timeout=30)
+        D = "dinitctl --socket-path /tmp/dinit.sock "
+        u(D + "start appzones@tb && appzones ping tb")
+        u("appzones stop tb")
+        machine.sleep(4)
+        u("! appzones ping tb && " + D + "status appzones@tb | grep -q STOPPED")
+        u(D + "start appzones@tl && appzones ping tl")
+        wait_down("tl")  # linger = "10s", no app
+        machine.sleep(4)
+        u("! appzones ping tl && " + D + "status appzones@tl | grep -q STOPPED")
+        u(D + "start appzones@tb && " + D + "stop appzones@tb")
+        wait_down("tb")
+        u("systemctl --user stop tree-dinit")
+        print("PASS  dinit: appzones@NAME starts once the zone answers; a stopped or lingered-out zone is not restarted")
   '';
 }

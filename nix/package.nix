@@ -36,6 +36,7 @@ let
   src = ../src;
   examples = ../examples;
   hyprland = ../contrib/hyprland; # only for the unit tests (zones.lua is a copy of appzones.lua)
+  contrib = ../contrib; # service files for other process managers, in share/appzones/contrib
 in
 runCommand "appzones-${version}"
   {
@@ -64,6 +65,8 @@ runCommand "appzones-${version}"
     cp ${src}/zonecfg.py $lib/zonecfg.py
     cp ${examples}/zones.toml $out/share/appzones/zones.example.toml
     cp ${examples}/minimal.toml $out/share/appzones/zones.minimal.toml
+    cp -r --no-preserve=mode ${contrib} $out/share/appzones/contrib
+    chmod 755 $out/share/appzones/contrib/{runit,s6}/appzones-ZONE/{run,finish}
 
     # The root helper of `appzones mount` (the module's sudo rule names this
     # file): isolated Python (-I: no PYTHON* variables, no user site, not

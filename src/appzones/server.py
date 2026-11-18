@@ -174,6 +174,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     helpers: list[subprocess.Popen] = []
     child: subprocess.Popen | None = None
 
+    stopped: list[int] = []  # a stop asked for by SIGTERM or SIGINT
+
     def stop_all(*_):
         if child and child.poll() is None:
             child.terminate()
@@ -181,8 +183,12 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             if h.poll() is None:
                 h.terminate()
 
-    signal.signal(signal.SIGTERM, stop_all)
-    signal.signal(signal.SIGINT, stop_all)
+    def stop_asked(signum, _frame):
+        stopped.append(signum)
+        stop_all()
+
+    signal.signal(signal.SIGTERM, stop_asked)
+    signal.signal(signal.SIGINT, stop_asked)
     if os.environ.get("WAYLAND_DISPLAY"):
         h = subprocess.Popen([tool("zone-wayland"), str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
                              stdout=subprocess.PIPE,
@@ -282,7 +288,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     stop_all()
     shutil.rmtree(fp, ignore_errors=True)
     fs.prepare_mnt(name, zdir)  # runtime mounts end with the zone
-    return rc
+    # stopped as asked is a clean end (status 0): a process manager restarts only failures
+    return 0 if stopped and rc is not None else rc
 
 
 def apps_running(name: str) -> bool | None:

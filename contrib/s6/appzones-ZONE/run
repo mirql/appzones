@@ -1,0 +1,7 @@
+#!/bin/sh
+# A zone under s6 (an s6-svscan of your own, started from your session).
+# Copy this directory once per zone as appzones-NAME; NAME is the zone.
+# Ready (s6-svwait -U) once the zone answers: a newline on fd 3, see notification-fd.
+zone=${PWD##*/appzones-}
+exec 2>&1
+exec appzones serve "$zone" --notify-fd 3

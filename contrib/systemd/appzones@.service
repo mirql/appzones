@@ -1,0 +1,25 @@
+# A zone as a systemd user unit, as the NixOS module installs it. For other
+# distributions: copy to ~/.config/systemd/user/ (with appzones-autostart.service
+# and appzones.slice), then `systemctl --user daemon-reload`. ExecStart finds
+# `appzones` in systemd's own search path (/usr/local/bin, /usr/bin, ...);
+# write the full path if it is elsewhere.
+[Unit]
+Description=App zone %i
+# stops with the session; autostart brings the autostart zones back with it
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=appzones serve %i
+Slice=appzones.slice
+# SIGTERM to the whole cgroup: apps save their state; then SIGKILL
+KillMode=control-group
+# `packages` are built at start
+TimeoutStartSec=5min
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=2
+# 75: the zone is already served (started without systemd): never a restart loop
+RestartPreventExitStatus=75

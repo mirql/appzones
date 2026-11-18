@@ -15,6 +15,13 @@ with the module nothing changes for you. Why, what is done and what is coming:
 https://mirql.github.io/appzones/without-systemd.html (milestone "0.7.0: zones
 without systemd", #50).
 
+- **Service files for other process managers** in `contrib/` (and the package's
+  `share/appzones/contrib`): runit and s6 service directories, a dinit file
+  (`appzones@ZONE`), and the systemd units for other distributions. `appzones
+  serve` now exits 0 when it is stopped (SIGTERM, SIGINT), so a manager restarts
+  a zone only after a failure. Zones still need NixOS: the zone's file system uses
+  its layout (#22).
+
 - **Zone settings for the server** (zones release 5, `requires = 5`), per zone or in
   `[defaults]`: `supervisor` (`auto` · `systemd` · `spawn`; the zone's own value
   beats `$APPZONES_SUPERVISOR`), `start_timeout` (the limit for each startup

@@ -1,0 +1,14 @@
+# Launcher entries and the zones with autostart = true, at login.
+[Unit]
+Description=App zones: launcher entries and autostart zones
+After=graphical-session.target
+PartOf=graphical-session.target
+ConditionPathExists=%h/.config/appzones/zones.toml
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=appzones _autostart
+
+[Install]
+WantedBy=graphical-session.target

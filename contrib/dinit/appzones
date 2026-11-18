@@ -1,0 +1,13 @@
+# Zones under dinit (a user instance, e.g. ~/.config/dinit.d/appzones):
+#   dinitctl start appzones@daily     (returns once the zone answers)
+type = process
+command = appzones serve $1 --notify-fd 3
+ready-notification = pipefd:3
+# exit 0 (stopped, or ended by itself: linger) is not a failure; 75 (the zone
+# already runs elsewhere) fails the start, which is never restarted
+failure-conditions = process-fails
+restart = on-failure
+# `packages` are built at start
+start-timeout = 300
+stop-timeout = 20
+log-type = buffer

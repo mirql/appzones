@@ -1,0 +1,7 @@
+#!/bin/sh
+# A zone under runit (a runsvdir of your own, started from your session).
+# Copy this directory once per zone as appzones-NAME; NAME is the zone.
+# A `down` file in it: the zone starts only with `sv up`.
+zone=${PWD##*/appzones-}
+exec 2>&1
+exec appzones serve "$zone"
