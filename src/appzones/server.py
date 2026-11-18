@@ -89,7 +89,8 @@ def lock_path(name: str) -> Path:
 def take_lock(name: str, lock_fd: int | None = None) -> int:
     """Hold zone NAME's lock for as long as this process lives (the kernel drops it when
     the process dies). LOCK_FD: the lock already taken by whoever started us, passed on
-    without a gap; it must be that very file. Exits ALREADY_SERVED when another server
+    without a gap; it must be that very file. A lock lives as long as any copy of its fd:
+    the caller closes its own after starting us (or execs into us). Exits ALREADY_SERVED when another server
     holds it, or when an older server without a lock still answers."""
     path = lock_path(name)
     common.RT.mkdir(parents=True, exist_ok=True)
@@ -124,6 +125,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     """The zone NAME, in the foreground (`appzones serve`): builds it, holds it, and
     returns when it ends. SIGTERM or SIGINT stops it and its helpers. One server per
     zone: take_lock comes before anything is changed."""
+    if notify_fd is not None and notify_fd == lock_fd:
+        die("--notify-fd and --lock-fd must be different fds (readiness closes the notify fd)")
     if notify_fd is not None:
         if notify_fd < 3 or not notify_fd_ok(notify_fd):
             die(f"--notify-fd {notify_fd}: not a pipe or file above 2, open for writing")

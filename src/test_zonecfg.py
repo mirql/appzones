@@ -398,6 +398,11 @@ class ZonecfgTest(unittest.TestCase):
         entry.main(["serve", "aa", "--notify-fd=6", "--lock-fd", "7"])
         entry.main(["_supervise", "bb"])
         self.assertEqual(calls, [("aa", None, None), ("aa", 5, None), ("aa", 6, 7), ("bb", None, None)])
+        # the same fd for both: refused by supervise before anything else
+        importlib.reload(importlib.import_module("appzones.server"))
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            entry.server.supervise("aa", notify_fd=9, lock_fd=9)
+        self.assertIn("must be different", err.getvalue())
         for bad in (["serve"], ["serve", "aa", "--notify-fd"], ["serve", "aa", "--notify-fd", "x"],
                     ["serve", "aa", "--notify-fd=\u00b2"], ["serve", "aa", "--notify-fd", "9" * 20], ["serve", "aa", "--other"]):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
