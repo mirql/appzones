@@ -1,0 +1,20 @@
+---
+layout: null
+permalink: /llms.txt
+---
+# appzones
+
+> Long-lived sandboxes for desktop apps, dev tools and AI agents on Linux (NixOS). Each zone has its own home, its own network rules (internet yes; host, LAN and tailnets no) and its own window border colour. Zones are declared in one TOML file (`~/.config/appzones/zones.toml`) and run as systemd user units; the `appzones` CLI starts them and runs things inside.
+
+Built from bubblewrap, pasta + nftables, xdg-dbus-proxy and the Wayland security context; no daemon and no setuid binary of its own. Links below are the raw markdown of each docs page. All of them in one file: [llms-full.txt]({{ site.url }}{{ site.baseurl }}/llms-full.txt). Source: https://github.com/mirql/appzones (MIT).
+{% for group in site.data.llms %}
+## {{ group.section }}
+{% for p in group.pages %}
+- [{{ p.title }}](https://raw.githubusercontent.com/mirql/appzones/main/docs/{{ p.file }}): {{ p.about }}{% endfor %}
+{% endfor %}
+## Optional
+
+- [README](https://raw.githubusercontent.com/mirql/appzones/main/README.md): overview, recipes, how it compares, a setup prompt for coding agents
+- [Agent skill](https://raw.githubusercontent.com/mirql/appzones/main/skills/appzones/SKILL.md): rules and tasks for a coding agent working with appzones (`npx skills add mirql/appzones`)
+- [Example configuration](https://raw.githubusercontent.com/mirql/appzones/main/examples/zones.toml): every key, commented
+- [CHANGELOG](https://raw.githubusercontent.com/mirql/appzones/main/CHANGELOG.md)

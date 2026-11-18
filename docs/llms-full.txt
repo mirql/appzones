@@ -1,0 +1,14 @@
+---
+layout: null
+permalink: /llms-full.txt
+---
+# appzones: the complete documentation
+
+> Long-lived sandboxes for desktop apps, dev tools and AI agents on Linux (NixOS). This file is every docs page of {{ site.url }}{{ site.baseurl }}/ in reading order, as markdown. Source: https://github.com/mirql/appzones (MIT). Each page starts with a line `Source: docs/PATH`.
+{% for group in site.data.llms %}{% for p in group.pages %}
+---
+
+Source: docs/{{ p.file }}
+
+{% include_relative {{ p.file }} %}
+{% endfor %}{% endfor %}

@@ -1,0 +1,58 @@
+# The docs pages for llms.txt and llms-full.txt (docs/llms.txt, docs/llms-full.txt), in
+# reading order. One list for both; add a page here when you add one to the site.
+- section: Getting started
+  pages:
+    - file: getting-started.md
+      title: Getting started
+      about: what an app zone is, and the example zones
+    - file: getting-started/install.md
+      title: Install
+      about: the NixOS module, requirements, kernel modules, NVIDIA
+    - file: getting-started/first-zones.md
+      title: First zones
+      about: running apps and commands in a zone, launcher entries, changing a zone
+    - file: getting-started/upgrading.md
+      title: Upgrading
+      about: from 0.5 (paths renamed to appzones)
+- section: Using appzones
+  pages:
+    - file: recipes.md
+      title: Recipes
+      about: an isolated browser, package managers off the host, AI agents in a zone, a file you don't trust
+    - file: troubleshooting.md
+      title: Troubleshooting
+      about: symptom, cause and fix for common problems (DNS, network, files, apps that exit)
+- section: Configuration
+  pages:
+    - file: configuration.md
+      title: Configuration
+      about: where zones.toml lives and how it is validated
+    - file: configuration/reference.md
+      title: Configuration reference
+      about: every key of a zone and of an app, with values and defaults
+    - file: configuration/files.md
+      title: Files and folders
+      about: binds, runtime mounts (appzones mount), /tmp on disk
+    - file: configuration/devices.md
+      title: Devices and USB
+      about: USB devices for a zone
+    - file: configuration/dbus.md
+      title: D-Bus
+      about: what a zone may talk to on the session bus, and a zone's own bus
+    - file: configuration/nix-ld.md
+      title: Generic binaries
+      about: prebuilt Linux binaries with nix_ld
+- section: Background
+  pages:
+    - file: desktop.md
+      title: Desktop
+      about: Hyprland window tags and border colours, a Waybar module
+    - file: how-it-works.md
+      title: How it works
+      about: how a zone is built (bubblewrap, pasta, nftables, xdg-dbus-proxy, the Wayland security context)
+    - file: security.md
+      title: Security and limits
+      about: the honest limits of a zone, reporting a vulnerability
+    - file: development.md
+      title: Contributing
+      about: tests (unit and NixOS VM), development

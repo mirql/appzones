@@ -7,7 +7,8 @@
 - User docs: the pages in `docs/` (the site https://mirql.github.io/appzones/; sidebar and titles in
   `docs/_config.yml`). When behaviour or a config key changes, update the page
   it belongs on (keys: `docs/configuration/reference.md`) and `examples/zones.toml`.
-  `docs/recipes.md` repeats the README's recipes: change both.
+  `docs/recipes.md` repeats the README's recipes: change both. A new docs page
+  goes into `docs/_data/llms.yml` too (llms.txt, llms-full.txt; a unit test checks).
 - `skills/appzones/SKILL.md` is the skill users give their own agents. When a
   command, a flag, a config key or a path changes, update it in the same PR.
 - The README's terminal GIFs (`docs/demo-*.gif`) are recorded in a VM from
