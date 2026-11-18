@@ -47,7 +47,7 @@ itself makes sure there is exactly one per zone and that nothing outlives it.
 |---|---|---|
 | ✓ | `appzones serve ZONE [--notify-fd N]`: a zone in the foreground; readiness over sd_notify, or as a newline on fd N (s6 style); SIGTERM or Ctrl-C stops it | [#43](https://github.com/mirql/appzones/pull/43) |
 | ✓ | One server per zone: a lock (`$XDG_RUNTIME_DIR/appzones/NAME.lock`); a second `serve` exits with status 75, "already served", and leaves the running zone alone | [#51](https://github.com/mirql/appzones/pull/51) |
-| ✓ | The zone ends with its server: zone-init watches a pidfd of the server, zone-wayland and the D-Bus proxy die with it; every startup step has a 30-second deadline | [#53](https://github.com/mirql/appzones/pull/53) |
+| ✓ | The zone ends with its server: zone-init watches a pidfd of the server, zone-wayland and the D-Bus proxy die with it; the startup waits (zone-wayland's "ready", the bus, the pidfd hand-over, zone-init's answer) have a 30-second deadline, building `packages` none | [#53](https://github.com/mirql/appzones/pull/53) |
 | | Start zones on demand without systemd: `appzones run` starts the zone when it does not answer, with logs in `~/.local/state/appzones/` | [#46](https://github.com/mirql/appzones/issues/46) |
 | | Supervisor mode `auto`: systemd when the unit is installed, otherwise on demand; never both for one zone | [#47](https://github.com/mirql/appzones/issues/47) |
 | | Per-zone settings: `supervisor`, `start_timeout`, `linger` (end a zone after some idle time, only if you want that) | [#48](https://github.com/mirql/appzones/issues/48) |
