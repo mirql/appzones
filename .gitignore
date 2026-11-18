@@ -226,3 +226,8 @@ __marimo__/
 result
 result-*
 .direnv/
+
+# Jekyll (local docs builds)
+.sass-cache/
+.jekyll-cache/
+_site/
