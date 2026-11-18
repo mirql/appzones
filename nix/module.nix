@@ -154,6 +154,8 @@ in
         TimeoutStopSec = 20;
         Restart = "on-failure";
         RestartSec = 2;
+        # 75: the zone is already served (e.g. started without systemd): never a restart loop
+        RestartPreventExitStatus = 75;
       };
     };
 

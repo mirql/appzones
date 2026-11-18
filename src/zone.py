@@ -32,11 +32,14 @@
     appzones umount ZONE NAME [--lazy]     remove it; busy: lists what holds it (--lazy:
                                            detach now, open files keep it until they close)
     appzones mounts ZONE                   what is mounted in the zone
-    appzones serve ZONE [--notify-fd N]    the zone itself, in the foreground: builds it, holds it,
+    appzones serve ZONE [--notify-fd N] [--lock-fd N]
+                                           the zone itself, in the foreground: builds it, holds it,
                                            exits when it ends (SIGTERM/SIGINT: stop). For a process
                                            manager or a terminal; appzones@ZONE.service runs it.
                                            Ready: sd_notify READY=1 ($NOTIFY_SOCKET), and with
-                                           --notify-fd N a newline on fd N (s6 style)
+                                           --notify-fd N a newline on fd N (s6 style). One server
+                                           per zone: a second one exits 75 ("already served");
+                                           --lock-fd N: the zone's lock, taken by a caller
 
 Internal (systemd and the supervisor):
     appzones _netsetup RULES INFO ZONE -- CMD
@@ -74,15 +77,16 @@ def main(argv: list[str]) -> int:
         return rest[0]
 
     if cmd in ("serve", "_supervise"):  # _supervise: the name before 0.7, for units still running
-        name, fd = one(), None
+        name, fds = one(), {"--notify-fd": None, "--lock-fd": None}
         opts = rest[1:]
         while opts:
             o = opts.pop(0)
-            v = o.split("=", 1)[1] if o.startswith("--notify-fd=") else opts.pop(0) if o == "--notify-fd" and opts else None
-            if not o.startswith("--notify-fd") or v is None or not (v.isascii() and v.isdigit() and len(v) <= 9):
-                die(f"usage: appzones serve ZONE [--notify-fd N] (not {o!r})")
-            fd = int(v)
-        return server.supervise(name, notify_fd=fd)
+            key = o.split("=", 1)[0]
+            v = o.split("=", 1)[1] if "=" in o else opts.pop(0) if opts else None
+            if key not in fds or v is None or not (v.isascii() and v.isdigit() and len(v) <= 9):
+                die(f"usage: appzones serve ZONE [--notify-fd N] [--lock-fd N] (not {o!r})")
+            fds[key] = int(v)
+        return server.supervise(name, notify_fd=fds["--notify-fd"], lock_fd=fds["--lock-fd"])
     if cmd == "_netsetup":
         i = rest.index("--")
         server.netsetup(rest[0], rest[1], rest[2], rest[i + 1:])

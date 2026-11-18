@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **One server per zone**: `appzones serve` holds a lock
+  (`$XDG_RUNTIME_DIR/appzones/NAME.lock`) before it changes anything; a second one
+  exits with status 75 ("already served") instead of replacing the first zone's
+  socket. `--lock-fd N` takes a lock a caller already holds. The unit does not
+  restart on 75.
+
 - **`appzones serve ZONE [--notify-fd N]`**: the zone itself, in the foreground, as a
   public command (it was the internal `_supervise`). The systemd unit runs it, and so can
   any process manager or a terminal. Readiness over sd_notify, and with `--notify-fd N` a

@@ -76,13 +76,59 @@ def notify_ready(name: str, notify_fd: int | None) -> None:
                 pass
 
 
-def supervise(name: str, notify_fd: int | None = None) -> int:
+ALREADY_SERVED = 75  # exit status of a second server for a zone (the unit does not restart on it)
+
+
+def lock_path(name: str) -> Path:
+    """The zone's lock: next to its runtime directory (which serve clears), never in the zone."""
+    if not zonecfg.NAME_RE.fullmatch(name):
+        die(f"not a zone name: {name!r}")
+    return common.RT / f"{name}.lock"
+
+
+def take_lock(name: str, lock_fd: int | None = None) -> int:
+    """Hold zone NAME's lock for as long as this process lives (the kernel drops it when
+    the process dies). LOCK_FD: the lock already taken by whoever started us, passed on
+    without a gap; it must be that very file. Exits ALREADY_SERVED when another server
+    holds it, or when an older server without a lock still answers."""
+    path = lock_path(name)
+    common.RT.mkdir(parents=True, exist_ok=True)
+    os.chmod(common.RT, 0o700)
+    if lock_fd is None:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+    else:
+        fd = lock_fd
+        try:
+            st, pst = os.fstat(fd), os.stat(path, follow_symlinks=False)
+            same = (st.st_dev, st.st_ino) == (pst.st_dev, pst.st_ino)
+        except (OSError, OverflowError):
+            same = False
+        if not same:
+            die(f"--lock-fd {lock_fd}: not zone {name}'s lock ({path})")
+        os.set_inheritable(fd, False)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # held already through --lock-fd: succeeds
+    except BlockingIOError:
+        from . import client  # here: client imports this module
+        pids = client.server_pids(name)
+        die(f"zone {name} is already served" + (f" (pid {', '.join(map(str, pids))})" if pids else ""),
+            ALREADY_SERVED)
+    if agent.ping(name):
+        os.close(fd)
+        die(f"zone {name} already runs under a server without a lock (from before this version); "
+            f"stop it first (appzones stop {name})", ALREADY_SERVED)
+    return fd
+
+
+def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = None) -> int:
     """The zone NAME, in the foreground (`appzones serve`): builds it, holds it, and
-    returns when it ends. SIGTERM or SIGINT stops it and its helpers."""
+    returns when it ends. SIGTERM or SIGINT stops it and its helpers. One server per
+    zone: take_lock comes before anything is changed."""
     if notify_fd is not None:
         if notify_fd < 3 or not notify_fd_ok(notify_fd):
             die(f"--notify-fd {notify_fd}: not a pipe or file above 2, open for writing")
         os.set_inheritable(notify_fd, False)  # never into the zone or a helper
+    lock = take_lock(name, lock_fd)  # noqa: F841  (held until this process exits)
     cfg = load_cfg(quiet=False)
     if name not in cfg.zones:
         die(f"no zone {name!r} in {common.CONFIG}")

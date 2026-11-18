@@ -265,6 +265,57 @@ class ZonecfgTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             zone.each_zone("up", [], print)
 
+    def test_zone_lock(self):
+        """One server per zone: a second is refused (75), a handed-over lock is accepted, a wrong
+        file is not, the kernel drops the lock when its holder dies, an old lock-less server is refused."""
+        import fcntl
+        import subprocess as sp
+        zone = self._zone_mod()
+        zone.RT = Path(self.tmp.name) / "rt"
+        zone.ping = lambda n: None
+        held = zone.take_lock("aa")
+        try:
+            with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as e:
+                zone.take_lock("aa")
+            self.assertEqual(e.exception.code, 75)
+            self.assertIn("already served", err.getvalue())
+            self.assertFalse(os.get_inheritable(held))
+            self.assertEqual(oct(zone.lock_path("aa").stat().st_mode & 0o777), "0o600")
+        finally:
+            os.close(held)
+        # handed over: the caller's locked fd is accepted as is
+        fd = os.open(zone.lock_path("bb"), os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        self.assertEqual(zone.take_lock("bb", lock_fd=fd), fd)
+        os.close(fd)
+        # a file that is not the zone's lock
+        other = os.open(Path(self.tmp.name) / "other", os.O_RDWR | os.O_CREAT, 0o600)
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            zone.take_lock("bb", lock_fd=other)
+        self.assertIn("not zone bb's lock", err.getvalue())
+        os.close(other)
+        # released when its holder dies
+        holder = sp.Popen([sys.executable, "-c", "import fcntl, sys, time; f = open(sys.argv[1], 'a'); "
+                           "fcntl.flock(f, fcntl.LOCK_EX); print('locked', flush=True); time.sleep(30)",
+                           str(zone.lock_path("cc"))], stdout=sp.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "locked")
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                zone.take_lock("cc")
+        finally:
+            holder.kill()
+            holder.wait()
+            holder.stdout.close()
+        os.close(zone.take_lock("cc"))
+        # an older server without a lock still answers: refused
+        zone.ping = lambda n: {"ok": True}
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as e:
+            zone.take_lock("dd")
+        self.assertEqual(e.exception.code, 75)
+        self.assertIn("without a lock", err.getvalue())
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            zone.take_lock("../x")
+
     def test_server_pids(self):
         """stop without systemd finds exactly this appzones' `zone.py serve NAME`, also from a
         relative path; never another program called zone.py, nor another zone's server."""
@@ -341,12 +392,12 @@ class ZonecfgTest(unittest.TestCase):
         import zone as entry
         entry = importlib.reload(entry)
         calls = []
-        entry.server.supervise = lambda name, notify_fd=None: calls.append((name, notify_fd)) or 0
+        entry.server.supervise = lambda name, notify_fd=None, lock_fd=None: calls.append((name, notify_fd, lock_fd)) or 0
         entry.main(["serve", "aa"])
         entry.main(["serve", "aa", "--notify-fd", "5"])
-        entry.main(["serve", "aa", "--notify-fd=6"])
+        entry.main(["serve", "aa", "--notify-fd=6", "--lock-fd", "7"])
         entry.main(["_supervise", "bb"])
-        self.assertEqual(calls, [("aa", None), ("aa", 5), ("aa", 6), ("bb", None)])
+        self.assertEqual(calls, [("aa", None, None), ("aa", 5, None), ("aa", 6, 7), ("bb", None, None)])
         for bad in (["serve"], ["serve", "aa", "--notify-fd"], ["serve", "aa", "--notify-fd", "x"],
                     ["serve", "aa", "--notify-fd=\u00b2"], ["serve", "aa", "--notify-fd", "9" * 20], ["serve", "aa", "--other"]):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):

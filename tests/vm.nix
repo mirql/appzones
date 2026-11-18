@@ -960,6 +960,19 @@ pkgs.testers.runNixOSTest {
         u("appzones ping td")
         u("! systemctl --user is-active appzones@td.service")
         ok("td", "true", "the zone runs apps without its systemd unit")
+        # one server per zone: a second serve is refused and touches nothing
+        rc, out = u("appzones serve td 2>&1", check=False)
+        print(out)
+        assert rc == 75 and "already served" in out, (rc, out)
+        u("appzones ping td && test -S /run/user/1000/appzones/td/agent.sock && test -f /run/user/1000/appzones/td.lock")
+        print("PASS  a second serve exits 75 (already served); the first zone keeps its socket and answers")
+        # the unit, started against a zone served elsewhere: fails once, no restart loop
+        u("! systemctl --user start appzones@td.service")
+        machine.sleep(5)  # longer than RestartSec
+        n = u("systemctl --user show appzones@td.service -p NRestarts --value").strip()
+        assert n == "0", n
+        u("appzones ping td && systemctl --user reset-failed appzones@td.service")
+        print("PASS  appzones@td.service against a served zone: exit 75, no restart (NRestarts=0); the zone still answers")
         rc, out = u("appzones stop td 2>&1", check=False)
         print(out)
         assert rc != 0 and "still answers" in out and "appzones serve td" in out, (rc, out)
