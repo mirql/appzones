@@ -957,10 +957,15 @@ pkgs.testers.runNixOSTest {
         u("appzones ping td")
         u("! systemctl --user is-active appzones@td.service")
         ok("td", "true", "the zone runs apps without its systemd unit")
-        u("systemctl --user kill --kill-whom=main --signal=SIGTERM serve-td")
+        rc, out = u("appzones stop td 2>&1", check=False)
+        print(out)
+        assert rc != 0 and "still answers" in out and "appzones serve td" in out, (rc, out)
+        print("PASS  stop through the unit fails clearly for a zone served outside it")
+        # without systemd, stop finds exactly this zone's `serve` and signals it
+        u("APPZONES_SUPERVISOR=none appzones stop td")
         machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + "systemctl --user is-active serve-td"), timeout=60)
         machine.wait_until_fails("pgrep -u alice -f 'dev.mirql.zone.td|appzones/td/|zone-td-'", timeout=30)
         u("! appzones ping td")
-        print("PASS  SIGTERM to serve stops the zone and every helper (nothing left behind)")
+        print("PASS  stop without systemd ends serve; the zone and every helper are gone (nothing left behind)")
   '';
 }

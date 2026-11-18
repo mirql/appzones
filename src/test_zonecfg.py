@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -252,8 +253,42 @@ class ZonecfgTest(unittest.TestCase):
             done = []
             self.assertEqual(zone.each_zone(cmd, rest, done.append), 0)
             self.assertEqual(done, want, (cmd, rest))
+        # one zone that fails does not keep the others from being handled; the result says so
+        done = []
+
+        def fail_aa(n):
+            done.append(n)
+            if n == "aa":
+                raise SystemExit(1)
+        self.assertEqual(zone.each_zone("up", ["--all"], fail_aa), 1)
+        self.assertEqual(done, ["aa", "bb"])
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             zone.each_zone("up", [], print)
+
+    def test_server_pids(self):
+        """stop without systemd finds exactly this appzones' `zone.py serve NAME`, also from a
+        relative path; never another program called zone.py, nor another zone's server."""
+        import subprocess as sp
+        zone = self._zone_mod()
+        t = Path(self.tmp.name)
+        mine, other = t / "lib", t / "elsewhere"
+        for d in (mine, other):
+            d.mkdir()
+            (d / "zone.py").write_text("import time\ntime.sleep(30)\n")
+        zone.HERE = mine
+        procs = [sp.Popen([sys.executable, str(mine / "zone.py"), "serve", "aa"]),
+                 sp.Popen([sys.executable, "zone.py", "_supervise", "bb"], cwd=mine),        # relative path
+                 sp.Popen([sys.executable, str(other / "zone.py"), "serve", "aa"]),        # not ours
+                 sp.Popen([sys.executable, str(mine / "zone.py"), "serve", "aaa"])]        # another zone
+        try:
+            time.sleep(0.3)
+            self.assertEqual(zone.server_pids("aa"), [procs[0].pid])
+            self.assertEqual(zone.server_pids("bb"), [procs[1].pid])
+            self.assertEqual(zone.server_pids("cc"), [])
+        finally:
+            for p in procs:
+                p.kill()
+                p.wait()
 
     def test_serve_readiness_fd(self):
         """--notify-fd N: a newline on N once the zone answers, then N closed; a bad fd is refused."""
