@@ -98,6 +98,9 @@ let
     patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath $out/bin/generic-hello
   '';
 
+  # looks like another appzones installation's zone server (upgrade test)
+  oldServer = pkgs.writeTextDir "libexec/appzones/zone.py" "import time; time.sleep(600)\n";
+
   fhsHello = pkgs.buildFHSEnv {
     name = "fhs-hello";
     runScript = pkgs.writeShellScript "fhs-hello" "echo fhs-ok";
@@ -431,9 +434,9 @@ pkgs.testers.runNixOSTest {
     with subtest("upgrade from 0.5: the state moves once no zone runs; the old config is read, with a warning"):
         machine.succeed("test -f /etc/appzones/denied-paths && test ! -e /etc/zones")
         # a supervisor (of any version) running: nothing moves yet
-        # (a stand-in: its command line looks like a supervisor's)
-        u("systemd-run --user --collect --unit=old-supervisor ${pkgs.python3}/bin/python3 -c "
-          "'import time; time.sleep(600)' zone.py _supervise old")
+        # (a stand-in for an older appzones' server: an installed .../libexec/appzones/zone.py)
+        u("systemd-run --user --collect --unit=old-supervisor ${pkgs.python3}/bin/python3 "
+          "${oldServer}/libexec/appzones/zone.py _supervise old")
         machine.wait_until_succeeds("pgrep -u alice -f '_supervise old'", timeout=10)
         out = u("appzones list 2>&1")
         print(out)

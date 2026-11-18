@@ -276,11 +276,13 @@ class ZonecfgTest(unittest.TestCase):
             d.mkdir()
             (d / "zone.py").write_text("import time\ntime.sleep(30)\n")
         zone.HERE = mine
-        procs = [sp.Popen([sys.executable, str(mine / "zone.py"), "serve", "aa"]),
-                 sp.Popen([sys.executable, "zone.py", "_supervise", "bb"], cwd=mine),        # relative path
-                 sp.Popen([sys.executable, str(other / "zone.py"), "serve", "aa"]),        # not ours
-                 sp.Popen([sys.executable, str(mine / "zone.py"), "serve", "aaa"])]        # another zone
+        procs = []
         try:
+            for argv, cwd in [([sys.executable, "-B", str(mine / "zone.py"), "serve", "aa", "--notify-fd", "9"], None),
+                              ([sys.executable, "zone.py", "_supervise", "bb"], mine),        # relative path
+                              ([sys.executable, str(other / "zone.py"), "serve", "aa"], None),   # not ours
+                              ([sys.executable, str(mine / "zone.py"), "serve", "aaa"], None)]:  # another zone
+                procs.append(sp.Popen(argv, cwd=cwd))
             time.sleep(0.3)
             self.assertEqual(zone.server_pids("aa"), [procs[0].pid])
             self.assertEqual(zone.server_pids("bb"), [procs[1].pid])
@@ -290,18 +292,46 @@ class ZonecfgTest(unittest.TestCase):
                 p.kill()
                 p.wait()
 
+    def test_server_command(self):
+        """Only the process's own script counts; an installed appzones from the store counts too."""
+        zone = self._zone_mod()
+        here = str(zone.HERE / "zone.py")
+        cases = [
+            (["python3", "-B", here, "serve", "aa"], ("serve", "aa")),
+            (["python3", here, "_supervise", "bb", "--x"], ("_supervise", "bb")),
+            (["python3", "-c", "x", here, "serve", "aa"], None),                  # a script after -c CODE is not ours
+            (["python3", "/home/u/tools/zone.py", "serve", "aa"], None),          # another zone.py
+            (["python3", here, "run", "--wait", "td", "--", "python3", here, "serve", "td"], None),  # a later argument
+            (["python3", "/nix/store/abc-appzones-0.6.0/libexec/appzones/zone.py", "_supervise", "cc"], ("_supervise", "cc")),
+            (["python3", "/nix/store/abc-x/libexec/other/zone.py", "serve", "cc"], None),
+            (["python3", here, "serve"], None),
+        ]
+        for argv, want in cases:
+            with self.subTest(argv=argv):
+                self.assertEqual(zone.server_command(argv, "/"), want)
+
     def test_serve_readiness_fd(self):
         """--notify-fd N: a newline on N once the zone answers, then N closed; a bad fd is refused."""
         zone = self._zone_mod()
+        zone.sd_notify = lambda msg: None  # never the real service manager of whoever runs the tests
         r, w = os.pipe()
-        self.assertTrue(zone.notify_fd_ok(w))
-        zone.notify_ready("aa", w)
-        self.assertEqual(os.read(r, 10), b"\n")
-        self.assertEqual(os.read(r, 10), b"")  # closed after the newline
-        os.close(r)
-        self.assertFalse(zone.notify_fd_ok(w))  # closed now
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            zone.supervise("aa", notify_fd=w)  # not open: refused before anything starts
+        try:
+            os.set_blocking(r, False)
+            self.assertTrue(zone.notify_fd_ok(w))
+            self.assertFalse(zone.notify_fd_ok(r))  # the read end: refused
+            self.assertFalse(zone.notify_fd_ok(2**31))  # no such fd (overflow)
+            zone.notify_ready("aa", w)
+            self.assertEqual(os.read(r, 10), b"\n")
+            self.assertEqual(os.read(r, 10), b"")  # end of file: the write end was closed
+            self.assertFalse(zone.notify_fd_ok(w))
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                zone.supervise("aa", notify_fd=w)  # not open: refused before anything starts
+        finally:
+            for fd in (r, w):
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
 
     def test_serve_arguments(self):
         """`appzones serve ZONE [--notify-fd N]`; `_supervise ZONE` still works (units still running)."""
@@ -315,7 +345,8 @@ class ZonecfgTest(unittest.TestCase):
         entry.main(["serve", "aa", "--notify-fd=6"])
         entry.main(["_supervise", "bb"])
         self.assertEqual(calls, [("aa", None), ("aa", 5), ("aa", 6), ("bb", None)])
-        for bad in (["serve"], ["serve", "aa", "--notify-fd"], ["serve", "aa", "--notify-fd", "x"], ["serve", "aa", "--other"]):
+        for bad in (["serve"], ["serve", "aa", "--notify-fd"], ["serve", "aa", "--notify-fd", "x"],
+                    ["serve", "aa", "--notify-fd=\u00b2"], ["serve", "aa", "--notify-fd", "9" * 20], ["serve", "aa", "--other"]):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 entry.main(bad)
         importlib.reload(importlib.import_module("appzones.server"))
@@ -364,7 +395,6 @@ class ZonecfgTest(unittest.TestCase):
     def _zone_mod(self):
         """The appzones modules, freshly loaded (they read the environment at import), as one namespace."""
         sys.path.insert(0, str(HERE))
-        import appzones
         mods = []
         for name in ZONE_MODULES:
             m = importlib.import_module(f"appzones.{name}")

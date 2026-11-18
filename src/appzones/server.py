@@ -1,6 +1,7 @@
 """The zone server (`appzones serve`), `_netsetup`, the agent socket, colours."""
 from __future__ import annotations
 
+import fcntl
 import os
 import secrets
 import select
@@ -49,10 +50,13 @@ def sd_notify(msg: str) -> None:
 
 
 def notify_fd_ok(fd: int) -> bool:
-    """FD is open and something can be written to it (a pipe, a FIFO, a file)."""
+    """FD is open for writing, and a pipe, FIFO, file, socket or character device."""
     try:
         mode = os.fstat(fd).st_mode
-    except OSError:
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    except (OSError, OverflowError):
+        return False
+    if flags & os.O_ACCMODE not in (os.O_WRONLY, os.O_RDWR):
         return False
     return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode) or stat.S_ISCHR(mode)
 
@@ -77,7 +81,7 @@ def supervise(name: str, notify_fd: int | None = None) -> int:
     returns when it ends. SIGTERM or SIGINT stops it and its helpers."""
     if notify_fd is not None:
         if notify_fd < 3 or not notify_fd_ok(notify_fd):
-            die(f"--notify-fd {notify_fd}: not an open pipe, file or socket above 2")
+            die(f"--notify-fd {notify_fd}: not a pipe, file or socket above 2, open for writing")
         os.set_inheritable(notify_fd, False)  # never into the zone or a helper
     cfg = load_cfg(quiet=False)
     if name not in cfg.zones:

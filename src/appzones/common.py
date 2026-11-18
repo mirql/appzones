@@ -92,3 +92,24 @@ def systemctl(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     if check and r.returncode != 0:
         die(f"systemctl --user {' '.join(args)}: {r.stderr.strip() or r.returncode}")
     return r
+
+
+def server_command(argv: list[str], cwd: str) -> tuple[str, str] | None:
+    """(subcommand, zone) when ARGV is an appzones zone server: the interpreter, its
+    options, then appzones' zone.py (this one, or another installed appzones' or zones'
+    from the Nix store: a server from before an upgrade), then `serve ZONE` or
+    `_supervise ZONE`. Only the process's own script counts, never later arguments."""
+    i = 1
+    while i < len(argv) and argv[i].startswith("-"):
+        i += 1
+    if i >= len(argv):
+        return None
+    script, rest = argv[i], argv[i + 1:i + 3]
+    if len(rest) < 2 or rest[0] not in ("serve", "_supervise") or not script.endswith("zone.py"):
+        return None
+    path = (Path(cwd) / script).resolve()
+    installed = path.parent.name in ("appzones", "zones") and path.parent.parent.name == "libexec" \
+        and str(path).startswith("/nix/store/")
+    if path == (HERE / "zone.py").resolve() or installed:
+        return rest[0], rest[1]
+    return None

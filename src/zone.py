@@ -79,7 +79,7 @@ def main(argv: list[str]) -> int:
         while opts:
             o = opts.pop(0)
             v = o.split("=", 1)[1] if o.startswith("--notify-fd=") else opts.pop(0) if o == "--notify-fd" and opts else None
-            if not o.startswith("--notify-fd") or v is None or not v.isdigit():
+            if not o.startswith("--notify-fd") or v is None or not (v.isascii() and v.isdigit() and len(v) <= 9):
                 die(f"usage: appzones serve ZONE [--notify-fd N] (not {o!r})")
             fd = int(v)
         return server.supervise(name, notify_fd=fd)

@@ -21,11 +21,12 @@ def supervisors() -> list[str]:
         try:
             if d.stat().st_uid != common.UID:
                 continue
-            argv = (d / "cmdline").read_bytes().split(b"\0")
+            argv = [a.decode(errors="replace") for a in (d / "cmdline").read_bytes().split(b"\0")]
+            cwd = os.readlink(d / "cwd")
         except OSError:
             continue
-        if (b"serve" in argv or b"_supervise" in argv) and any(a.endswith(b"zone.py") for a in argv):
-            out.append(b" ".join(argv).decode(errors="replace"))
+        if common.server_command(argv, cwd):
+            out.append(" ".join(argv))
     return out
 
 

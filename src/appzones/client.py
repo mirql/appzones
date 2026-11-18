@@ -257,9 +257,7 @@ def each_zone(cmd: str, rest: list[str], fn) -> int:
 
 
 def _is_server(pid: int, name: str) -> bool:
-    """PID runs this appzones' `zone.py serve NAME` (or the pre-0.7 `_supervise NAME`),
-    as this user. The zone.py path is resolved (also a relative one), so another
-    program that happens to be called zone.py never matches."""
+    """PID is zone NAME's server, as this user (common.server_command)."""
     d = Path(f"/proc/{pid}")
     try:
         if d.stat().st_uid != common.UID:
@@ -268,11 +266,8 @@ def _is_server(pid: int, name: str) -> bool:
         cwd = os.readlink(d / "cwd")
     except OSError:
         return False
-    me = (common.HERE / "zone.py").resolve()
-    for i, a in enumerate(argv):
-        if a.endswith("zone.py") and argv[i + 1:i + 3] in (["serve", name], ["_supervise", name]):
-            return (Path(cwd) / a).resolve() == me
-    return False
+    found = common.server_command(argv, cwd)
+    return found is not None and found[1] == name
 
 
 def server_pids(name: str) -> list[int]:
@@ -288,6 +283,7 @@ def stop_zone(name: str) -> None:
     if use_systemd():
         systemctl("stop", f"appzones@{name}.service")
     else:
+        pfds = []
         for pid in server_pids(name):
             try:
                 pfd = os.pidfd_open(pid)
@@ -296,8 +292,24 @@ def stop_zone(name: str) -> None:
             try:
                 if _is_server(pid, name):  # still the same process: the pidfd pins it
                     signal.pidfd_send_signal(pfd, signal.SIGTERM)
-            finally:
-                os.close(pfd)
+                    pfds.append(pfd)
+                    continue
+            except ProcessLookupError:
+                pass  # exited just now
+            os.close(pfd)
+        # until the servers have exited: their cleanup must not overlap a new start (restart)
+        try:
+            end = time.monotonic() + 20
+            while pfds:
+                ready, _, _ = select.select(pfds, [], [], max(0.0, end - time.monotonic()))
+                if not ready:
+                    die(f"zone {name}: its server did not exit within 20 s after SIGTERM")
+                for p in ready:
+                    pfds.remove(p)
+                    os.close(p)
+        finally:
+            for p in pfds:
+                os.close(p)
     for _ in range(100):
         if not agent.ping(name):
             return
