@@ -3,6 +3,19 @@
 The config schema has its own release number (`requires = N` in
 `zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
 
+## Unreleased
+
+- **Window borders fail closed** (Hyprland): a window that comes from a zone but
+  cannot be named gets the tag `zone:?` and a red warning border, never the host's
+  look. Before, it got none: a zone started without systemd, a process under
+  `appzones.slice` that is not a zone's unit, an unreadable cgroup. A process in
+  another pid namespace counts as such a window too (so does another sandbox,
+  e.g. Flatpak). The zone's own name still comes from its unit's cgroup, now also
+  from a cgroup below it. `appzones active` shows `[?]`.
+- **A zone always has its own cgroup namespace**: bwrap's `--unshare-cgroup`
+  instead of `--unshare-cgroup-try`, which went on without one when it could not
+  make it.
+
 ## 0.7.0
 
 **0.7: zones without systemd.** Until now every zone was a systemd user unit, and

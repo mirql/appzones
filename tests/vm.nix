@@ -779,7 +779,33 @@ pkgs.testers.runNixOSTest {
         c = window("host-win")
         assert not any(t.startswith("zone:") for t in c["tags"]), c
         print("PASS  host window not tagged")
+
         assert u(f"HYPRLAND_INSTANCE_SIGNATURE={SIG} appzones active").strip() in ("", "[ta]", "[tb]")
+
+        # fails closed: windows the zone cannot be read for get zone:? and the warning colour
+        def unidentified(title):
+            machine.wait_until_succeeds(
+                "su -l alice -c " + shlex.quote(ENV + f"${hyprland}/bin/hyprctl -i 0 -j clients | grep -q {title}"), timeout=60)
+            c = window(title)
+            print(c)
+            assert "zone:?" in c["tags"] and not any(t.startswith("zone:") and t != "zone:?" for t in c["tags"]), c
+            prop = hypr(f"getprop address:{c['address']} active_border_color")
+            assert "f38ba8" in prop.lower(), prop
+
+        # a zone appzones started itself (no unit, no cgroup to name it by)
+        u(f"WAYLAND_DISPLAY={WL} APPZONES_SUPERVISOR=spawn appzones run tc -- foot --title spawn-win")
+        unidentified("spawn-win")
+        u("appzones stop tc")
+        # under appzones.slice, but not a zone's unit
+        u("systemd-run --user --collect --slice=appzones.slice --unit=not-a-zone foot --title slice-win")
+        unidentified("slice-win")
+        # a host process in a nested pid namespace (another sandbox): not a host window either
+        u("systemd-run --user --collect unshare -Urpf foot --title nspid-win")
+        unidentified("nspid-win")
+        out = u(f"HYPRLAND_INSTANCE_SIGNATURE={SIG} appzones active").strip()
+        assert out == "[?]", out  # the newest window has the focus
+        print("PASS  fails closed: a zone without systemd, a cgroup under appzones.slice that is not a zone's, "
+              "a nested pid namespace: zone:? and the warning colour")
 
     with subtest("single-instance GTK apps: the zone's own bus"):
         def zone_windows(zone, cls):

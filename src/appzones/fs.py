@@ -336,7 +336,7 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
         if err and not err.endswith(": does not exist"):
             die(f"home {err}")
     home.mkdir(parents=True, exist_ok=True)
-    a = [tool("bwrap"), "--unshare-user", "--unshare-ipc", "--unshare-pid", "--unshare-uts", "--unshare-cgroup-try",
+    a = [tool("bwrap"), "--unshare-user", "--unshare-ipc", "--unshare-pid", "--unshare-uts", "--unshare-cgroup",
          "--uid", str(common.UID), "--gid", str(common.GID), "--hostname", f"{z.name}-zone",
          "--die-with-parent", "--new-session", "--cap-drop", "ALL", "--clearenv"]
     if network == "none":

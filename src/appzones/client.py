@@ -746,6 +746,9 @@ def active(follow: bool, as_json: bool) -> int:  # NOSONAR: an exit status: 0 is
             tags = []  # no Hyprland (or no hyprctl): no label, never a crash in the bar
         z = next((t[5:].rstrip("*") for t in tags if t.startswith("zone:")), "")
         if as_json:
+            if z == "?":  # a zone (or another sandbox) that appzones cannot name
+                return json.dumps({"text": "[?]", "class": "zone-unidentified",
+                                   "tooltip": "active window runs in a sandbox appzones cannot name"})
             return json.dumps({"text": f"[{z}]" if z else "", "class": f"zone-{z}" if z else "host",
                                "tooltip": f"active window runs in app zone {z}" if z else ""})
         return f"[{z}]" if z else ""

@@ -648,6 +648,27 @@ os.write(w, b"\\n"); os.close(w)
                 entry.main(bad)
         importlib.reload(importlib.import_module("appzones.server"))
 
+    def test_active(self):
+        """appzones active: the zone from the window's compositor tag; zone:? is a sandbox it cannot name."""
+        import json as js
+        import subprocess as sp
+        zone = self._zone_mod()
+        real = zone.subprocess.run
+        try:
+            for tags, text, want in [(["zone:ta"], "[ta]", ("[ta]", "zone-ta")), (["zone:?"], "[?]", ("[?]", "zone-unidentified")),
+                                     ([], "", ("", "host")), (["other", "zone:tb*"], "[tb]", ("[tb]", "zone-tb"))]:
+                zone.subprocess.run = lambda *a, t=tags, **k: sp.CompletedProcess(a, 0, js.dumps({"tags": t}), "")
+                for as_json in (False, True):
+                    with contextlib.redirect_stdout(io.StringIO()) as out:
+                        self.assertEqual(zone.active(False, as_json), 0)
+                    if as_json:
+                        d = js.loads(out.getvalue())
+                        self.assertEqual((d["text"], d["class"]), want, tags)
+                    else:
+                        self.assertEqual(out.getvalue().strip(), text, tags)
+        finally:
+            zone.subprocess.run = real
+
     def test_hyprland_zones_lua_is_a_copy(self):
         """contrib/hyprland/zones.lua (pre-0.6 name) is appzones.lua's code, past each file's header comment."""
         def code(name):

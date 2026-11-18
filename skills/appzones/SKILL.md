@@ -161,6 +161,7 @@ services. Rule 4's warning about writable binds applies.
 | No sound, mic, camera or screen sharing | Not in `devices` | Add `audio`, `mic`, `camera`, `screencast` as needed (rule 2 for `mic`/`camera`) |
 | An X11-only app, a Flatpak app, an AppImage | X11-only apps do not run yet; Flatpak apps need the host's Flatpak; AppImages need FUSE | Run Flatpaks on the host; AppImages with `--appimage-extract-and-run` |
 | A window has no zone border colour | Borders and tags need Hyprland and `contrib/hyprland/appzones.lua` | See the docs' desktop page |
+| A window has a red border and the tag `zone:?` | It comes from a zone appzones cannot name: one started without systemd, or another sandbox | Start the zone through its unit (`supervisor = "systemd"`) for its own colour |
 
 ## Config keys at a glance
 
