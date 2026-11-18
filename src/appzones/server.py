@@ -320,9 +320,11 @@ def agent_listener(name: str) -> int:
 def read_line(fd: int, timeout: float) -> bytes | None:
     """One line from FD, read whole within TIMEOUT seconds (without its newline); None if not."""
     end, buf = time.monotonic() + timeout, b""
+    poll = select.poll()  # not select(): any fd number
+    poll.register(fd, select.POLLIN)
     while b"\n" not in buf:
         left = end - time.monotonic()
-        if left <= 0 or not select.select([fd], [], [], left)[0]:
+        if left <= 0 or not poll.poll(int(left * 1000) + 1):
             return None
         chunk = os.read(fd, 256)
         if not chunk:

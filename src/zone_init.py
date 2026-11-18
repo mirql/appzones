@@ -604,11 +604,8 @@ def main():
                 os.read(r, 512)
                 reap()
             elif kind == "server":
-                try:  # best effort: a stalled log reader must not keep the zone alive
-                    os.set_blocking(1, False)
-                    os.write(1, b"[zone-init] the zone's server is gone; ending the zone\n")
-                except OSError:
-                    pass
+                # the server is gone: no one reads our log now, and a blocked write
+                # must not keep the zone alive; end it at once
                 os._exit(0)
             elif kind == "out":
                 if pid in outputs:
