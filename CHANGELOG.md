@@ -3,7 +3,7 @@
 The config schema has its own release number (`requires = N` in
 `zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
 
-## Unreleased
+## 0.7.0
 
 **0.7: zones without systemd.** Until now every zone was a systemd user unit, and
 the unit did real work: it cleaned up the zone's processes, restarted it, kept its
@@ -11,34 +11,43 @@ logs. That tied appzones to systemd and to its NixOS module, and it hid problems
 outside the unit, a killed zone server left the zone running. 0.7 makes a zone one
 plain process, `appzones serve`, that any process manager or a terminal can run, and
 makes appzones itself keep one server per zone and leave nothing behind. On NixOS
-with the module nothing changes for you. Why, what is done and what is coming:
+with the module nothing changes for you. Why and how:
 https://mirql.github.io/appzones/without-systemd.html (milestone "0.7.0: zones
 without systemd", #50).
 
-- **Service files for other process managers** in `contrib/` (and the package's
-  `share/appzones/contrib`): runit and s6 service directories, a dinit file
-  (`appzones@ZONE`), and the systemd units for other distributions. `appzones
-  serve`'s exit status now says how it ended: 0 for good (SIGINT, which
-  `appzones stop` now sends, Ctrl-C, or `linger`), 143 stopped by SIGTERM (a
-  manager's stop or restart; the unit counts it as success), 75 already served;
-  a stop during the start is no longer a failure. Zones still need NixOS: the zone's file system uses
-  its layout (#22).
+**Upgrading from 0.6:**
 
-- **Zone settings for the server** (zones release 5, `requires = 5`), per zone or in
-  `[defaults]`: `supervisor` (`auto` · `systemd` · `spawn`; the zone's own value
-  beats `$APPZONES_SUPERVISOR`), `start_timeout` (the limit for each startup
-  step, default `"30s"`), and `linger` (default `""`: the zone stays; `"10m"`:
-  the zone ends 10 minutes after its last app, as a success, so systemd does not
-  restart it). Changing `supervisor` or `start_timeout` does not mark a running
-  zone as stale.
+- On NixOS with the module, nothing to do: zones keep running as
+  `appzones@NAME.service` and restart into 0.7 when you restart them.
+- `zones.toml` needs `requires = 5` only if it uses the new `supervisor`,
+  `start_timeout` or `linger`.
+- `appzones stop` on a zone outside its unit now ends it (with SIGINT) instead
+  of refusing.
+- Without systemd, zone logs moved from `$XDG_RUNTIME_DIR/appzones/` to
+  `~/.local/state/appzones/`.
+- Zones still need NixOS (#22).
 
-- **Who starts zones is chosen for you**: `APPZONES_SUPERVISOR=auto` (the new
-  default) uses systemd when `appzones@.service` is installed and the user manager
-  answers, otherwise appzones starts zones itself; `systemd` and `spawn` force
-  one. A running zone stays with whoever started it: `stop`, `restart` and `logs`
-  follow it, and `stop` now also ends a zone served outside its unit (a terminal,
-  another process manager) instead of refusing. Starting through systemd warns
-  when the user manager has no `WAYLAND_DISPLAY`.
+**What changed:**
+
+- **`appzones serve ZONE [--notify-fd N]`**: the zone itself, in the foreground, as a
+  public command (it was the internal `_supervise`). The systemd unit runs it, and so can
+  any process manager or a terminal. Readiness over sd_notify, and with `--notify-fd N` a
+  newline on fd N (s6 style); SIGTERM or SIGINT stops the zone. `_supervise` still works
+  for units that are running during the upgrade.
+
+- **One server per zone**: `appzones serve` holds a lock
+  (`$XDG_RUNTIME_DIR/appzones/NAME.lock`) before it changes anything; a second one
+  exits with status 75 ("already served") instead of replacing the first zone's
+  socket. `--lock-fd N` takes a lock a caller already holds. The unit does not
+  restart on 75.
+
+- **The zone ends with its server**, however the server ends: outside systemd, a
+  killed `appzones serve` used to leave zone-init, bwrap and pasta running.
+  zone-init now holds a pidfd of the server and ends the zone when the server is
+  gone; zone-wayland and the D-Bus proxy are tied to it as well. Waiting for
+  zone-wayland's "ready" (which could block forever), the D-Bus proxy's bus, the
+  pidfd hand-over and zone-init's answer each have a deadline (`start_timeout`,
+  30 seconds by default); building `packages` comes before them and has none.
 
 - **Zones start on demand without systemd** (`APPZONES_SUPERVISOR=spawn`):
   `appzones run`, `up` and `shell` start a zone that does not answer, like tmux or
@@ -49,25 +58,30 @@ without systemd", #50).
   `ZONE.log.1` at a start when over 2 MB), on the never-list; `appzones logs` and
   autostart follow.
 
-- **The zone ends with its server**, however the server ends: outside systemd, a
-  killed `appzones serve` used to leave zone-init, bwrap and pasta running.
-  zone-init now holds a pidfd of the server and ends the zone when the server is
-  gone; zone-wayland and the D-Bus proxy are tied to it as well. Waiting for
-  zone-wayland's "ready" (which could block forever), the D-Bus proxy's bus, the
-  pidfd hand-over and zone-init's answer each have a 30-second deadline; building
-  `packages` comes before them and has none.
+- **Who starts zones is chosen for you**: `APPZONES_SUPERVISOR=auto` (the new
+  default) uses systemd when `appzones@.service` is installed and the user manager
+  answers, otherwise appzones starts zones itself; `systemd` and `spawn` force
+  one. A running zone stays with whoever started it: `stop`, `restart` and `logs`
+  follow it, and `stop` now also ends a zone served outside its unit (a terminal,
+  another process manager) instead of refusing. Starting through systemd warns
+  when the user manager has no `WAYLAND_DISPLAY`.
 
-- **One server per zone**: `appzones serve` holds a lock
-  (`$XDG_RUNTIME_DIR/appzones/NAME.lock`) before it changes anything; a second one
-  exits with status 75 ("already served") instead of replacing the first zone's
-  socket. `--lock-fd N` takes a lock a caller already holds. The unit does not
-  restart on 75.
+- **Zone settings for the server** (zones release 5, `requires = 5`), per zone or in
+  `[defaults]`: `supervisor` (`auto` · `systemd` · `spawn`; the zone's own value
+  beats `$APPZONES_SUPERVISOR`), `start_timeout` (the limit for each startup
+  step, default `"30s"`), and `linger` (default `""`: the zone stays; `"10m"`:
+  the zone ends 10 minutes after its last app, as a success, so systemd does not
+  restart it). Changing `supervisor` or `start_timeout` does not mark a running
+  zone as stale.
 
-- **`appzones serve ZONE [--notify-fd N]`**: the zone itself, in the foreground, as a
-  public command (it was the internal `_supervise`). The systemd unit runs it, and so can
-  any process manager or a terminal. Readiness over sd_notify, and with `--notify-fd N` a
-  newline on fd N (s6 style); SIGTERM or SIGINT stops the zone. `_supervise` still works
-  for units that are running during the upgrade.
+- **Service files for other process managers** in `contrib/` (and the package's
+  `share/appzones/contrib`): runit and s6 service directories, a dinit file
+  (`appzones@ZONE`), and the systemd units for other distributions. `appzones
+  serve`'s exit status now says how it ended: 0 for good (SIGINT, which
+  `appzones stop` now sends, Ctrl-C, or `linger`), 143 stopped by SIGTERM (a
+  manager's stop or restart; the unit counts it as success), 75 already served;
+  a stop during the start is no longer a failure. Zones still need NixOS: the zone's file system uses
+  its layout (#22).
 
 ## 0.6.2
 

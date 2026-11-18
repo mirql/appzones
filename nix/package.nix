@@ -21,7 +21,7 @@
 let
   # the package version; the config schema has its own release number
   # (zonecfg.RELEASE, what a zones.toml can require)
-  version = "0.6.2";
+  version = "0.7.0";
   zone-wayland = callPackage ../src/zone-wayland { };
   runtimePath = lib.makeBinPath [
     bubblewrap
