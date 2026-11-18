@@ -88,7 +88,8 @@ and data of one zone never reach another.
 appzones up untrusted                              # a mount needs a running zone
 appzones mount untrusted ~/Downloads --ro --as dl
 appzones run untrusted -- evince /mnt/host/dl/invoice.pdf
-appzones umount untrusted dl
+# ... read it; once Evince is closed:
+appzones umount untrusted dl                       # detaches the mount; ~/Downloads stays as it is
 ```
 
 ![A terminal: ~/Downloads is mounted read-only into the untrusted zone; inside, writing to invoice.pdf fails with Read-only file system; then it is unmounted](demo-file.gif)
