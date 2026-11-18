@@ -16,6 +16,7 @@ Source: docs/{{ p.file }}
 {%- if parts.size > 1 %}{% assign dir = parts[0] | append: "/" %}{% else %}{% assign dir = "" %}{% endif -%}
 {%- assign here = "](" | append: base | append: dir -%}
 {%- assign up = "](" | append: base -%}
-{%- assign body = body | replace: "](", "](@@" | replace: "](@@http", "](http" | replace: "](@@#", "](#" | replace: "](@@../", up | replace: "](@@", here -%}
+{%- assign own = "](" | append: base | append: p.file | append: "#" -%}
+{%- assign body = body | replace: "](", "](@@" | replace: "](@@http", "](http" | replace: "](@@#", own | replace: "](@@../", up | replace: "](@@", here -%}
 {{ body }}
 {% endfor %}{% endfor %}

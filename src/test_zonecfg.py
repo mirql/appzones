@@ -8,6 +8,7 @@ import importlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -208,9 +209,9 @@ class ZonecfgTest(unittest.TestCase):
         pages = {str(p.relative_to(docs)) for p in docs.rglob("*.md")} - {"index.md", "guide.md"}
         listed = set()
         for line in catalog.read_text().splitlines():
-            line = line.split("#", 1)[0].strip()
-            if line.startswith("- file:"):
-                listed.add(line.split(":", 1)[1].strip().strip("\"'"))
+            m = re.match(r"^    - file:\s*([^#]+?)\s*(#.*)?$", line)  # a page entry, at its own indentation
+            if m:
+                listed.add(m.group(1).strip("\"'"))
         self.assertEqual(sorted(pages - listed), [], "docs pages missing from docs/_data/llms.yml")
         self.assertEqual(sorted(listed - pages), [], "docs/_data/llms.yml names pages that do not exist")
 
