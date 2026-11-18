@@ -12,7 +12,7 @@ own window border colour. A zone is a systemd user unit
 xdg-dbus-proxy and the Wayland security context. Zones are declared in one
 TOML file; the `appzones` CLI starts them and runs things inside.
 
-Docs: https://mirql.github.io/appzones/ (all of them in one file:
+Docs: https://mirql.github.io/appzones/ (every guide page in one file:
 https://mirql.github.io/appzones/llms-full.txt). When a task needs a key or a detail not covered here, read
 the page as raw markdown: https://raw.githubusercontent.com/mirql/appzones/main/docs/configuration/reference.md (every key),
 `.../configuration/files.md` (binds, mounts), `.../configuration/dbus.md`,

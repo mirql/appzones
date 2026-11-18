@@ -199,16 +199,18 @@ class ZonecfgTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             c.mnt_dir("../x")
 
-    @unittest.skipUnless((HERE.parent / "docs/_data/llms.yml").exists(), "docs not in this tree (package build)")
+    @unittest.skipUnless((HERE.parent / "docs/index.md").exists(), "no docs in this tree (package build)")
     def test_llms_txt_lists_every_docs_page(self):
-        """docs/_data/llms.yml (llms.txt, llms-full.txt) names every docs page, and only pages that exist."""
+        """docs/_data/llms.yml (llms.txt, llms-full.txt) names every guide page, and only pages that exist."""
         docs = HERE.parent / "docs"
+        catalog = docs / "_data/llms.yml"
+        self.assertTrue(catalog.exists(), "docs/_data/llms.yml is missing")
         pages = {str(p.relative_to(docs)) for p in docs.rglob("*.md")} - {"index.md", "guide.md"}
         listed = set()
-        for line in (docs / "_data/llms.yml").read_text().splitlines():
-            line = line.strip()
+        for line in catalog.read_text().splitlines():
+            line = line.split("#", 1)[0].strip()
             if line.startswith("- file:"):
-                listed.add(line.split(":", 1)[1].strip())
+                listed.add(line.split(":", 1)[1].strip().strip("\"'"))
         self.assertEqual(sorted(pages - listed), [], "docs pages missing from docs/_data/llms.yml")
         self.assertEqual(sorted(listed - pages), [], "docs/_data/llms.yml names pages that do not exist")
 

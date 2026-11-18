@@ -6,8 +6,8 @@ The config schema has its own release number (`requires = N` in
 ## Unreleased
 
 - **Docs for AI tools**: https://mirql.github.io/appzones/llms.txt (an index of the docs,
-  with raw markdown links) and https://mirql.github.io/appzones/llms-full.txt (every page in
-  one file), generated from the docs pages by the site build.
+  with raw Markdown links) and https://mirql.github.io/appzones/llms-full.txt (every guide
+  page in one file), generated from the docs pages by the site build.
 
 - **JSON output for `appzones list --json`**: prints a JSON array with one object per zone,
   for scripts, status bars and AI agents. Fields: `name`, `state`, `network`, `dns`, `devices`,
