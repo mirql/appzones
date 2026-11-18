@@ -981,10 +981,11 @@ os.write(w, b"\\n"); os.close(w)
             self.assertFalse(zone.is_query(query(3) + b"\0" * 5000))
             self.assertIsNone(zone_init.dns_forward(answer(query(4), 1)))
             # the budget: a burst, then the rate
-            b = zone.Budget(rate=1000.0, burst=3)
+            now = [100.0]
+            b = zone.Budget(rate=10.0, burst=3, clock=lambda: now[0])
             self.assertEqual([b.take() for _ in range(4)], [True, True, True, False])
-            time.sleep(0.01)
-            self.assertTrue(b.take())
+            now[0] += 0.1  # one token back
+            self.assertEqual([b.take(), b.take()], [True, False])
             # one query never takes longer than the deadline, also when nothing answers
             silent = so.socket(so.AF_INET, so.SOCK_DGRAM)
             silent.bind(("127.0.0.1", 0))

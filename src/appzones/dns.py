@@ -37,7 +37,8 @@ CONN_TIMEOUT = 5.0  # for zone-init to send its query
 def upstreams(z: zonecfg.Zone) -> list[str]:
     """Where the zone's queries go: the host's resolver, or 1.1.1.1 and 1.0.0.1."""
     if z.settings["dns"] == "public":
-        return ["1.1.1.1", "1.0.0.1"]  # NOSONAR: the public resolvers when dns = "public"
+        # the public resolvers, when dns = "public" (not a secret, not a host of ours)
+        return ["1.1.1.1", "1.0.0.1"]  # NOSONAR
     return [net.host_resolver()]
 
 
@@ -122,14 +123,14 @@ def resolve(servers: list[str], msg: bytes) -> bytes | None:
 class Budget:
     """A token bucket: RATE queries a second on average, BURST at once."""
 
-    def __init__(self, rate: float = RATE, burst: int = BURST):
-        self.rate, self.burst = rate, burst
-        self.tokens, self.at = float(burst), time.monotonic()
+    def __init__(self, rate: float = RATE, burst: int = BURST, clock=time.monotonic):
+        self.rate, self.burst, self.clock = rate, burst, clock
+        self.tokens, self.at = float(burst), clock()
         self.lock = threading.Lock()
 
     def take(self) -> bool:
         with self.lock:
-            now = time.monotonic()
+            now = self.clock()
             self.tokens = min(self.burst, self.tokens + (now - self.at) * self.rate)
             self.at = now
             if self.tokens < 1:
