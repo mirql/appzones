@@ -110,3 +110,10 @@ blockquote {
   border-left: 3px solid #cba6f7;
   color: #a6adc8;
 }
+
+// the badge row on the home page: no frames, small gaps
+.badges img {
+  border-radius: 0;
+  margin: 0 0.15rem 0.3rem 0;
+  vertical-align: middle;
+}

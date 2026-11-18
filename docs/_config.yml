@@ -23,7 +23,7 @@ aux_links:
 aux_links_new_tab: true
 back_to_top: true
 back_to_top_text: Back to top
-footer_content: 'MIT licensed. <a href="https://github.com/mirql/appzones/security/advisories/new">Report a vulnerability</a> privately.'
+footer_content: 'MIT licensed. <a href="https://github.com/mirql/appzones/security/advisories/new">Report a vulnerability</a> privately. This site counts visits with Google Analytics; the README on GitHub does not.'
 gh_edit_link: true
 gh_edit_link_text: Edit this page on GitHub
 gh_edit_repository: https://github.com/mirql/appzones
