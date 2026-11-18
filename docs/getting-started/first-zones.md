@@ -2,6 +2,7 @@
 
 ```bash
 appzones list                      # zones, state, network, dns, devices, apps running, colour
+appzones list --json               # JSON array, one object per zone (for scripts)
 appzones run daily firefox         # start the zone if needed, launch the app declared in [apps]
 appzones run work -- chromium --incognito   # any command, not only declared apps
 appzones run --restart work slack  # apply a changed zones.toml first, if no app runs in work

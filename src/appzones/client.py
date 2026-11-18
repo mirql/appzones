@@ -262,22 +262,30 @@ def restart_zone(name: str) -> None:
     up(name, quiet=True)
 
 
-def zone_list() -> int:
+def zone_list(as_json: bool = False) -> int:
     cfg = load_cfg(quiet=True)
     rows = [("ZONE", "STATE", "NETWORK", "DNS", "DEVICES", "APPS", "COLOUR")]
+    zones = []
     for n, z in cfg.zones.items():
         s = z.settings
         net = s["network"] + ("+netbird" if s["netbird"] else "")
         if agent.ping(n):
             try:
-                apps = str(len(agent.zone_procs(n)))
-            except OSError:
-                apps = "?"
+                apps_count = len(agent.zone_procs(n))
+                apps_table, apps_json = str(apps_count), apps_count
+            except (OSError, ValueError):  # gone, or stopped mid-reply: unknown
+                apps_table, apps_json = "?", None
             state = "running" + (" (stale)" if stale(n, z) else "")
         else:
-            state, apps = "stopped", "-"
+            apps_table, apps_json = "-", None
+            state = "stopped"
         devs = [f"usb({'+'.join(s['usb'])})" if d == "usb" else d for d in s["devices"]]
-        rows.append((n, state, net, s["dns"], ",".join(devs) or "-", apps, s["colour"]))
+        rows.append((n, state, net, s["dns"], ",".join(devs) or "-", apps_table, s["colour"]))
+        zones.append({"name": n, "state": state, "network": net, "dns": s["dns"],
+                      "devices": devs, "apps": apps_json, "colour": s["colour"]})
+    if as_json:
+        print(json.dumps(zones))
+        return 0
     w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     for r in rows:
         print("  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip())

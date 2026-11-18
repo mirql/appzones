@@ -1,6 +1,7 @@
 """appzones: app zones on this host (appzones, https://github.com/mirql/appzones).
 
-    appzones list                          zones: state, network, dns, devices, apps running, colour
+    appzones list [--json]                 zones: state, network, dns, devices, apps running, colour
+                                           (--json: one object per zone, for scripts and bars)
     appzones which ZONE                    every setting in effect and where it came from
     appzones run [--restart] [--bus B] ZONE APP [ARGS...]
     appzones run [--restart] [--bus B] [--wait] ZONE -- CMD [ARGS...]
@@ -84,7 +85,7 @@ def main(argv: list[str]) -> int:
     if cmd == "_autostart":
         return client.autostart()
     if cmd == "list":
-        return client.zone_list()
+        return client.zone_list("--json" in rest)
     if cmd == "which":
         return client.which(one())
     if cmd == "up":

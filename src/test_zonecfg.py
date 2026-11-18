@@ -6,7 +6,9 @@ depends on, or touches, the real home.
 import contextlib
 import importlib
 import io
+import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -20,8 +22,8 @@ ZONE_MODULES = ["common", "net", "fs", "portals", "agent", "server", "client", "
 
 class _Zone:
     """The appzones modules as one namespace: reading a name finds the module that
-    defines it; setting one sets it in that module (so a test can replace a
-    function or a setting where the code looks it up)."""
+    defines it; setting one sets it there and wherever it was imported by name
+    (so a test can replace a function or a setting where the code looks it up)."""
 
     def __init__(self, mods):
         object.__setattr__(self, "_mods", mods)
@@ -36,7 +38,11 @@ class _Zone:
         return getattr(self._owner(name), name)
 
     def __setattr__(self, name, value):
-        setattr(self._owner(name), name, value)
+        # also where another module imported it by name (`from .common import load_cfg`)
+        old = getattr(self._owner(name), name)
+        for m in self._mods:
+            if name in vars(m) and vars(m)[name] is old:
+                setattr(m, name, value)
 
 
 class ZonecfgTest(unittest.TestCase):
@@ -219,6 +225,21 @@ class ZonecfgTest(unittest.TestCase):
         self.assertEqual(c.mnt_dir("ta"), f"{new}/ta/mnt")
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             c.mnt_dir("../x")
+
+    @unittest.skipUnless((HERE.parent / "docs/index.md").exists(), "no docs in this tree (package build)")
+    def test_llms_txt_lists_every_docs_page(self):
+        """docs/_data/llms.yml (llms.txt, llms-full.txt) names every guide page, and only pages that exist."""
+        docs = HERE.parent / "docs"
+        catalog = docs / "_data/llms.yml"
+        self.assertTrue(catalog.exists(), "docs/_data/llms.yml is missing")
+        pages = {str(p.relative_to(docs)) for p in docs.rglob("*.md")} - {"index.md", "guide.md"}
+        listed = set()
+        for line in catalog.read_text().splitlines():
+            m = re.match(r"^    - file:\s*([^#]+?)\s*(#.*)?$", line)  # a page entry, at its own indentation
+            if m:
+                listed.add(m.group(1).strip("\"'"))
+        self.assertEqual(sorted(pages - listed), [], "docs pages missing from docs/_data/llms.yml")
+        self.assertEqual(sorted(listed - pages), [], "docs/_data/llms.yml names pages that do not exist")
 
     def test_hyprland_zones_lua_is_a_copy(self):
         """contrib/hyprland/zones.lua (pre-0.6 name) is appzones.lua's code, past each file's header comment."""
@@ -887,6 +908,49 @@ class ZonecfgTest(unittest.TestCase):
         self.assertRefused(e, "unknown zone 'nope'")
         self.assertRefused(e, "args for 'other'")
         self.assertRefused(e, "undeclared app 'ghost'")
+
+    def test_list_json(self):
+        """zone_list --json outputs valid JSON with correct fields for running and stopped zones."""
+        zone = self._zone_mod()
+        # Stub the functions that would call real system resources
+        zone.ping = lambda n: {"ok": True} if n == "daily" else None
+        zone.zone_procs = lambda n: [1, 2]
+        zone.stale = lambda n, z: False
+        zone.load_cfg = lambda quiet=False: self.cfg('version = 1\nrequires = ' + str(self.z.RELEASE) + '\n'
+                                                      '[zones.daily]\ncolour = "#a6e3a1"\nnetwork = "internet"\n'
+                                                      '[zones.work]\ncolour = "#f38ba8"\nnetwork = "none"\n')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            zone.zone_list(as_json=True)
+        data = json.loads(out.getvalue())
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 2)
+        # Find zones by name
+        daily = next((z for z in data if z["name"] == "daily"), None)
+        work = next((z for z in data if z["name"] == "work"), None)
+        self.assertIsNotNone(daily)
+        self.assertIsNotNone(work)
+        # Check daily zone (running)
+        self.assertEqual(daily["name"], "daily")
+        self.assertEqual(daily["state"], "running")
+        self.assertEqual(daily["network"], "internet")
+        self.assertEqual(daily["dns"], "host")
+        self.assertEqual(daily["devices"], ["gpu", "audio"])
+        self.assertEqual(daily["apps"], 2)
+        self.assertEqual(daily["colour"], "#a6e3a1")
+        # Check work zone (stopped)
+        self.assertEqual(work["name"], "work")
+        self.assertEqual(work["state"], "stopped")
+        self.assertEqual(work["network"], "none")
+        self.assertIsNone(work["apps"])
+        # Verify table output also works
+        out2 = io.StringIO()
+        with contextlib.redirect_stdout(out2):
+            zone.zone_list(as_json=False)
+        table = out2.getvalue()
+        self.assertIn("ZONE", table.split("\n")[0])
+        self.assertIn("running", table)
+        self.assertIn(" 2 ", table)
 
 
 if __name__ == "__main__":

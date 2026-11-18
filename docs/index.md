@@ -54,5 +54,6 @@ has the details; [recipes](recipes.html) show what zones are good for.
 
 - [The README](https://github.com/mirql/appzones#readme): recipes for browsers, package managers and AI agents, and how appzones compares.
 - [The agent skill](https://github.com/mirql/appzones/blob/main/skills/appzones/SKILL.md): `npx skills add mirql/appzones` teaches your coding agent to use appzones.
+- For AI tools: [llms.txt](llms.txt) (an index of the guide) and [llms-full.txt](llms-full.txt) (every guide page in one file).
 - [Discussions](https://github.com/mirql/appzones/discussions) for questions and ideas; [good first issues](https://github.com/mirql/appzones/labels/good%20first%20issue) to help.
 - Found a way out of a zone? [Report it privately](https://github.com/mirql/appzones/security/advisories/new).
