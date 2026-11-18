@@ -85,6 +85,7 @@ and data of one zone never reach another.
 ## Opening a file you don't trust
 
 ```bash
+appzones up untrusted                              # a mount needs a running zone
 appzones mount untrusted ~/Downloads --ro --as dl
 appzones run untrusted -- evince /mnt/host/dl/invoice.pdf
 appzones umount untrusted dl

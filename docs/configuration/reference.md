@@ -96,7 +96,7 @@ session managers and shells, the host's file and settings daemons
 
 - `own` never takes `org.freedesktop.*`, `org.kde.*`, `org.gnome.*`,
   `org.xfce.*`, `org.a11y.*`, `com.canonical.*` or the Mozilla apps'
-  `org.mozilla.firefox*` (see "Firefox" below), and a wildcard needs at
+  `org.mozilla.firefox*` (see Firefox under [D-Bus](dbus.md)), and a wildcard needs at
   least three labels before `.*` (`org.example.player.*`, not `org.example.*`);
 - neither `talk` nor `own` takes a name that a host `.service` file provides
   (the validator asks the running session bus which names it can start;
