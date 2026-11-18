@@ -21,9 +21,10 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify)
   over sd_notify, and with `--notify-fd N` as a newline on fd N (s6 style).
   SIGTERM or SIGINT stops the zone and its helpers. One server per zone: it
   holds `$XDG_RUNTIME_DIR/appzones/NAME.lock` (released when it exits); a
-  second `serve` exits with status 75, "already served", and changes nothing.
-  With `--lock-fd N` a caller hands over a lock it took; it lives as long as
-  any copy of that fd, so the caller closes its own (or `exec`s into `serve`).
+  second `serve` exits with status 75, "already served", and leaves the running
+  zone untouched. With `--lock-fd N` a caller hands over a lock it took: fd N is
+  inherited across `exec` (not close-on-exec), and the lock lives as long as any
+  copy of it, so the caller closes its own (or `exec`s into `serve`).
 - The `appzones` CLI talks to zone-init over a socket the host makes,
   `$XDG_RUNTIME_DIR/appzones/NAME/agent.sock`, outside the zone. zone-init
   gets it as an inherited fd; there is no socket file inside the zone. zone-init
