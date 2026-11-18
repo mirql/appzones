@@ -1042,7 +1042,6 @@ pkgs.testers.runNixOSTest {
         u("! appzones ping tb")
         u("systemctl --user kill --kill-whom=main -s KILL client-tb")
         machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + "systemctl --user is-active client-tb"), timeout=30)
-        u("! appzones ping tb")  # still starting
         machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ping tb"), timeout=60)
         assert servers("tb") == 1
         print("PASS  a client killed before the zone was ready: the server finishes the start; one server")

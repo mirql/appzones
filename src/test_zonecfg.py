@@ -392,11 +392,15 @@ os.write(w, b"\\n"); os.close(w)
         self.assertRefused(self.errs('binds = [{ path = "~/.local/state", mode = "ro" }]'), "never enters a zone")
         custom = Path(self.tmp.name) / "xstate"
         (custom / "appzones").mkdir(parents=True)
+        old = os.environ.get("XDG_STATE_HOME")
         os.environ["XDG_STATE_HOME"] = str(custom)
         try:
             self.assertIn(custom / "appzones", self.z.denied_paths())
         finally:
-            del os.environ["XDG_STATE_HOME"]
+            if old is None:
+                del os.environ["XDG_STATE_HOME"]
+            else:
+                os.environ["XDG_STATE_HOME"] = old
 
     def test_spawn_log_rotation(self):
         zone = self._zone_mod()

@@ -42,11 +42,11 @@ def up(name: str, quiet: bool = False) -> None:
     die(f"zone {name} did not answer within 10 s; see `appzones logs {name}`")
 
 
-def _log_tail(name: str, lines: int = 15) -> str:
-    """The last LINES of the zone's log, from a bounded read at its end."""
+def _log_tail(name: str, lines: int = 15, since: int = 0) -> str:
+    """The last LINES of the zone's log written after offset SINCE, from a bounded read."""
     try:
         with open(common.log_path(name), "rb") as f:
-            f.seek(max(0, f.seek(0, os.SEEK_END) - 16384))
+            f.seek(max(since, f.seek(0, os.SEEK_END) - 16384))
             text = f.read().decode(errors="replace")
     except OSError:
         return ""
@@ -80,9 +80,11 @@ def _start_server(name: str, lock: int) -> int:
     # the server runs in /: the config and state it reads must not be relative paths
     env["APPZONES_CONFIG"] = str(Path(common.CONFIG).absolute())
     env.pop("ZONES_CONFIG", None)
-    if zonecfg.env("STATE"):
-        env["APPZONES_STATE"] = str(Path(common.STATE).absolute())
-        env.pop("ZONES_STATE", None)
+    for key in ("STATE", "DENIED_PATHS"):
+        v = zonecfg.env(key)
+        if v:
+            env[f"APPZONES_{key}"] = str(Path(v).absolute())
+            env.pop(f"ZONES_{key}", None)
     argv = [sys.executable, "-B", str(common.HERE / "zone.py"), "serve", name, "--lock-fd", str(lock),
             "--notify-fd", str(w)]
     pid = os.fork()
@@ -105,9 +107,10 @@ def _start_server(name: str, lock: int) -> int:
 def spawn(name: str, quiet: bool = False) -> None:
     """Without systemd: start zone NAME's server ourselves, or wait for the one that is
     starting. The zone's lock decides who starts it: exactly one server per zone."""
+    since = _log_size(name)
     r = claim(name, quiet)
     if r is not None:
-        wait_ready(name, r, quiet)
+        wait_ready(name, r, quiet, since if common.log_path(name).exists() and _log_size(name) >= since else 0)
 
 
 def claim(name: str, quiet: bool = False, wait: bool = True) -> int | None:
@@ -150,9 +153,17 @@ def claim(name: str, quiet: bool = False, wait: bool = True) -> int | None:
         os.close(lock)  # the server holds it now
 
 
-def wait_ready(name: str, r: int, quiet: bool = False) -> None:
-    """Until zone NAME's server signals readiness on R; dies with the end of its log when
-    it ended first. No total limit: the server has per-step deadlines, packages may build."""
+def _log_size(name: str) -> int:
+    try:
+        return common.log_path(name).stat().st_size
+    except OSError:
+        return 0
+
+
+def wait_ready(name: str, r: int, quiet: bool = False, since: int = 0) -> None:
+    """Until zone NAME's server signals readiness on R; dies with the end of its log (from
+    offset SINCE: this attempt) when it ended first. No total limit: the server has
+    per-step deadlines, packages may build."""
     try:
         note = time.monotonic() + 3
         poll = select.poll()
@@ -162,7 +173,7 @@ def wait_ready(name: str, r: int, quiet: bool = False) -> None:
             if ready:
                 if os.read(r, 1) == b"\n":
                     return
-                die(f"zone {name} did not start; the end of its log ({common.log_path(name)}):\n{_log_tail(name)}")
+                die(f"zone {name} did not start; the end of its log ({common.log_path(name)}):\n{_log_tail(name, since=since)}")
             if not quiet and note and time.monotonic() > note:
                 warn(f"zone {name} is still starting (Ctrl-C leaves it starting; log: {common.log_path(name)})")
                 note = 0
@@ -654,7 +665,7 @@ def apps() -> int:
 
 def autostart() -> int:
     cfg = load_cfg(quiet=True)
-    starting: list[tuple[str, int]] = []
+    starting: list[tuple[str, int, int]] = []
     server.write_colours(cfg)
     apps()
     for n, z in cfg.zones.items():
@@ -664,14 +675,17 @@ def autostart() -> int:
                 systemctl("start", "--no-block", f"appzones@{n}.service", check=False)
             else:
                 try:  # start them all first: a slow one (packages) holds up no other
+                    since = _log_size(n)
                     r = claim(n, quiet=True, wait=False)
                     if r is not None:
-                        starting.append((n, r))
+                        starting.append((n, r, since))
                 except SystemExit:
                     pass  # said why; the other zones still start
-    for n, r in starting:
+                except OSError as e:
+                    warn(f"autostart: zone {n}: {e.strerror or e}")
+    for n, r, since in starting:
         try:
-            wait_ready(n, r, quiet=True)
+            wait_ready(n, r, quiet=True, since=since)
         except SystemExit:
             pass
     return 0
