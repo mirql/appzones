@@ -64,6 +64,11 @@ appzones-helper zone-wayland SOCKET APP_ID INSTANCE
   its context lifetime (the close-pipe writer lives as long as the process).
 - **The switch** is a server setting chosen at install time (package or module), not an
   environment variable: systemd units, `sudo` and the tests' `env -i` do not pass one on.
+- **The install-location rule** changes only with the Rust helper: `server.install_error`
+  (and the Makefile's PREFIX check) keep requiring `/usr` or the Nix store for the Python
+  zone-init, and drop it when the Rust helper is installed, since then only the bound
+  binary must reach the zone. A test installs under `/opt` with the Rust helper (zones
+  start) and without it (refused, as today).
 
 Order: skeleton (Cargo, a reproducible static Nix build, `make` where `cargo` is present,
 the first numbers: build time and stripped size); zone-wayland; zone-init op by op (`ping`,
@@ -82,7 +87,8 @@ Traps the review named, each with a test:
 - DNS: id matching, TC then TCP, EDNS size, truncation, the budget, the total deadline.
 
 Done when: `vm-rust` and the distro tests pass with zones that contain no Python of
-appzones', and a link opens from a `links = "zone"` zone without Python.
+appzones', a link opens from a `links = "zone"` zone without Python, and an install
+outside `/usr` works with the Rust helper.
 
 ## Phase 1b: the policy core and the root helper
 
