@@ -66,7 +66,7 @@ vmTools.runInLinuxImage (
       src = pkgs.lib.cleanSource ../.;
     }
     ''
-      timeout 900 sh ${./distro-test.sh} $src "${makeFlags}" > $NIX_BUILD_TOP/log 2>&1 || true
+      timeout 900 sh ${./distro-test.sh} $src ${pkgs.lib.escapeShellArg makeFlags} > $NIX_BUILD_TOP/log 2>&1 || true
       cat $NIX_BUILD_TOP/log
       grep -qx "ALL PASSED" $NIX_BUILD_TOP/log
       mkdir -p $out && cp $NIX_BUILD_TOP/log $out/log
