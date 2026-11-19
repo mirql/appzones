@@ -121,6 +121,7 @@ environment: `python3 -m venv .venv && . .venv/bin/activate` inside the zone.
 
 ```bash
 appzones run dev -- kitty -e tmux new -As dev   # a terminal + tmux session inside
+appzones shell dev                              # or, without a desktop (SSH): a shell inside
 # then, inside: npm install, npm run dev, pip install ...
 ```
 
@@ -141,6 +142,7 @@ nix_ld   = true                         # NixOS; on Ubuntu or Debian leave out t
 
 ```bash
 appzones run agents -- kitty     # install and log in to your agent CLI in there
+appzones shell agents            # the same without a desktop (SSH)
 ```
 
 The agent's login, its tokens and its history stay in the zone's home. It

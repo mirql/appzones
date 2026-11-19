@@ -105,7 +105,8 @@ the command's exit code. It never takes a terminal (no host terminal enters a
 zone), so give it pipes or files:
 
 ```bash
-appzones run --wait dev -- sh -c 'cd ~/src/my-project && npm test' </dev/null | tee test.log
+appzones run --wait dev -- sh -c 'cd ~/src/my-project && npm test' </dev/null >test.log 2>&1
+echo "npm test exited with $?"
 ```
 
 The zone has its own home (`~/.local/share/appzones/dev/home`). Of your
