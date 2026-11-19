@@ -147,12 +147,13 @@ stay in `~/.local/share/appzones` and `~/.config/appzones`.
 ## Arch Linux (preview)
 
 Tested by hand on Arch (kernel 7.3, Python 3.14): the same as on Ubuntu and
-Debian, and no AppArmor profile is needed. The package's `PKGBUILD` is in
-`contrib/arch/` (AUR: `appzones`):
+Debian, and no AppArmor profile is needed. The package is on the AUR,
+[`appzones`](https://aur.archlinux.org/packages/appzones) (its `PKGBUILD` is
+kept in `contrib/arch/`):
 
 ```bash
-git clone https://github.com/mirql/appzones && cd appzones/contrib/arch
-makepkg -si                          # builds zone-wayland with Arch's flags, installs the package
+paru -S appzones                     # or yay -S appzones, or by hand:
+# git clone https://aur.archlinux.org/appzones.git && cd appzones && makepkg -si
 systemctl --user daemon-reload
 sudo gpasswd -a "$USER" appzones     # for `appzones mount`; then log in again
 ```

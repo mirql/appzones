@@ -10,7 +10,7 @@
   - `runit/appzones-ZONE/`, `s6/appzones-ZONE/`: a service directory; copy it
     once per zone as `appzones-NAME` (the zone's name comes from the directory's).
   - `dinit/appzones`: one file for every zone, started as `appzones@NAME`.
-- `arch/`: the Arch Linux package (`PKGBUILD`, also on the AUR as `appzones`).
+- `arch/`: the Arch Linux package; the AUR's `appzones` is a copy of it.
 - `apparmor/`: the profile `make install` puts on Ubuntu 23.10+, so bwrap and
   pasta may create user namespaces.
 

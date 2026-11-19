@@ -3,6 +3,10 @@
 The config schema has its own release number (`requires = N` in
 `zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
 
+## Unreleased
+
+- Arch: the package is on the AUR (`paru -S appzones`); the docs say so.
+
 ## 0.8.1
 
 Arch Linux as a preview, like Ubuntu and Debian in 0.8.0: an AUR package. Nothing changes on NixOS.

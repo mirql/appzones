@@ -257,7 +257,7 @@ sudo apt install python3 bubblewrap passt nftables xdg-dbus-proxy git make gcc p
 git clone https://github.com/mirql/appzones && cd appzones && make && sudo make install
 ```
 
-Arch: `makepkg -si` in `contrib/arch/` ([details](https://mirql.github.io/appzones/getting-started/install.html#arch-linux-preview)).
+Arch: `paru -S appzones` from the [AUR](https://aur.archlinux.org/packages/appzones) ([details](https://mirql.github.io/appzones/getting-started/install.html#arch-linux-preview)).
 The [install page](https://mirql.github.io/appzones/getting-started/install.html#ubuntu-and-debian-preview)
 says what it installs (an AppArmor profile on Ubuntu, a sudo rule for
 `appzones mount`) and how to start your first zone.
