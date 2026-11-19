@@ -13,7 +13,8 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
    └─ pasta (own netns) ─ appzones _netsetup (nft deny list, the agent's
       │                   socket, then exec)
       └─ bwrap (user, pid, ipc, uts, cgroup ns; no caps; no_new_privs)
-         └─ zone-init     the agent inside: run, shell (pty), ps
+         └─ zone-init     the agent inside: run, shell (pty), ps (its protocol: the
+                          top of src/zone_init.py, tested by AgentProtocolTest)
             └─ apps
 ```
 

@@ -1836,7 +1836,7 @@ class AgentProtocolTest(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertIn("/nonexistent/program", r["error"])
         self.assertFalse(self.request({"op": "run", "argv": ["true"], "bus": "elsewhere"})[0]["ok"])
-        for argv in ("sh", [1], [["sh"]]):
+        for argv in ("sh", [1], [["sh"]], [], "", 0, {}):
             self.assertFalse(self.request({"op": "shell", "argv": argv})[0]["ok"], argv)
         self.assertFalse(self.request({"op": "busy", "path": "/etc"})[0]["ok"])
         self.assertTrue(self.request({"op": "mounts"})[0]["ok"])
@@ -1883,7 +1883,9 @@ class AgentProtocolTest(unittest.TestCase):
 
     def test_run_status_ps(self):
         """Without --wait: a pid at once; status while running and after, with the output's tail; ps."""
-        r = self.request({"op": "run", "argv": ["sh", "-c", "echo line-one; sleep 0.5; echo line-two"]})[0]
+        go = Path(self.tmp.name) / "go"  # the command waits for it: running until the checks are done
+        r = self.request({"op": "run", "argv": ["sh", "-c", f"echo line-one; while [ ! -e {go} ]; do sleep 0.05; done; "
+                                                            "echo line-two"]})[0]
         pid = r["pid"]
         st = self.request({"op": "status", "pid": pid})[0]
         self.assertEqual((st["ok"], st["running"], st["exit"]), (True, True, None))
@@ -1891,7 +1893,8 @@ class AgentProtocolTest(unittest.TestCase):
         self.assertIn(pid, [p[0] for p in ps["procs"]])
         self.assertIsInstance(ps["init"], int)
         self.assertEqual(ps["helpers"], [])
-        for _ in range(60):
+        go.touch()
+        for _ in range(100):
             st = self.request({"op": "status", "pid": pid})[0]
             if not st["running"]:
                 break
@@ -1901,12 +1904,17 @@ class AgentProtocolTest(unittest.TestCase):
 
     def test_shell(self):
         """shell: a pty in the zone; after the first line the connection carries raw bytes."""
+        # the command waits for a line, sent after the reply (zone-init sets the size before it)
         s = self.connect({"op": "shell", "rows": 30, "cols": 100, "term": "dumb",
-                          "argv": ["sh", "-c", "stty size; echo shell-$TERM-ok"]})
+                          "argv": ["sh", "-c", "read x; stty size; echo shell-$TERM-ok"]})
         first = b""
         while not first.endswith(b"\n"):
-            first += s.recv(1)
+            c = s.recv(1)
+            if not c:
+                self.fail(f"connection closed before the reply: {first!r}")
+            first += c
         self.assertTrue(json.loads(first)["ok"])
+        s.sendall(b"go\n")
         out = b""
         while True:
             chunk = s.recv(65536)
