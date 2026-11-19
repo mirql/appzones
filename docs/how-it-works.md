@@ -30,13 +30,18 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   second `serve` exits with status 75, "already served", and leaves the running
   zone untouched. With `--lock-fd N` a caller hands over a lock it took: fd N is
   inherited across `exec` (not close-on-exec), and the lock lives as long as any
-  copy of it, so the caller closes its own (or `exec`s into `serve`).
+  copy of it, so the caller closes its own (or `exec`s into `serve`). The lock
+  is also how appzones finds a zone's server: `stop`, `restart`, `logs` and a
+  waiting client look for the process that has the lock file open (only the
+  server keeps it: the descriptor is close-on-exec). A server from before 0.7,
+  which has no lock, is found by its command line. zone-init names itself
+  `zone-init` (`pgrep -x zone-init`).
 - Who starts a zone that does not answer: `APPZONES_SUPERVISOR=auto` (the
   default) uses the unit when it is installed and the user manager answers
   (`systemctl --user show -p LoadState appzones@probe.service` is `loaded`),
   else appzones; `systemd` and `spawn` force one. A running zone stays with
   whoever runs it: `stop`, `restart` and `logs` check the unit first, then
-  servers outside it.
+  servers outside it (found by the zone's lock, see above).
 - Without systemd (`spawn`), `appzones run`, `up` and `shell`
   start the zone themselves when it does not answer: the client takes the
   zone's lock and starts `appzones serve ZONE --lock-fd L --notify-fd W`
