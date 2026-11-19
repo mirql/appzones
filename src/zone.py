@@ -91,7 +91,8 @@ def main(argv: list[str]) -> int:
         print(version_line())
         return 0
     cmd, rest = argv[0], argv[1:]
-    if cmd == "_autostart" or not (cmd.startswith("_") or cmd in ("active", "serve")):
+    # only for a command we know: a typo touches nothing
+    if cmd == "_autostart" or (cmd in COMMANDS and cmd not in ("active", "serve")):
         upgrade.migrate_state()
 
     def one() -> str:

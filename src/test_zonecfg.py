@@ -634,6 +634,10 @@ os.write(w, b"\\n"); os.close(w)
         sys.path.insert(0, str(HERE))
         import zone as entry
         entry = importlib.reload(entry)
+        migrated = []
+        real_migrate = entry.upgrade.migrate_state
+        entry.upgrade.migrate_state = lambda *a, **k: migrated.append(a)
+        self.addCleanup(setattr, entry.upgrade, "migrate_state", real_migrate)
         # die() prints the line and exits 2, so the message is what to assert
         for args, want in (
             (["lsit"], "appzones: unknown command 'lsit' (did you mean 'list'?); see appzones --help" + chr(10)),
@@ -647,6 +651,7 @@ os.write(w, b"\\n"); os.close(w)
         with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
             entry.main(["netsetup"])
         self.assertNotIn("_netsetup", err.getvalue())
+        self.assertEqual(migrated, [])  # a typo migrates no state
 
     def test_version_flag(self):
         """`appzones --version` and `-V`: the package version (a placeholder in a source checkout) and the config release."""
