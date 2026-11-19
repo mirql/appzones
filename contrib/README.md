@@ -10,6 +10,9 @@
   - `runit/appzones-ZONE/`, `s6/appzones-ZONE/`: a service directory; copy it
     once per zone as `appzones-NAME` (the zone's name comes from the directory's).
   - `dinit/appzones`: one file for every zone, started as `appzones@NAME`.
+- `arch/`: the Arch Linux package (`PKGBUILD`, also on the AUR as `appzones`).
+- `apparmor/`: the profile `make install` puts on Ubuntu 23.10+, so bwrap and
+  pasta may create user namespaces.
 
 `appzones serve` exits 0 when it ends for good (SIGINT: `appzones stop`,
 Ctrl-C; or `linger`), 143 when stopped by SIGTERM (the manager's own stop or

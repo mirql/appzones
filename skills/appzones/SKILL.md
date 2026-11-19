@@ -62,8 +62,9 @@ appzones which ZONE                      # every setting in effect and where it 
 appzones --version                       # the version and the config release (for a bug report)
 ```
 
-appzones runs on NixOS (the flake's module) and, as a preview, on Ubuntu 24.04 and
-Debian 12 (`make && sudo make install` from a checkout: code in `/usr/local/lib/appzones`,
+appzones runs on NixOS (the flake's module) and, as a preview, on Ubuntu 24.04,
+Debian 12 and Arch (`makepkg -si` in `contrib/arch/`, members of the group `appzones`
+may use `appzones mount`), or `make && sudo make install` from a checkout: code in `/usr/local/lib/appzones`,
 an AppArmor profile on Ubuntu, a sudo rule for `appzones mount`). Outside NixOS,
 `packages` needs Nix and `nix_ld` is not used.
 

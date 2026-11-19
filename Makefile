@@ -31,6 +31,8 @@ APPARMOR ?= auto
 SYSTEMD ?= auto
 VERSION = $(shell sed -n 's/^  version = "\(.*\)";/\1/p' nix/package.nix)
 CC ?= cc
+# a distribution's own flags (hardening) when it sets them; -Werror only in our default
+CFLAGS ?= -O2 -Wall -Werror
 # the protocol (from wayland-protocols 1.32+; a copy here, since Debian 12 has 1.31)
 WAYLAND_XML = src/zone-wayland/security-context-v1.xml
 
@@ -47,8 +49,8 @@ zone-wayland:
 	@if pkg-config --exists wayland-client 2>/dev/null && command -v wayland-scanner >/dev/null; then \
 		wayland-scanner client-header "$(WAYLAND_XML)" build/security-context-v1-client-protocol.h && \
 		wayland-scanner private-code "$(WAYLAND_XML)" build/security-context-v1-protocol.c && \
-		$(CC) -O2 -Wall -Werror -Ibuild -o build/zone-wayland src/zone-wayland/zone-wayland.c \
-			build/security-context-v1-protocol.c $$(pkg-config --cflags --libs wayland-client) && \
+		$(CC) $(CPPFLAGS) $(CFLAGS) -Ibuild -o build/zone-wayland src/zone-wayland/zone-wayland.c \
+			build/security-context-v1-protocol.c $$(pkg-config --cflags --libs wayland-client) $(LDFLAGS) && \
 		echo "built build/zone-wayland"; \
 	else \
 		rm -f build/zone-wayland; \

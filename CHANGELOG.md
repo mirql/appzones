@@ -3,6 +3,16 @@
 The config schema has its own release number (`requires = N` in
 `zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
 
+## Unreleased
+
+- **Arch Linux** (preview): a `PKGBUILD` in `contrib/arch/` (for the AUR). It
+  installs under `/usr`, with the systemd user units and a sudo rule for
+  `appzones mount` for the group `appzones` (sysusers). Tested by hand on Arch:
+  zones, DNS, the host refused, `appzones mount`, `pacman -R`.
+- `make` builds `zone-wayland` with the distribution's `CFLAGS`, `CPPFLAGS` and
+  `LDFLAGS` when they are set (Arch's hardening: full RELRO); our default stays
+  `-O2 -Wall -Werror`.
+
 ## 0.8.0
 
 **0.8: zones beyond NixOS.** appzones ran only on NixOS: a zone's file system was

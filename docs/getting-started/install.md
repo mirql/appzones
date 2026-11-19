@@ -4,6 +4,7 @@
 |---|---|---|
 | **NixOS** | everything: desktop apps, window borders on Hyprland, `packages`, `nix_ld` | [the flake's module](#nixos) |
 | **Ubuntu 24.04, Debian 12** (preview) | command-line zones: dev tools and AI agents, also over SSH; desktop apps are not tested yet | [`make install`](#ubuntu-and-debian-preview) |
+| **Arch Linux** (preview) | the same as Ubuntu and Debian | [a PKGBUILD](#arch-linux-preview), or `make install` |
 
 Other distributions with systemd or another init, Python 3.11 and the same
 tools should work like Ubuntu and Debian; they are not tested yet.
@@ -143,10 +144,30 @@ install`, then `appzones restart ZONE` for running zones. `sudo make uninstall`
 removes everything `make install` put there; your zones' homes and settings
 stay in `~/.local/share/appzones` and `~/.config/appzones`.
 
+## Arch Linux (preview)
+
+Tested by hand on Arch (kernel 7.3, Python 3.14): the same as on Ubuntu and
+Debian, and no AppArmor profile is needed. The package's `PKGBUILD` is in
+`contrib/arch/` (AUR: `appzones`):
+
+```bash
+git clone https://github.com/mirql/appzones && cd appzones/contrib/arch
+makepkg -si                          # builds zone-wayland with Arch's flags, installs the package
+systemctl --user daemon-reload
+sudo gpasswd -a "$USER" appzones     # for `appzones mount`; then log in again
+```
+
+The package puts appzones under `/usr/lib/appzones`, the command in
+`/usr/bin`, the systemd user units in `/usr/lib/systemd/user`, and a sudo rule
+for the mount helper for the group `appzones` (created by sysusers), so only
+the users you add to it may use `appzones mount`. `pacman -R appzones` removes
+it all. Then [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3).
+`make install` from a checkout works too, as on Debian.
+
 ## Requirements
 
-- x86_64 Linux: NixOS, or Ubuntu 24.04 / Debian 12 (preview, above). Python
-  3.11 or newer.
+- x86_64 Linux: NixOS, or Ubuntu 24.04, Debian 12, Arch (preview, above).
+  Python 3.11 or newer.
 - For desktop apps, a Wayland compositor with `wp_security_context_v1`
   (Hyprland, sway, KWin and others): every zone gets its own security
   context, and a zone does not start without it when there is a Wayland

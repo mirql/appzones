@@ -55,8 +55,8 @@ appzones list                     # zones, state, network, devices, apps running
 
 > [!NOTE]
 > appzones is young (0.8). It runs on **x86_64 NixOS**, and as a preview on
-> **Ubuntu 24.04 and Debian 12** (command-line zones; desktop apps there are
-> not tested yet). Window borders and tags per zone need Hyprland.
+> **Ubuntu 24.04, Debian 12 and Arch** (command-line zones; desktop apps there
+> are not tested yet). Window borders and tags per zone need Hyprland.
 
 ## Why
 
@@ -220,7 +220,7 @@ its own:
 | Network | internet yes; LAN, host and tailnet no | on or off | on, off or a filter | per-VM firewall | the host's |
 | Which zone is this window? | border colour, the app can't fake it | no | no | border colour | no |
 | Isolation | namespaces, same kernel | namespaces, same kernel | namespaces, same kernel, setuid binary | separate VMs (much stronger) | almost none |
-| Runs on | NixOS; Ubuntu, Debian (preview) | any distro | any distro | Qubes only | any distro |
+| Runs on | NixOS; Ubuntu, Debian, Arch (preview) | any distro | any distro | Qubes only | any distro |
 
 appzones is for when Flatpak is too fine-grained, Qubes is too much, and
 you want your messenger, your work browser, your agents and that PDF in
@@ -257,6 +257,7 @@ sudo apt install python3 bubblewrap passt nftables xdg-dbus-proxy git make gcc p
 git clone https://github.com/mirql/appzones && cd appzones && make && sudo make install
 ```
 
+Arch: `makepkg -si` in `contrib/arch/` ([details](https://mirql.github.io/appzones/getting-started/install.html#arch-linux-preview)).
 The [install page](https://mirql.github.io/appzones/getting-started/install.html#ubuntu-and-debian-preview)
 says what it installs (an AppArmor profile on Ubuntu, a sudo rule for
 `appzones mount`) and how to start your first zone.
