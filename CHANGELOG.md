@@ -20,7 +20,8 @@ zones beyond NixOS", #68).
   (`appzones restart ZONE`) to get 0.8's DNS in the zone (zone-init on `127.0.0.53`).
 - Hyprland: zone windows that appzones cannot name (a zone started without systemd,
   another sandbox such as Flatpak) now get a red border and the tag `zone:?` instead
-  of the host's look. Reload Hyprland's config if you copied `appzones.lua`.
+  of the host's look. Reload Hyprland's config; if you copied `appzones.lua`,
+  copy the new one first.
 - A mistyped command prints one line and exits 2, no longer the whole usage text.
 
 **What changed:**

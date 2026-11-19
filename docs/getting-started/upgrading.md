@@ -6,8 +6,9 @@
   gives them 0.8's DNS (the zone answers its own, on `127.0.0.53`).
 - **Hyprland:** a window from a zone appzones cannot name (one started without
   systemd, or another sandbox such as Flatpak) gets a red border and the tag
-  `zone:?` instead of looking like a host window. Reload Hyprland's config if
-  you copied `appzones.lua` instead of loading it from the package.
+  `zone:?` instead of looking like a host window. If you load `appzones.lua`
+  from the package, reload Hyprland's config; if you copied it, copy the new
+  one first (a copy of 0.7's still looks windows up the old way).
 - **Ubuntu 24.04 and Debian 12** are new (preview): see [Install](install.md#ubuntu-and-debian-preview).
 
 ## From 0.5
