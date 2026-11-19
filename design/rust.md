@@ -68,7 +68,12 @@ appzones-helper zone-wayland SOCKET APP_ID INSTANCE
   (and the Makefile's PREFIX check) keep requiring `/usr` or the Nix store for the Python
   zone-init, and drop it when the Rust helper is installed, since then only the bound
   binary must reach the zone. A test installs under `/opt` with the Rust helper (zones
-  start) and without it (refused, as today).
+  start) and without it (refused, as today). This never applies to the root step: the
+  mount helper named in the sudo rule must sit where only root can change it. `make
+  install` writes the sudo rule only when the helper and every directory above it are
+  owned by root and writable by no one else (it refuses otherwise, as it refuses a PREFIX
+  outside `/usr` today), and a test installs under a user-writable directory and checks
+  that no sudo rule is written.
 
 Order: skeleton (Cargo, a reproducible static Nix build, `make` where `cargo` is present,
 the first numbers: build time and stripped size); zone-wayland; zone-init op by op (`ping`,
