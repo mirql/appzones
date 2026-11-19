@@ -1887,13 +1887,15 @@ class AgentProtocolTest(unittest.TestCase):
         r = self.request({"op": "run", "argv": ["sh", "-c", f"echo line-one; while [ ! -e {go} ]; do sleep 0.05; done; "
                                                             "echo line-two"]})[0]
         pid = r["pid"]
-        st = self.request({"op": "status", "pid": pid})[0]
-        self.assertEqual((st["ok"], st["running"], st["exit"]), (True, True, None))
-        ps = self.request({"op": "ps"})[0]
-        self.assertIn(pid, [p[0] for p in ps["procs"]])
-        self.assertIsInstance(ps["init"], int)
-        self.assertEqual(ps["helpers"], [])
-        go.touch()
+        try:
+            st = self.request({"op": "status", "pid": pid})[0]
+            self.assertEqual((st["ok"], st["running"], st["exit"]), (True, True, None))
+            ps = self.request({"op": "ps"})[0]
+            self.assertIn(pid, [p[0] for p in ps["procs"]])
+            self.assertIsInstance(ps["init"], int)
+            self.assertEqual(ps["helpers"], [])
+        finally:
+            go.touch()  # released also when a check fails (it would outlive zone-init)
         for _ in range(100):
             st = self.request({"op": "status", "pid": pid})[0]
             if not st["running"]:
