@@ -264,9 +264,14 @@ def _cwd(req):
     return cwd if os.path.isdir(cwd) else os.environ.get("HOME", "/")
 
 
+def _argv_ok(argv):
+    """A non-empty list of strings (a string is not an argv: it would run as one program)."""
+    return isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv)
+
+
 def op_run(conn, req, fds):
-    argv = req.get("argv") or []
-    if not argv or not all(isinstance(a, str) for a in argv):
+    argv = req.get("argv")
+    if not _argv_ok(argv):
         for f in fds:
             os.close(f)
         reply(conn, {"ok": False, "error": "argv must be a non-empty list of strings"}); conn.close(); return
@@ -333,6 +338,8 @@ def op_shell(conn, req, fds):
     for f in fds:
         os.close(f)
     argv = req.get("argv") or SHELL
+    if not _argv_ok(argv):
+        reply(conn, {"ok": False, "error": "argv must be a non-empty list of strings"}); conn.close(); return
     env = _env(req)
     env["TERM"] = req.get("term") if isinstance(req.get("term"), str) else env.get("TERM", "xterm-256color")
     pid, master = pty.fork()

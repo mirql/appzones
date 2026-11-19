@@ -5,6 +5,11 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **zone-init refuses an argv that is not a list**: `run` took a string as a
+  program name, and `shell` did not check its `argv` at all. Found by a new test
+  of the agent protocol (the requests and answers between the CLI and zone-init),
+  written as a specification any zone-init must meet (#97).
+
 - **A zone's server is found by its lock**, not by its command line: `stop`,
   `restart`, `logs` and a waiting client find the process that holds the zone's
   lock file (every server since 0.7 does). A server from before 0.7 is still found
