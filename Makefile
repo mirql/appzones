@@ -51,6 +51,7 @@ helper:
 		--target-dir build/cargo 2>build/helper.log; then \
 		cp build/cargo/release/appzones-helper build/appzones-helper && echo "built build/appzones-helper"; \
 	else \
+		command -v cargo >/dev/null || echo "cargo: not found" >build/helper.log; \
 		rm -f build/appzones-helper; \
 		echo "note: appzones-helper not built (needs cargo and rustc 1.85 or newer; see build/helper.log)"; \
 	fi
