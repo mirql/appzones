@@ -122,7 +122,7 @@ environment: `python3 -m venv .venv && . .venv/bin/activate` inside the zone.
 ```bash
 appzones run dev -- kitty -e tmux new -As dev   # a terminal + tmux session inside
 appzones shell dev                              # or, without a desktop (SSH): a shell inside
-# then, inside: npm install, npm run dev, pip install ...
+# then, inside: cd ~/src/my-app, then npm install, npm run dev, pip install ...
 ```
 
 The tmux server, `~/.npm`, `~/.cache` and every install script stay inside
