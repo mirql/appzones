@@ -385,6 +385,7 @@ pkgs.testers.runNixOSTest {
         glib
         systemd
         procps
+        psmisc # fuser: which process holds a zone's lock (its server)
         util-linux
         fhsHello
         jq
@@ -457,6 +458,13 @@ pkgs.testers.runNixOSTest {
 
     def invocation(zone):
         return u(f"systemctl --user show appzones@{zone}.service -p InvocationID --value").strip()
+
+    # a zone's server: the process that holds the zone's lock (appzones' own rule, whatever
+    # the server is written in); `fuser` prints the pids
+    SERVER = "fuser -s /run/user/1000/appzones/{z}.lock"
+
+    def server_pids(z):
+        return machine.succeed(f"fuser /run/user/1000/appzones/{z}.lock 2>/dev/null || true").split()
 
     with subtest("upgrade from 0.5: the state moves once no zone runs; the old config is read, with a warning"):
         machine.succeed("test -f /etc/appzones/denied-paths && test ! -e /etc/zones")
@@ -948,14 +956,15 @@ pkgs.testers.runNixOSTest {
         u("appzones ping ta")
         assert invocation("ta") != old
         print("PASS  restart")
-        machine.succeed("pkill -9 -u alice -f 'zone_init.py' ")
+        machine.succeed("pkill -9 -u alice -x zone-init")
         machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ping ta"), timeout=60)
         n = u("systemctl --user show appzones@ta.service -p NRestarts --value").strip()
         assert int(n) >= 1, n
         print(f"PASS  crash: zone-init killed, unit restarted (NRestarts={n})")
         u("appzones run ta -- sleep 300")
         u("appzones stop --all")
-        machine.fail("pgrep -u alice -f 'zone_init.py|sleep 300|xdg-dbus-proxy|zone-wayland|pasta|zone-bus/session.conf|thunar'")
+        machine.fail("pgrep -u alice -x zone-init")
+        machine.fail("pgrep -u alice -f 'sleep 300|xdg-dbus-proxy|zone-wayland|pasta|zone-bus/session.conf|thunar'")
         print("PASS  stop --all leaves no zone process")
 
     with subtest("appzones check --probe"):
@@ -1054,7 +1063,7 @@ pkgs.testers.runNixOSTest {
             if when == "starting":
                 assert machine.succeed(f"cat /tmp/{z}-ready") == "", "the zone was ready already"
             machine.succeed(f"kill -9 {pid}")
-            machine.wait_until_fails(f"pgrep -u alice -f 'dev.mirql.zone.{z}|appzones/{z}/|zone_init.py'", timeout=30)
+            machine.wait_until_fails(f"pgrep -u alice -f 'dev.mirql.zone.{z}|appzones/{z}/' || pgrep -u alice -x zone-init", timeout=30)
             u(f"! appzones ping {z}")
             print(f"PASS  kill -9 of {z}'s server ({when}): zone-init, bwrap, pasta, the proxy and zone-wayland are gone")
             u(f"appzones up {z} && appzones ping {z} && appzones stop {z}")
@@ -1064,7 +1073,7 @@ pkgs.testers.runNixOSTest {
         S = "APPZONES_SUPERVISOR=spawn "
 
         def servers(z):
-            return int(machine.succeed(f"pgrep -u alice -fc 'zone.py serve {z}( |$)' || true").strip() or 0)
+            return len(server_pids(z))
 
         # a stale agent socket (no one listening) does not get in the way
         u("mkdir -p /run/user/1000/appzones/tb && rm -f /run/user/1000/appzones/tb/agent.sock && ${pkgs.python3}/bin/python3 -c "
@@ -1087,15 +1096,15 @@ pkgs.testers.runNixOSTest {
         machine.succeed(f"printf '#!/bin/sh\\nsleep 4\\nexec {zw} \"$@\"\\n' >/tmp/slow-zw && chmod 755 /tmp/slow-zw")
         u("systemd-run --user --collect --unit=client-tb -p KillMode=process "
           "-E APPZONES_SUPERVISOR=spawn -E APPZONES_BIN_ZONE_WAYLAND=/tmp/slow-zw $(readlink -f $(command -v appzones)) up tb")
-        machine.wait_until_succeeds("pgrep -u alice -f 'zone.py serve tb '", timeout=30)
+        machine.wait_until_succeeds(SERVER.format(z="tb"), timeout=30)
         u("! appzones ping tb")
         u("systemctl --user kill --kill-whom=main -s KILL client-tb")
         machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + "systemctl --user is-active client-tb"), timeout=30)
         machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ping tb"), timeout=60)
         assert servers("tb") == 1
         print("PASS  a client killed before the zone was ready: the server finishes the start; one server")
-        # the python running zone_init.py (bwrap's own command line names it too)
-        init = machine.succeed("pgrep -u alice -f '^[^ ]*python[^ ]* [^ ]*zone_init.py'").split()
+        # zone-init, by its process name (whatever it is written in)
+        init = machine.succeed("pgrep -u alice -x zone-init").split()
         assert len(init) == 1, init
         machine.succeed(f"kill -STOP {init[0]}")
         rc, out = u(S + "appzones up tb 2>&1", check=False)
@@ -1160,7 +1169,7 @@ pkgs.testers.runNixOSTest {
         machine.sleep(16)
         u("appzones ping tl")
         machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + "appzones ping tl"), timeout=60)
-        machine.wait_until_fails("pgrep -u alice -f 'zone.py serve tl( |$)'", timeout=30)
+        machine.wait_until_fails(SERVER.format(z="tl"), timeout=30)
         u("grep -q 'no app for 10s (linger); stopping' ~/.local/state/appzones/tl.log")
         print("PASS  linger: the zone stayed while its app ran, then ended on its own")
         # under systemd: ends with success, not restarted
@@ -1180,13 +1189,13 @@ pkgs.testers.runNixOSTest {
 
         def wait_down(z):
             machine.wait_until_fails("su -l alice -c " + shlex.quote(ENV + f"appzones ping {z}"), timeout=60)
-            machine.wait_until_fails(f"pgrep -u alice -f 'zone.py serve {z}( |$)'", timeout=30)
+            machine.wait_until_fails(SERVER.format(z=z), timeout=30)
 
         def server_pid(z):
-            return machine.succeed(f"pgrep -u alice -f 'zone.py serve {z}( |$)'").strip()
+            return " ".join(server_pids(z))
 
         def wait_new_server(z, old):
-            machine.wait_until_succeeds(f"p=$(pgrep -u alice -f 'zone.py serve {z}( |$)') && [ \"$p\" != {old} ]", timeout=60)
+            machine.wait_until_succeeds(f"p=$(fuser /run/user/1000/appzones/{z}.lock 2>/dev/null) && [ -n \"$p\" ] && [ $p != {old} ]", timeout=60)
             wait_up(z)
 
         # systemd: a stop (SIGTERM, exit 143) is a success, not a failed unit

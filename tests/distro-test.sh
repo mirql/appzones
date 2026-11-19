@@ -108,7 +108,9 @@ fi
 pass "an internet zone: the host is refused"
 
 as_alice 'appzones stop off; appzones stop web'
-if pgrep -u alice -f "zone.py serve" >/dev/null; then fail "a server left after stop"; fi
+# a server holds its zone's lock (whatever it is written in)
+if fuser /run/user/1000/appzones/off.lock /run/user/1000/appzones/web.lock >/dev/null 2>&1; then fail "a server left after stop"; fi
+if pgrep -u alice -x zone-init >/dev/null; then fail "a zone-init left after stop"; fi
 [ -s /home/alice/.local/state/appzones/web.log ] || fail "no log in ~/.local/state/appzones"
 pass "stop: no server left; logs in ~/.local/state/appzones"
 

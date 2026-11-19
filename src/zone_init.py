@@ -550,12 +550,16 @@ def reap():
 
 
 def harden_self():
-    """Not dumpable: processes in the zone (same uid, no capabilities) cannot
+    """Named `zone-init` (comm). Not dumpable: processes in the zone (same uid, no capabilities) cannot
     ptrace zone-init, read its memory or take its fds (pidfd_getfd), so they
     cannot use its control socket. Apps it starts are dumpable again after exec."""
-    PR_SET_DUMPABLE = 4
+    PR_SET_NAME, PR_SET_DUMPABLE = 15, 4
     import ctypes
-    if ctypes.CDLL(None, use_errno=True).prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+    libc = ctypes.CDLL(None, use_errno=True)
+    # the process name the host finds zone-init by (`pgrep -x zone-init`), whatever it is
+    # written in; before PR_SET_DUMPABLE, which makes /proc/self/comm root's
+    libc.prctl(PR_SET_NAME, ctypes.c_char_p(b"zone-init"), 0, 0, 0)
+    if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
         log("could not make zone-init non-dumpable; refusing to run")
         sys.exit(1)
 

@@ -3,6 +3,15 @@
 The config schema has its own release number (`requires = N` in
 `zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
 
+## Unreleased
+
+- **A zone's server is found by its lock**, not by its command line: `stop`,
+  `restart`, `logs` and a waiting client find the process that holds the zone's
+  lock file (every server since 0.7 does). A server from before 0.7 is still found
+  by its command line. zone-init names itself `zone-init` (the process name). The
+  tests use both instead of `zone.py` and `zone_init.py`, so they also hold for
+  an implementation in another language (#97).
+
 ## 0.8.2
 
 appzones on a server needs no desktop parts, and the Arch package is on the AUR. Nothing changes on NixOS.

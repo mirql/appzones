@@ -423,12 +423,47 @@ def each_zone(cmd: str, rest: list[str], fn) -> int:
     return 1 if failed else 0
 
 
-def _is_server(pid: int, name: str) -> bool:
-    """PID is zone NAME's server, as this user (common.server_command)."""
+def _lock_id(name: str) -> tuple[int, int] | None:
+    """The identity (device, inode) of zone NAME's lock file, or None."""
+    try:
+        st = os.stat(server.lock_path(name), follow_symlinks=False)
+    except OSError:
+        return None
+    return st.st_dev, st.st_ino
+
+
+def _holds(pid: int, lock: tuple[int, int]) -> bool:
+    """PID has the file LOCK open (one of its descriptors is that very file)."""
+    fds = f"/proc/{pid}/fd"
+    try:
+        names = os.listdir(fds)
+    except OSError:
+        return False
+    for n in names:
+        try:
+            st = os.stat(f"{fds}/{n}")
+        except OSError:
+            continue
+        if (st.st_dev, st.st_ino) == lock:
+            return True
+    return False
+
+
+def _is_server(pid: int, name: str, lock: tuple[int, int] | None = None) -> bool:
+    """PID is zone NAME's server, as this user: it holds the zone's lock (every server
+    since 0.7 does, whatever it is written in; no other process keeps it open), or, for a
+    server from before 0.7, its command line says so (common.server_command)."""
     d = Path(f"/proc/{pid}")
     try:
         if d.stat().st_uid != common.UID:
             return False
+    except OSError:
+        return False
+    if lock is None:
+        lock = _lock_id(name)
+    if lock is not None and _holds(pid, lock):
+        return True
+    try:
         argv = [a.decode(errors="replace") for a in (d / "cmdline").read_bytes().split(b"\0")]
         cwd = os.readlink(d / "cwd")
     except OSError:
@@ -439,9 +474,10 @@ def _is_server(pid: int, name: str) -> bool:
 
 def server_pids(name: str) -> list[int]:
     """The processes that are zone NAME's server (normally none or one)."""
+    lock = _lock_id(name)
     out = []
     for d in Path("/proc").iterdir():
-        if d.name.isdigit() and int(d.name) != os.getpid() and _is_server(int(d.name), name):
+        if d.name.isdigit() and int(d.name) != os.getpid() and _is_server(int(d.name), name, lock):
             out.append(int(d.name))
     return out
 
