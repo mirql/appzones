@@ -1,0 +1,21 @@
+# appzones: bwrap and pasta may create user namespaces. Ubuntu 23.10 and later
+# restrict unprivileged user namespaces with AppArmor
+# (kernel.apparmor_restrict_unprivileged_userns = 1); without this, every zone
+# fails to start ("setting up uid map: Permission denied"). `make install`
+# fills in the paths and loads it. Other distributions do not need it.
+#
+# This lets bwrap and pasta create user namespaces for every user of the
+# machine, as on distributions without the restriction; nothing else changes
+# (unconfined otherwise).
+abi <abi/4.0>,
+include <tunables/global>
+
+profile appzones-bwrap @BWRAP@ flags=(unconfined) {
+  userns,
+  include if exists <local/appzones-bwrap>
+}
+
+profile appzones-pasta @PASTA@ flags=(unconfined) {
+  userns,
+  include if exists <local/appzones-pasta>
+}

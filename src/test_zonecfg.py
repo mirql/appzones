@@ -760,6 +760,16 @@ os.write(w, b"\\n"); os.close(w)
                 else:
                     os.environ[k] = v
 
+    def test_install_error(self):
+        """appzones must be installed where a zone sees it: /usr outside NixOS, /nix/store on NixOS."""
+        zone = self._zone_mod()
+        self.assertIsNone(zone.install_error(Path("/usr/local/lib/appzones"), "fhs"))
+        self.assertIsNone(zone.install_error(Path("/nix/store/abc-appzones/libexec/appzones"), "nixos"))
+        for here, layout in [("/home/u/appzones/src", "fhs"), ("/opt/appzones", "fhs"), ("/usr/local/lib/appzones", "nixos")]:
+            err = zone.install_error(Path(here), layout)
+            self.assertIn("a zone cannot see", err)
+            self.assertIn("sudo make install", err)
+
     def test_active(self):
         """appzones active: the zone from the window's compositor tag; zone:? is a sandbox it cannot name."""
         import json as js

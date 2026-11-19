@@ -1,5 +1,7 @@
 # Install
 
+On NixOS, with the flake's module:
+
 ```nix
 # flake.nix
 inputs.appzones.url = "github:mirql/appzones";
@@ -21,9 +23,31 @@ is none). `examples/zones.toml` shows every key; parts of it need more setup
 (`nix_ld` needs `programs.nix-ld.enable`, binds need the folders to exist).
 Run `appzones check`.
 
+## Other distributions (preview)
+
+Ubuntu 24.04 and Debian 12 run command-line zones (dev tools, AI agents, also
+over SSH); desktop apps there are not tested yet. From a checkout:
+
+```bash
+sudo apt install python3 bubblewrap passt nftables xdg-dbus-proxy \
+  make gcc pkg-config libwayland-dev    # the last three: to build zone-wayland, for desktop apps
+make
+sudo make install        # PREFIX=/usr/local; `sudo make uninstall` removes it all
+```
+
+`make install` puts appzones under `/usr/local/lib/appzones` (it must be
+under `/usr`: a zone sees the host's `/usr`, not your home or `/opt`), the
+`appzones` command in `/usr/local/bin`, the systemd user units where there
+is systemd, and a sudo rule for `appzones mount` (for the user who ran sudo;
+`MOUNT_USERS=%group` for a group, `SUDOERS=no` for none). On Ubuntu 23.10 and
+later it also installs an AppArmor profile that lets bwrap and pasta create
+user namespaces, which Ubuntu otherwise blocks for every zone. `packages`
+needs Nix; `nix_ld` is not needed outside NixOS.
+
 Requirements:
 
-- x86_64 Linux, NixOS (the module; the tool expects `/run/current-system`).
+- x86_64 Linux: NixOS, or Ubuntu 24.04 / Debian 12 (preview, above). Python
+  3.11 or newer.
 - A Wayland compositor with `wp_security_context_v1` (Hyprland, sway,
   KWin and others): every zone gets its own security context, and a zone
   does not start without it. Window tags and border colours need Hyprland

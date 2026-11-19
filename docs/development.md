@@ -9,6 +9,7 @@ just test           # validator unit tests (no Nix)
 just check FILE     # validate a zones.toml
 just build          # the package (runs the unit tests too)
 just test-vm        # NixOS VM: Hyprland, zone units, isolation, window tags (~6 min, /dev/kvm)
+just test-install   # `make install` into a staging directory (for other distributions)
 ```
 
 The VM test (`tests/vm.nix`, `checks.x86_64-linux.vm`) runs Hyprland on a

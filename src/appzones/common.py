@@ -37,7 +37,9 @@ LAUNCHER = STATE / "launcher/share/applications"
 DNS_ADDR = "127.0.0.53"  # NOSONAR: zone-init's DNS, on the zone's own loopback (as systemd-resolved's on hosts)
 ZRT = f"/run/user/{UID}"  # the zone's own XDG_RUNTIME_DIR (a fresh tmpfs)
 MOUNT_HELPER = zonecfg.env("MOUNT_HELPER") or str(HERE / "appzones-mount-helper")
-SUDO = zonecfg.env("SUDO") or "/run/wrappers/bin/sudo"
+# NixOS: the setuid wrapper; elsewhere sudo itself
+SUDO = zonecfg.env("SUDO") or ("/run/wrappers/bin/sudo" if os.path.exists("/run/wrappers/bin/sudo")
+                                else shutil.which("sudo") or "/usr/bin/sudo")
 # netbird = true: the mesh is the network of this interface (NetBird's
 # default name is wt0; the NixOS module's netbirdInterface sets it).
 NETBIRD_IFACE = zonecfg.env("NETBIRD_IFACE") or "wt0"
@@ -51,9 +53,10 @@ SBIN_DIRS = ("/usr/sbin", "/sbin")
 
 
 def tool(name: str) -> str:
-    """A helper program: $APPZONES_BIN_<NAME>, else the first one on PATH, else in /usr/sbin or /sbin."""
+    """A helper program: $APPZONES_BIN_<NAME>, else the first one on PATH, else appzones'
+    own (zone-wayland next to zone.py, as `make install` puts it), else in /usr/sbin or /sbin."""
     p = (zonecfg.env("BIN_" + name.upper().replace("-", "_")) or shutil.which(name)
-         or shutil.which(name, path=os.pathsep.join(SBIN_DIRS)))
+         or shutil.which(name, path=os.pathsep.join((str(HERE), *SBIN_DIRS))))
     if not p:
         die(f"{name} not found on PATH, {', '.join(SBIN_DIRS)}")
     return p

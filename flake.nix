@@ -31,6 +31,8 @@
         {
           # the unit tests run inside the package build
           package = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          # `make install` (outside Nix) into a staging directory
+          make-install = import ./tests/make-install.nix { inherit pkgs; };
         }
         // {
           # NixOS VM test (needs /dev/kvm, ~6 min)

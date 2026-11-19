@@ -16,6 +16,10 @@ check file="examples/zones.toml":
 build:
     nix build -L .#default
 
+# `make install` into a staging directory: every file in place, the sudo rule valid, uninstall clean
+test-install:
+    nice -n 19 nix build -L --no-link .#checks.x86_64-linux.make-install
+
 # NixOS VM test: Hyprland, zone units, isolation probes, window tags (~6 min, needs /dev/kvm)
 test-vm:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.vm

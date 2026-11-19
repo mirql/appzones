@@ -241,6 +241,9 @@ Then copy [`examples/minimal.toml`](examples/minimal.toml) to
 `~/.config/appzones/zones.toml` (or run `appzones new daily -y`) and run
 `appzones check`.
 
+Ubuntu 24.04 and Debian 12 (preview, command-line zones): `make && sudo make
+install` from a checkout; see [Install](https://mirql.github.io/appzones/getting-started/install.html#other-distributions-preview).
+
 > [!IMPORTANT]
 > A system switch can stop zones that are running. Close what runs in your
 > zones before you switch.

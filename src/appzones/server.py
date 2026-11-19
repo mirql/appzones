@@ -125,6 +125,16 @@ def take_lock(name: str, lock_fd: int | None = None) -> int:
     return fd
 
 
+def install_error(here: Path, layout: str) -> str | None:
+    """Why appzones installed at HERE cannot run zones, or None: zone-init runs from
+    there inside the zone, which sees only the host's /nix/store (NixOS) or /usr."""
+    seen = "/nix/store" if layout == "nixos" else "/usr"
+    if here.resolve().is_relative_to(seen):
+        return None
+    return (f"appzones runs from {here}, which a zone cannot see (it sees {seen}): install it under {seen} "
+            "(`sudo make install`, PREFIX=/usr/local by default; or the Nix package)")
+
+
 class _Stopped(Exception):
     """A stop (SIGTERM, SIGINT) while the zone is being prepared."""
 
@@ -187,9 +197,9 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             die(f"no zone {name!r} in {common.CONFIG}")
         z = cfg.zones[name]
         s = z.settings
-        if common.HERE.is_relative_to(common.HOME.resolve()):
-            die(f"appzones runs from {common.HERE}, inside your home: a zone cannot see it there (a zone's "
-                "home is its own). Install it outside the home (`make install`, or the Nix package)")
+        err = install_error(common.HERE, zonecfg.host_layout())
+        if err:
+            die(err)
         global START_TIMEOUT
         START_TIMEOUT = zonecfg.duration(s["start_timeout"]) or START_TIMEOUT
         linger = zonecfg.duration(s["linger"])

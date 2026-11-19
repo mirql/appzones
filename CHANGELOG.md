@@ -5,6 +5,18 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`make install` outside Nix** (#65): `make && sudo make install` installs
+  appzones under `/usr/local` (must be under `/usr`, which zones see), builds
+  `zone-wayland` when libwayland's development files are there (the protocol
+  file is in the repo, for Debian 12's older wayland-protocols), and installs
+  the systemd user units, a sudo rule for `appzones mount`, and on Ubuntu 23.10+
+  an AppArmor profile so bwrap and pasta may create user namespaces
+  (`contrib/apparmor/`). `sudo make uninstall` removes it all. appzones finds
+  its own `zone-wayland` next to itself, uses `/usr/bin/sudo` outside NixOS, and
+  says clearly when it is installed where a zone cannot see it. Tested on
+  Ubuntu 24.04 and Debian 12; a Nix check runs the install into a staging
+  directory.
+
 - **`appzones --version`** (and `-V`) prints the package version and the config release,
   e.g. `appzones 0.7.0 (config release 5)`, for bug reports and `requires = N` mismatches.
   A source checkout prints `unknown` for the version.
