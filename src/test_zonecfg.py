@@ -557,6 +557,27 @@ os.write(w, b"\\n"); os.close(w)
                 p.kill()
                 p.wait()
 
+    def test_server_by_lock(self):
+        """A server is found by the zone's lock it holds, whatever its program is called (a
+        Rust one too); a process that does not hold that lock is not a server."""
+        import subprocess as sp
+        zone = self._zone_mod()
+        zone.RT = Path(self.tmp.name) / "rt"
+        zone.RT.mkdir()
+        lock = zone.lock_path("aa")
+        lock.touch()
+        holder = sp.Popen([sys.executable, "-c", "import os, sys, time; fd = os.open(sys.argv[1], os.O_RDWR); "
+                           "time.sleep(30)", str(lock)])
+        other = sp.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            time.sleep(0.3)
+            self.assertEqual(zone.server_pids("aa"), [holder.pid])
+            self.assertEqual(zone.server_pids("bb"), [])  # no lock file at all
+        finally:
+            for p in (holder, other):
+                p.kill()
+                p.wait()
+
     def test_server_pidfd_handoff(self):
         """The server hands _netsetup a pidfd of itself over a unix socket; it says when the server exits."""
         import threading

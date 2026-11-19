@@ -42,6 +42,7 @@ let
       "sudo"
       "iproute2"
       "procps"
+      "psmisc"
       "util-linux"
       "mount"
       "bsdutils"
