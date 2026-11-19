@@ -89,12 +89,14 @@ def mount(name: str, path: str, ro: bool, as_name: str | None) -> int:
     write_mounts(name, m)
     inside = agent.zone_request(name, {"op": "mounts"})
     if inside and f"/mnt/host/{nm}" not in [p for p, _ in inside.get("mounts", [])]:
-        if propagation_shared(target) is False:
+        if propagation_shared(target.parent) is False:  # the new mount's own flag says nothing
             warn(f"mounted on the host, but zone {name} does not see /mnt/host/{nm}: the host's mounts do not "
                  "pass new mounts on (systemd makes them shared at boot; without it they are private). Run "
-                 f"`sudo mount --make-rshared /` (at every boot, before zones start), then `appzones restart {name}`")
+                 f"`sudo mount --make-rshared /` (at every boot, before zones start), then `appzones restart {name}` "
+                 "and mount again")
         else:
-            warn(f"mounted on the host, but zone {name} does not see /mnt/host/{nm}: `appzones restart {name}`")
+            warn(f"mounted on the host, but zone {name} does not see /mnt/host/{nm}: `appzones restart {name}` "
+                 "and mount again")
     print(f"{src} is /mnt/host/{nm} in zone {name} ({'read-only' if ro else 'read-write'}), until "
           f"`appzones umount {name} {nm}` or the zone stops")
     return 0

@@ -33,7 +33,7 @@ left at its start and stop. To keep a folder for good, add it to `binds`.
 - **Without systemd** the host's mounts are often private, and a new mount
   does not reach a running zone; `appzones mount` then says so. Run
   `sudo mount --make-rshared /` at every boot, before zones start (systemd
-  does the same), then restart the zone.
+  does the same), then restart the zone and mount again.
 
 **How.** Each zone binds `~/.local/share/appzones/NAME/mnt` read-only at
 `/mnt/host`. bwrap makes the zone's mounts slaves of the host's, and

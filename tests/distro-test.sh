@@ -11,7 +11,11 @@ fail() { echo "FAIL $*"; exit 1; }
 pass() { echo "PASS $*"; }
 U="env -i HOME=/home/alice USER=alice LOGNAME=alice XDG_RUNTIME_DIR=/run/user/1000 PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8"
 # every step as alice gets a time limit: a hang fails with a message, not a stuck build
-as_alice() { timeout 120 su alice -s /bin/sh -c "$U sh -c '$1'"; }
+as_alice() {
+  rc=0; timeout 120 su alice -s /bin/sh -c "$U sh -c '$1'" || rc=$?
+  [ $rc != 124 ] || fail "timed out: $1"  # never a refusal that passes
+  return $rc
+}
 
 head -1 /etc/os-release
 useradd -m -u 1000 alice
@@ -21,7 +25,8 @@ install -d -m 700 -o alice -g alice /run/user/1000
 ip link set lo up
 # the build VM's /dev is minimal: pasta's device, as udev makes it on a real system
 [ -e /dev/net/tun ] || { mkdir -p /dev/net && mknod /dev/net/tun c 10 200; }
-chmod 666 /dev/net/tun
+# 0666 is the mode udev gives /dev/net/tun; this is the throw-away test VM
+chmod 666 /dev/net/tun  # NOSONAR
 ip link add az0 type dummy && ip link set az0 up
 ip addr add 192.0.2.1/24 dev az0 && ip route add default via 192.0.2.254 dev az0
 dnsmasq --no-resolv --listen-address=127.0.0.1 --bind-interfaces --address=/zone-test.example/192.0.2.99 \
@@ -73,7 +78,10 @@ echo "$out" | grep -qx alice && echo "$out" | grep -qx hello && echo "$out" | gr
 pass "a zone without network starts on demand: its own home, the bind, no ~/.ssh"
 as_alice 'appzones run --wait off -- unshare -Ur true </dev/null' || fail "a sandbox inside the zone"
 pass "a sandbox inside the zone (user namespace)"
-out=$( (sleep 2; printf 'echo in-shell-$ZONE\r'; sleep 1; printf 'exit\r') | timeout 60 su alice -s /bin/sh -c "$U script -qfc 'appzones shell off' /dev/null" | tr -d '\r')
+(sleep 2; printf 'echo in-shell-$ZONE\r'; sleep 1; printf 'exit\r') \
+  | timeout 60 su alice -s /bin/sh -c "$U script -qfc 'appzones shell off' /dev/null" >/tmp/shell.out \
+  || fail "appzones shell did not end: $(tr -d '\r' </tmp/shell.out)"
+out=$(tr -d '\r' </tmp/shell.out)
 echo "$out" | grep -q "^in-shell-off" || fail "appzones shell: $out"
 pass "appzones shell (a pty in the zone)"
 

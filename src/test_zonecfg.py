@@ -790,9 +790,12 @@ os.write(w, b"\\n"); os.close(w)
         info = Path(self.tmp.name) / "mountinfo"
         info.write_text("22 1 0:21 / / rw,relatime shared:1 - ext4 /dev/vda rw\n"
                         "30 22 0:25 / /home rw,relatime - ext4 /dev/vdb rw\n"
-                        "31 30 0:26 / /home/alice/my\\040dir rw shared:9 - ext4 /dev/vdc rw\n")
+                        "31 30 0:26 / /home/alice/my\\040dir rw shared:9 - ext4 /dev/vdc rw\n"
+                        "32 30 0:27 / /home/alice/.local/share/appzones/z/mnt/d rw shared:12 - ext4 /dev/vdd rw\n")
         self.assertTrue(zone.propagation_shared(Path("/usr/lib"), str(info)))  # under /, shared
-        self.assertFalse(zone.propagation_shared(Path("/home/alice/.local/share/appzones/z/mnt/d"), str(info)))
+        # a shared mount just made below a private /home: its parent decides (what mount() asks about)
+        self.assertTrue(zone.propagation_shared(Path("/home/alice/.local/share/appzones/z/mnt/d"), str(info)))
+        self.assertFalse(zone.propagation_shared(Path("/home/alice/.local/share/appzones/z/mnt"), str(info)))
         self.assertTrue(zone.propagation_shared(Path("/home/alice/my dir/x"), str(info)))
         self.assertTrue(zone.propagation_shared(Path("/homeX/a"), str(info)))  # /homeX is not under /home
         self.assertIsNone(zone.propagation_shared(Path("/x"), str(info) + ".missing"))
