@@ -3,7 +3,9 @@
 The config schema has its own release number (`requires = N` in
 `zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
 
-## Unreleased
+## 0.8.2
+
+appzones on a server needs no desktop parts, and the Arch package is on the AUR. Nothing changes on NixOS.
 
 - **The desktop's parts are optional**: without `zone-wayland`, `xdg-dbus-proxy`
   or `dbus-daemon` on the host, a zone starts without its Wayland socket, its
