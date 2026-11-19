@@ -13,7 +13,7 @@ changes what they can do or how easy they are to check:
 
 | Part | Today | Why Rust |
 |---|---|---|
-| **zone-init**, the agent inside every zone (770 lines) | `zone_init.py`, run by the host's Python inside the zone | A zone then needs no Python. Today the host's Python and appzones' own files must be visible in every zone, which is why appzones must be installed under `/usr` (or the Nix store) and why the host needs Python 3.11 (no Ubuntu 22.04). One static binary, bound read-only into the zone, removes both. |
+| **zone-init**, the agent inside every zone (770 lines), and the zone's `xdg-open` shim for `links = "zone"` | `zone_init.py` and a shell script calling Python, both run by the host's Python inside the zone | A zone then needs no Python of the host's. Today the host's Python and appzones' own files must be visible in every zone, which is why appzones must be installed under `/usr` (or the Nix store). One static binary, bound read-only into the zone, removes that. The host still needs Python 3.11 for the CLI and the server (`zonecfg` reads TOML with `tomllib`). |
 | **zone-wayland**, the security-context helper (89 lines of C) | C against libwayland, built by `make` | One build for all helpers; a pure-Rust Wayland client needs no libwayland at build or run time. |
 | **the mount helper**, the root step of `appzones mount` (253 lines) | Python through sudo, with `-I` isolation and ctypes for `open_tree`, `move_mount`, `mount_setattr`, `openat2` | The one place that runs as root. A small binary with typed syscalls is easier to audit than an interpreter and its environment. |
 
@@ -23,6 +23,7 @@ changes what they can do or how easy they are to check:
 
 ```
 appzones-helper zone-init          # in the zone (pid 2, after bwrap)
+appzones-helper open-link URL      # in the zone: the xdg-open shim's http(s) part (links.sock)
 appzones-helper zone-wayland SOCKET APP_ID INSTANCE
 appzones-helper mount-helper ...   # through sudo, root
 ```
@@ -45,7 +46,9 @@ VM test, `just test-distros`).
    `APPZONES_HELPER=rust`; the NixOS VM test runs both ways.
 3. **zone-init** in Rust, op by op: `ping`, `ps`, `run` (with `--wait` and fds), `status`,
    `shell` (pty), `resize`, `mounts`, `busy`, the zone bus, DNS, the server pidfd watch,
-   reaping. Behind `APPZONES_HELPER=rust`; the VM test and the distro tests run with both.
+   reaping; and `open-link`, which the `xdg-open` shim calls instead of Python (the VM test
+   opens a link from a zone with `links = "zone"` without Python in the zone). Behind
+   `APPZONES_HELPER=rust`; the VM test and the distro tests run with both.
 4. **The mount helper** in Rust, with the same checks (SUDO_UID only, the never-list on
    the opened directory, `openat2` without symlinks, `open_tree`/`move_mount`,
    `mount_setattr` for read-only). The Python helper's unit tests become the Rust tests'
@@ -72,7 +75,9 @@ The experiment comes back to `main` when, with `APPZONES_HELPER=rust` as the def
 - the NixOS VM test (all checks), `just test-distros` and the Arch test pass unchanged;
 - the binary builds reproducibly in Nix, statically, and with `make` on Ubuntu, Debian
   and Arch;
-- a zone needs nothing of appzones but the binary (no Python, no `/usr` requirement);
+- a zone needs nothing of appzones but the binary: no Python in the zone (also for
+  clicked links), no `/usr` requirement for the install (the host keeps Python 3.11 for
+  the CLI);
 - the mount helper's checks have at least the Python helper's tests.
 
 If a step shows Rust costs more than it gains (build, size, contributors), the branch
