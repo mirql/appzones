@@ -1887,12 +1887,16 @@ class AgentProtocolTest(unittest.TestCase):
         r = self.request({"op": "run", "argv": ["sh", "-c", f"echo line-one; while [ ! -e {go} ]; do sleep 0.05; done; "
                                                             "echo line-two"]})[0]
         pid = r["pid"]
+        import signal as sg
+        child = os.pidfd_open(pid)  # it waits for `go`, so it is alive here; a pidfd pins it
 
         def kill_child():  # it runs in its own session, outside any pid namespace here
             try:
-                os.kill(pid, 9)
+                sg.pidfd_send_signal(child, sg.SIGKILL)
             except ProcessLookupError:
-                pass
+                pass  # done already
+            finally:
+                os.close(child)
 
         self.addCleanup(kill_child)  # never left polling for `go`, whatever happens below
         try:
