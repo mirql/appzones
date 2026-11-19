@@ -25,7 +25,8 @@
   `APPZONES_*` and `ZONES_*` variable before importing anything; keep it that way.
 - `main` takes only squash merges through a PR.
 - SonarQube Cloud checks every PR. A finding that is not a real problem (a validated
-  argument, a test address) gets `# NOSONAR: <why>` on its line, with a reason a reader
-  can check. NOSONAR silences only code smells and bugs, not security findings
-  (injection, hard-coded IP addresses, ...): a maintainer marks those false positive
-  in SonarQube, again when the line changes; the comment still documents why.
+  argument, a test address) gets the reason in a comment on the line above and a bare
+  `# NOSONAR` at the end of its own line (`# NOSONAR: why` is not always recognised).
+  A bare `# NOSONAR` hides every finding on that line, so keep such lines small. The
+  taint findings (`pythonsecurity:*`: command or path injection) still show; a
+  maintainer marks those false positive in SonarQube, again when the line changes.

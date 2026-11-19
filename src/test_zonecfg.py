@@ -984,7 +984,7 @@ os.write(w, b"\\n"); os.close(w)
             now = [100.0]
             b = zone.Budget(rate=10.0, burst=3, clock=lambda: now[0])
             self.assertEqual([b.take() for _ in range(4)], [True, True, True, False])
-            now[0] += 0.1  # one token back
+            now[0] += 0.15  # one and a half tokens back
             self.assertEqual([b.take(), b.take()], [True, False])
             # one query never takes longer than the deadline, also when nothing answers
             silent = so.socket(so.AF_INET, so.SOCK_DGRAM)
