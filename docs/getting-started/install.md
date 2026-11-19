@@ -40,7 +40,7 @@ Tested on Ubuntu 24.04 and Debian 12, in VMs, for every change
 
 ```bash
 sudo apt install python3 bubblewrap passt nftables xdg-dbus-proxy git make
-sudo apt install gcc pkg-config libwayland-dev   # to build zone-wayland, for desktop apps; not on a server
+sudo apt install gcc pkg-config libwayland-dev   # zone-wayland: needed on a desktop, not on a server
 ```
 
 **2. Install from a checkout.**
@@ -51,8 +51,10 @@ make
 sudo make install
 ```
 
-`make` builds `zone-wayland` (the Wayland helper desktop apps need); without
-the build tools it says so and skips it, and command-line zones still work.
+`make` builds `zone-wayland`, the helper that gives each zone its own Wayland
+socket. On a desktop (a Wayland session) every zone needs it, also one for
+command-line work: install the second line's packages there. On a server or
+over SSH without Wayland, `make` says it skips it and zones work without.
 `sudo make install` puts:
 
 - the code in `/usr/local/lib/appzones` and the `appzones` command in
@@ -91,17 +93,27 @@ requires = 5
 colour  = "#a6e3a1"
 devices = []                                     # no GPU, no sound: a server is fine
 binds   = [{ path = "~/src/my-project", mode = "rw" }]
+theme   = false                                  # no desktop settings to copy in
 TOML
 appzones check
-appzones run --wait dev -- ls -la ~/src/my-project
-appzones run --wait dev -- sh -c 'cd ~/src/my-project && npm install'   # with nodejs and npm installed on the host
-appzones shell dev
+appzones shell dev                               # a shell in the zone; inside, for example:
+#   cd ~/src/my-project && npm install           # (with nodejs and npm installed on the host)
+```
+
+From a script, `appzones run --wait` passes its standard streams in and returns
+the command's exit code. It never takes a terminal (no host terminal enters a
+zone), so give it pipes or files:
+
+```bash
+appzones run --wait dev -- sh -c 'cd ~/src/my-project && npm test' </dev/null | tee test.log
 ```
 
 The zone has its own home (`~/.local/share/appzones/dev/home`). Of your
 files it sees only `~/src/my-project`, and everything in it: a key or token
-kept inside that folder is readable there. The rest of your home, `~/.ssh`
-and your keyrings stay out (they can never be bound). It reaches the internet
+kept inside that folder is readable there. With `theme = true` (the
+default) it also gets copies of your GTK, Qt, font and cursor settings. The
+rest of your home, `~/.ssh` and your keyrings stay out (they can never be
+bound). It reaches the internet
 but not your LAN or this machine. See [recipes](../recipes.md) for
 AI agents in a zone.
 

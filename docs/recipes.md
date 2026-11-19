@@ -32,8 +32,10 @@ tmp      = "disk"                       # /tmp survives restarts
 ```
 
 On Ubuntu or Debian, leave out `packages` and `nix_ld` (NixOS's): the zone
-already has the host's `node`, `python3` and the rest of `/usr`, and prebuilt
-binaries run there anyway.
+uses the host's programs from `/usr`, so install them on the host first
+(`sudo apt install nodejs npm python3-venv`), and prebuilt binaries run
+there anyway. Debian's and Ubuntu's `pip` installs only into a virtual
+environment: `python3 -m venv .venv && . .venv/bin/activate` inside the zone.
 
 ```bash
 appzones run dev -- kitty -e tmux new -As dev   # a terminal + tmux session inside
