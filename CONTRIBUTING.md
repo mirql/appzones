@@ -7,6 +7,11 @@ test.
 
 ## Before you start
 
+- **New here?** Pick one of the [good first issues](https://github.com/mirql/appzones/labels/good%20first%20issue):
+  each says where in the code to start and what done looks like, and most
+  can be tested without NixOS. Say on the issue that you are on it, so no
+  one else starts the same. Bigger tasks are under [help wanted](https://github.com/mirql/appzones/labels/help%20wanted).
+
 - **Bugs:** open an issue with the bug template. Include `appzones check`
   output and the relevant part of your `zones.toml`.
 - **Features and new config keys:** open an issue first, so we can agree

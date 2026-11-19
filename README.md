@@ -329,9 +329,13 @@ report it privately: [SECURITY.md](SECURITY.md).
 
 Issues, ideas and PRs are welcome. Good places to start:
 
+- **[Good first issues](https://github.com/mirql/appzones/labels/good%20first%20issue).** Small, self-contained
+  tasks, each saying where to start and what done looks like. Most need no
+  NixOS to build and test.
 - **Other compositors.** Only Hyprland gets window tags and border
   colours. Sway, niri or KWin hooks would help.
-- **Other distributions.** Only NixOS is packaged.
+- **Other distributions.** Ubuntu and Debian are in progress
+  ([milestone 0.8.0](https://github.com/mirql/appzones/milestone/2)).
 - **aarch64.** Nothing has been tried there yet.
 - **Docs.** If something in the [docs](https://mirql.github.io/appzones/) was unclear to you,
   it will be to the next person too.
