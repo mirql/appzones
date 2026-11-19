@@ -39,6 +39,7 @@ import os
 import pty
 import select
 import selectors
+import shutil
 import signal
 import socket
 import stat
@@ -143,7 +144,9 @@ def ensure_zone_bus():
     global zbus
     if zbus and zbus.poll() is None:
         return None
-    daemon = os.environ.get("ZONE_DBUS_DAEMON") or "/run/current-system/sw/bin/dbus-daemon"
+    daemon = os.environ.get("ZONE_DBUS_DAEMON") or shutil.which("dbus-daemon")
+    if not daemon:
+        return "zone bus: no dbus-daemon on this host (install dbus) for bus = \"zone\""
     os.makedirs(ZBUS_DIR, mode=0o700, exist_ok=True)
     try:
         os.unlink(f"{ZBUS_DIR}/bus")

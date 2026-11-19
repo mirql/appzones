@@ -52,11 +52,17 @@ PALETTE = ["#a6e3a1", "#89b4fa", "#f38ba8", "#f9e2af", "#cba6f7", "#94e2d5", "#f
 SBIN_DIRS = ("/usr/sbin", "/sbin")
 
 
-def tool(name: str) -> str:
+def find_tool(name: str) -> str | None:
     """A helper program: $APPZONES_BIN_<NAME>, else the first one on PATH, else appzones'
-    own (zone-wayland next to zone.py, as `make install` puts it), else in /usr/sbin or /sbin."""
-    p = (zonecfg.env("BIN_" + name.upper().replace("-", "_")) or shutil.which(name)
-         or shutil.which(name, path=os.pathsep.join((str(HERE), *SBIN_DIRS))))
+    own (zone-wayland next to zone.py, as `make install` puts it), else in /usr/sbin or
+    /sbin; None when there is none."""
+    return (zonecfg.env("BIN_" + name.upper().replace("-", "_")) or shutil.which(name)
+            or shutil.which(name, path=os.pathsep.join((str(HERE), *SBIN_DIRS))))
+
+
+def tool(name: str) -> str:
+    """A helper program a zone cannot do without (find_tool, or exit)."""
+    p = find_tool(name)
     if not p:
         die(f"{name} not found on PATH, {', '.join(SBIN_DIRS)}")
     return p

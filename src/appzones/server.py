@@ -236,8 +236,14 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     except _Stopped:
         print(f"[zone] {name}: stopped while starting", flush=True)
         return stop_code()
-    if os.environ.get("WAYLAND_DISPLAY"):
-        h = subprocess.Popen([tool("zone-wayland"), str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
+    # the desktop's parts are optional: without their helper (a server, a package
+    # without them) the zone starts without them, and says so
+    wayland_helper = common.find_tool("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") else None
+    if os.environ.get("WAYLAND_DISPLAY") and not wayland_helper:
+        print(f"[zone] {name}: zone-wayland not found: the zone starts without a Wayland socket "
+              "(desktop apps will not open windows; install appzones with zone-wayland)", flush=True)
+    elif wayland_helper:
+        h = subprocess.Popen([wayland_helper, str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
                              stdout=subprocess.PIPE,
                              env=dict(os.environ, ZONE_WAYLAND_PARENT=str(os.getpid())))
         helpers.append(h)
@@ -245,7 +251,10 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             return abort(f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
     else:
         print(f"[zone] no WAYLAND_DISPLAY: zone {name} starts without a Wayland socket", flush=True)
-    if os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+    if os.environ.get("DBUS_SESSION_BUS_ADDRESS") and not common.find_tool("xdg-dbus-proxy"):
+        print(f"[zone] {name}: xdg-dbus-proxy not found: the zone starts without a session bus "
+              "(no portals, notifications or tray; install xdg-dbus-proxy for them)", flush=True)
+    elif os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
         # its bwrap has --die-with-parent too, but arms it only once running
         helpers.append(subprocess.Popen(portals.dbus_proxy_argv(z, zrt), preexec_fn=die_with(os.getpid())))
         end = time.monotonic() + START_TIMEOUT

@@ -40,8 +40,8 @@ Tested on Ubuntu 24.04 and Debian 12, in VMs, for every change
 **1. The packages.**
 
 ```bash
-sudo apt install python3 bubblewrap passt nftables xdg-dbus-proxy git make
-sudo apt install gcc pkg-config libwayland-dev   # zone-wayland: needed on a desktop, not on a server
+sudo apt install python3 bubblewrap passt nftables git make          # enough for a server
+sudo apt install xdg-dbus-proxy dbus gcc pkg-config libwayland-dev   # for a desktop
 ```
 
 **2. Install from a checkout.**
@@ -52,10 +52,12 @@ make
 sudo make install
 ```
 
-`make` builds `zone-wayland`, the helper that gives each zone its own Wayland
-socket. On a desktop (a Wayland session) every zone needs it, also one for
-command-line work: install the second line's packages there. On a server or
-over SSH without Wayland, `make` says it skips it and zones work without.
+The second line is the desktop's part: `make` builds `zone-wayland` (each
+zone's own Wayland socket) when the build tools are there, `xdg-dbus-proxy`
+gives a zone the filtered session bus (portals, notifications, the tray), and
+`dbus-daemon` an app with `bus = "zone"` its own bus. Without them a zone
+starts without these parts and says so in its log (`appzones logs ZONE`): what
+a server or a command-line zone needs is only the first line.
 `sudo make install` puts:
 
 - the code in `/usr/local/lib/appzones` and the `appzones` command in
@@ -147,7 +149,9 @@ stay in `~/.local/share/appzones` and `~/.config/appzones`.
 ## Arch Linux (preview)
 
 Tested by hand on Arch (kernel 7.3, Python 3.14): the same as on Ubuntu and
-Debian, and no AppArmor profile is needed. The package is on the AUR,
+Debian, and no AppArmor profile is needed. The package needs only what a server
+needs; for a desktop also install `wayland`, `xdg-dbus-proxy` and `dbus` (its
+optional dependencies). The package is on the AUR,
 [`appzones`](https://aur.archlinux.org/packages/appzones) (its `PKGBUILD` is
 kept in `contrib/arch/`):
 

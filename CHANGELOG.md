@@ -5,6 +5,14 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **The desktop's parts are optional**: without `zone-wayland`, `xdg-dbus-proxy`
+  or `dbus-daemon` on the host, a zone starts without its Wayland socket, its
+  session bus or `bus = "zone"`, and its log says why (`bus = "zone"` names the
+  missing `dbus-daemon`). Before, a zone did not start at all when a session bus
+  or `WAYLAND_DISPLAY` was set and the helper was missing, also on a server over
+  SSH. A server needs only Python, bubblewrap, passt and nftables; the install
+  page and the AUR package's dependencies say so.
+
 - Arch: the package is on the AUR (`paru -S appzones`); the docs say so.
 
 ## 0.8.1

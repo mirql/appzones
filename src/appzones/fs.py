@@ -485,7 +485,9 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
         env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={common.ZRT}/bus"
     # for zone-init: the zone's own bus (bus = "zone") and the nested bwrap
     # that hides every bus (bus = "none"); store paths, visible inside
-    env["ZONE_DBUS_DAEMON"] = os.path.realpath(tool("dbus-daemon"))
+    daemon = common.find_tool("dbus-daemon")  # only for bus = "zone"; zone-init says when it is missing
+    if daemon:
+        env["ZONE_DBUS_DAEMON"] = os.path.realpath(daemon)
     env["ZONE_BWRAP"] = os.path.realpath(tool("bwrap"))
     if "audio" in devices or "mic" in devices:
         # "mic" is an alias of "audio" for now (the whole PipeWire graph);

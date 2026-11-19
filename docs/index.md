@@ -50,7 +50,7 @@ programs.appzones.enable = true;
 Then `appzones new daily -y` and `appzones check`.
 
 Ubuntu 24.04 and Debian 12 (preview, command-line zones): `sudo apt install python3
-bubblewrap passt nftables xdg-dbus-proxy git make` (on a desktop also `gcc pkg-config libwayland-dev`), then `make && sudo make install` in a
+bubblewrap passt nftables git make` (on a desktop also `xdg-dbus-proxy dbus gcc pkg-config libwayland-dev`), then `make && sudo make install` in a
 checkout. The [install page](getting-started/install.html) has the details for both;
 [recipes](recipes.html) show what zones are good for.
 

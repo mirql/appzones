@@ -774,8 +774,9 @@ os.write(w, b"\\n"); os.close(w)
             os.environ["APPZONES_BIN_NFT"] = override
             self.assertEqual(zone.tool("nft"), override)  # the override beats both
             del os.environ["APPZONES_BIN_NFT"]
+            self.assertIsNone(zone.find_tool("pasta"))  # nowhere: find_tool says so
             with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
-                zone.tool("pasta")  # nowhere: it dies, naming where it looked
+                zone.tool("pasta")  # nowhere: tool dies, naming where it looked
             self.assertIn("pasta not found on PATH, " + ", ".join(zone.SBIN_DIRS), err.getvalue())
         finally:
             for k, v in saved.items():

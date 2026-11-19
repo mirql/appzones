@@ -112,6 +112,21 @@ if pgrep -u alice -f "zone.py serve" >/dev/null; then fail "a server left after 
 [ -s /home/alice/.local/state/appzones/web.log ] || fail "no log in ~/.local/state/appzones"
 pass "stop: no server left; logs in ~/.local/state/appzones"
 
+# a server without the desktop's parts: a session bus and WAYLAND_DISPLAY are set (as
+# over SSH with systemd), but zone-wayland, xdg-dbus-proxy and dbus-daemon are not there
+mkdir /tmp/hidden && mv /usr/local/lib/appzones/zone-wayland /usr/bin/xdg-dbus-proxy /usr/bin/dbus-daemon /tmp/hidden/
+U="$U WAYLAND_DISPLAY=wayland-1 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
+out=$(as_alice 'appzones run --wait off -- sh -c "echo works; echo bus=\$DBUS_SESSION_BUS_ADDRESS wl=\$WAYLAND_DISPLAY" </dev/null' 2>&1)
+echo "$out"
+echo "$out" | grep -qx works && echo "$out" | grep -qx "bus= wl=" || fail "a zone without the desktop's parts: $out"
+log=/home/alice/.local/state/appzones/off.log
+grep -q "zone-wayland not found" $log && grep -q "xdg-dbus-proxy not found" $log || fail "no warning in the log: $(tail -5 $log)"
+if out=$(as_alice 'appzones run --wait --bus zone off -- true </dev/null' 2>&1); then fail "bus = zone without dbus-daemon: $out"; fi
+echo "$out" | grep -q "no dbus-daemon" || fail "bus = zone without dbus-daemon, not said: $out"
+as_alice 'appzones stop off'
+mv /tmp/hidden/zone-wayland /usr/local/lib/appzones/ && mv /tmp/hidden/xdg-dbus-proxy /tmp/hidden/dbus-daemon /usr/bin/
+pass "a server without zone-wayland, xdg-dbus-proxy, dbus-daemon: the zone starts, says why, bus = zone says what is missing"
+
 make uninstall >/dev/null 2>&1 || fail "make uninstall"
 left=$(ls -d /usr/local/lib/appzones /usr/local/bin/appzones /usr/local/share/appzones /etc/sudoers.d/appzones \
   /etc/apparmor.d/appzones 2>/dev/null || true)
