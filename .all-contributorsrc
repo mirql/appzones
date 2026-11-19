@@ -59,6 +59,16 @@
         "test",
         "doc"
       ]
+    },
+    {
+      "login": "tyza66",
+      "name": "孙达明",
+      "avatar_url": "https://avatars.githubusercontent.com/u/83948628?v=4",
+      "profile": "https://github.com/tyza66",
+      "contributions": [
+        "code",
+        "test"
+      ]
     }
   ],
   "commitType": "docs"
