@@ -40,7 +40,7 @@ Tested on Ubuntu 24.04 and Debian 12, in VMs, for every change
 **1. The packages.**
 
 ```bash
-sudo apt install python3 bubblewrap passt nftables git make          # enough for a server
+sudo apt install python3 bubblewrap passt nftables iproute2 git make # enough for a server
 sudo apt install xdg-dbus-proxy dbus gcc pkg-config libwayland-dev   # for a desktop
 ```
 
@@ -55,9 +55,12 @@ sudo make install
 The second line is the desktop's part: `make` builds `zone-wayland` (each
 zone's own Wayland socket) when the build tools are there, `xdg-dbus-proxy`
 gives a zone the filtered session bus (portals, notifications, the tray), and
-`dbus-daemon` an app with `bus = "zone"` its own bus. Without them a zone
-starts without these parts and says so in its log (`appzones logs ZONE`): what
-a server or a command-line zone needs is only the first line.
+`dbus-daemon` an app with `bus = "zone"` its own bus. Without `zone-wayland`
+or `xdg-dbus-proxy` a zone starts without that part and says so in its log
+(`appzones logs ZONE`). An app with `bus = "zone"` needs `dbus-daemon` (the
+`dbus` package), also on a server: without it that app does not start, and
+appzones says what is missing. Otherwise a server or a command-line zone needs
+only the first line.
 `sudo make install` puts:
 
 - the code in `/usr/local/lib/appzones` and the `appzones` command in
@@ -149,9 +152,9 @@ stay in `~/.local/share/appzones` and `~/.config/appzones`.
 ## Arch Linux (preview)
 
 Tested by hand on Arch (kernel 7.3, Python 3.14): the same as on Ubuntu and
-Debian, and no AppArmor profile is needed. The package needs only what a server
-needs; for a desktop also install `wayland`, `xdg-dbus-proxy` and `dbus` (its
-optional dependencies). The package is on the AUR,
+Debian, and no AppArmor profile is needed. From 0.8.2 on the package needs
+only what a server needs; for a desktop also install `wayland`,
+`xdg-dbus-proxy` and `dbus` (its optional dependencies). The package is on the AUR,
 [`appzones`](https://aur.archlinux.org/packages/appzones) (its `PKGBUILD` is
 kept in `contrib/arch/`):
 

@@ -253,7 +253,7 @@ Then copy [`examples/minimal.toml`](examples/minimal.toml) to
 Ubuntu 24.04 and Debian 12 (preview, command-line zones):
 
 ```bash
-sudo apt install python3 bubblewrap passt nftables git make         # a desktop also: xdg-dbus-proxy dbus gcc pkg-config libwayland-dev
+sudo apt install python3 bubblewrap passt nftables iproute2 git make   # a desktop also: xdg-dbus-proxy dbus gcc pkg-config libwayland-dev
 git clone https://github.com/mirql/appzones && cd appzones && make && sudo make install
 ```
 
