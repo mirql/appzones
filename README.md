@@ -54,8 +54,9 @@ appzones list                     # zones, state, network, devices, apps running
 ```
 
 > [!NOTE]
-> appzones is young (0.5) and runs on **x86_64 NixOS** with a Wayland
-> compositor. Window borders and tags per zone need Hyprland.
+> appzones is young (0.7). It runs on **x86_64 NixOS**, and as a preview on
+> **Ubuntu 24.04 and Debian 12** (command-line zones; desktop apps there are
+> not tested yet). Window borders and tags per zone need Hyprland.
 
 ## Why
 
@@ -207,11 +208,11 @@ its own:
 | | appzones | Flatpak | Firejail | Qubes OS | Distrobox / Toolbx |
 |---|---|---|---|---|---|
 | You group apps by | trust (a zone per area of your life) | app | app | VM | container (not a boundary) |
-| Apps come from | the host's own Nix store | Flathub, packaged for it | your system | each VM's OS | the container's distro |
+| Apps come from | the host's own programs (Nix store or `/usr`) | Flathub, packaged for it | your system | each VM's OS | the container's distro |
 | Network | internet yes; LAN, host and tailnet no | on or off | on, off or a filter | per-VM firewall | the host's |
 | Which zone is this window? | border colour, the app can't fake it | no | no | border colour | no |
 | Isolation | namespaces, same kernel | namespaces, same kernel | namespaces, same kernel, setuid binary | separate VMs (much stronger) | almost none |
-| Runs on | your NixOS desktop | any distro | any distro | Qubes only | any distro |
+| Runs on | NixOS; Ubuntu, Debian (preview) | any distro | any distro | Qubes only | any distro |
 
 appzones is for when Flatpak is too fine-grained, Qubes is too much, and
 you want your messenger, your work browser, your agents and that PDF in
@@ -241,15 +242,23 @@ Then copy [`examples/minimal.toml`](examples/minimal.toml) to
 `~/.config/appzones/zones.toml` (or run `appzones new daily -y`) and run
 `appzones check`.
 
-Ubuntu 24.04 and Debian 12 (preview, command-line zones): `make && sudo make
-install` from a checkout; see [Install](https://mirql.github.io/appzones/getting-started/install.html#other-distributions-preview).
+Ubuntu 24.04 and Debian 12 (preview, command-line zones):
+
+```bash
+sudo apt install python3 bubblewrap passt nftables xdg-dbus-proxy make gcc pkg-config libwayland-dev
+git clone https://github.com/mirql/appzones && cd appzones && make && sudo make install
+```
+
+The [install page](https://mirql.github.io/appzones/getting-started/install.html#ubuntu-and-debian-preview)
+says what it installs (an AppArmor profile on Ubuntu, a sudo rule for
+`appzones mount`) and how to start your first zone.
 
 > [!IMPORTANT]
 > A system switch can stop zones that are running. Close what runs in your
 > zones before you switch.
 
 <details>
-<summary><b>Set up with an AI agent</b>: a prompt to paste into Claude Code, Codex, opencode, ...</summary>
+<summary><b>Set up with an AI agent</b> (NixOS): a prompt to paste into Claude Code, Codex, opencode, ...</summary>
 
 ```markdown
 # Set up appzones

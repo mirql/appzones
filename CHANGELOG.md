@@ -5,6 +5,13 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **Docs: installing on Ubuntu and Debian** (#67): the install page has a part
+  for each, NixOS and Ubuntu 24.04 / Debian 12 (the packages, `make install` and
+  its options, what it installs and why, a first command-line zone, what is
+  different from NixOS, without systemd, update and remove, kernel modules
+  outside NixOS). The README, the docs home page and the agent skill say where
+  appzones runs.
+
 - **Tests on Ubuntu 24.04 and Debian 12** (#66): `just test-distros` boots each in
   a VM from pinned packages and runs `make install`, then zones as an ordinary
   user without systemd: on-demand start, the home and never-list, a sandbox

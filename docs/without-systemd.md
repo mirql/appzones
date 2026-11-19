@@ -47,9 +47,9 @@ itself makes sure there is exactly one per zone and that nothing outlives it.
   `linger` for a zone that should end by itself when no app runs in it.
 - **Service files** for runit, s6 and dinit (and systemd outside NixOS), in
   `contrib/`.
-- **Not yet: other distributions.** The work is milestone
-  [0.8.0: zones beyond NixOS](https://github.com/mirql/appzones/milestone/2):
-  command-line zones on Ubuntu and Debian first.
+- **Other distributions:** Ubuntu 24.04 and Debian 12 as a preview
+  (command-line zones), with `make install`
+  ([Install](getting-started/install.md#ubuntu-and-debian-preview)).
 
 ## What is done
 
@@ -62,7 +62,7 @@ itself makes sure there is exactly one per zone and that nothing outlives it.
 | ✓ | Supervisor mode `auto` (`APPZONES_SUPERVISOR`, also `systemd` or `spawn`): systemd when the unit is installed and the user manager answers, otherwise on demand; never both for one zone; `stop`, `restart`, `logs` follow whoever runs it; a warning when systemd has no `WAYLAND_DISPLAY` | [#47](https://github.com/mirql/appzones/issues/47) |
 | ✓ | Per-zone settings (zones release 5): `supervisor`, `start_timeout` (the limit for each startup step), `linger` (end a zone after some time with no app, only if you want that) | [#48](https://github.com/mirql/appzones/issues/48) |
 | ✓ | Service files for systemd, runit, s6 and dinit in `contrib/` (also in the package, `share/appzones/contrib`); `serve` exits 0 when stopped, so a manager restarts only failures | [#49](https://github.com/mirql/appzones/issues/49) |
-| | Other distributions: the zone's file system without NixOS's layout | [#22](https://github.com/mirql/appzones/issues/22) |
+| ✓ | Other distributions: Ubuntu 24.04 and Debian 12 (preview), with `make install`; see [Install](getting-started/install.md#ubuntu-and-debian-preview) | [0.8.0](https://github.com/mirql/appzones/milestone/2) |
 
 ## Running a zone yourself today
 
