@@ -568,7 +568,12 @@ os.write(w, b"\\n"); os.close(w)
             (t / name).write_text("#!/bin/sh\n")
             (t / name).chmod(0o755)
         zone.HERE = t
-        saved = {k: os.environ.pop(k, None) for k in ("APPZONES_BIN_ZONE_WAYLAND", "ZONES_BIN_ZONE_WAYLAND")}
+        saved = {k: os.environ.pop(k, None) for k in ("APPZONES_BIN_ZONE_WAYLAND", "ZONES_BIN_ZONE_WAYLAND",
+                                                       "APPZONES_BIN_APPZONES_HELPER", "ZONES_BIN_APPZONES_HELPER",
+                                                       "PATH")}
+        (t / "empty").mkdir()
+        os.environ["PATH"] = str(t / "empty")  # nothing installed on this machine counts
+        zone.SBIN_DIRS = ()
         try:
             zone.HELPER = ""
             self.assertEqual(zone.helper_argv("zone-wayland"), [str(t / "zone-wayland")])
@@ -581,6 +586,7 @@ os.write(w, b"\\n"); os.close(w)
             self.assertIsNone(zone.helper_argv("zone-wayland"))  # the Rust helper missing: not the C one
         finally:
             os.environ.pop("APPZONES_BIN_ZONE_WAYLAND", None)
+            os.environ.pop("PATH", None)
             for k, v in saved.items():
                 if v is not None:
                     os.environ[k] = v

@@ -144,6 +144,13 @@ process manager ([Zones without systemd](../without-systemd.md)). For
 `appzones mount`, run `sudo mount --make-rshared /` at every boot, before zones
 start (systemd does this itself).
 
+**The Rust helper (experiment).** On the branch `rust-version`, parts of
+appzones are being written in Rust (`design/rust.md`); so far zone-wayland.
+To try it: `make` with cargo and rustc 1.85 or newer, then `sudo make install
+HELPER=rust` (or `HELPER_BIN=PATH` for a helper built elsewhere); on Nix, the
+package `appzones-rust`. The `appzones` command then runs the Rust helper for
+what it replaces.
+
 **Update and remove.** In the checkout: `git pull && make && sudo make
 install`, then `appzones restart ZONE` for running zones. `sudo make uninstall`
 removes everything `make install` put there; your zones' homes and settings

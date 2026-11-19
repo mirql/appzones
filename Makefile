@@ -76,7 +76,7 @@ zone-wayland:
 	fi
 
 # before anything is copied
-preflight:
+preflight: $(if $(filter rust,$(HELPER)),helper)
 	@[ "$(HELPER)" != rust ] || [ -f "$(HELPER_BIN)" ] \
 		|| { echo "HELPER=rust needs the Rust helper: cargo for \`make\`, or HELPER_BIN=PATH"; exit 1; }
 	@[ -n "$(PYTHON)" ] && "$(PYTHON)" -c 'import sys; sys.exit(sys.version_info < (3, 11))' \
