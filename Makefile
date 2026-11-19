@@ -21,7 +21,8 @@ PYTHON ?= $(shell command -v python3)
 LIBDIR = $(PREFIX)/lib/appzones
 BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/appzones
-UNITDIR = $(PREFIX)/lib/systemd/user
+# where systemd looks for user units: /usr/lib for PREFIX=/usr, else /usr/local/lib
+UNITDIR ?= $(if $(filter /usr,$(PREFIX)),/usr/lib/systemd/user,/usr/local/lib/systemd/user)
 SUDOERSDIR = /etc/sudoers.d
 APPARMORDIR = /etc/apparmor.d
 MOUNT_USERS ?= $(if $(SUDO_USER),$(SUDO_USER),%users)
@@ -36,11 +37,12 @@ WAYLAND_XML = src/zone-wayland/security-context-v1.xml
 USE_APPARMOR = $(shell [ "$(APPARMOR)" = yes ] || { [ "$(APPARMOR)" = auto ] && [ "$$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; } && echo yes)
 USE_SYSTEMD = $(shell [ "$(SYSTEMD)" = yes ] || { [ "$(SYSTEMD)" = auto ] && [ -d /run/systemd/system ]; } && echo yes)
 
-.PHONY: all install uninstall preflight clean
+.PHONY: all install uninstall preflight clean zone-wayland
 
-all: build/zone-wayland-or-note
+all: zone-wayland
 
-build/zone-wayland-or-note:
+# always tried again (cheap): after a source change, or once its build dependencies are installed
+zone-wayland:
 	@mkdir -p build
 	@if pkg-config --exists wayland-client 2>/dev/null && command -v wayland-scanner >/dev/null; then \
 		wayland-scanner client-header "$(WAYLAND_XML)" build/security-context-v1-client-protocol.h && \
@@ -53,7 +55,6 @@ build/zone-wayland-or-note:
 		echo "note: zone-wayland not built (needs a C compiler, pkg-config, libwayland-dev, wayland-scanner):"; \
 		echo "      zones will start without a Wayland socket; command-line use works"; \
 	fi
-	@touch $@
 
 # before anything is copied
 preflight:
@@ -80,8 +81,10 @@ install: all preflight
 	rm -rf $(DESTDIR)$(DATADIR)/contrib && cp -r contrib $(DESTDIR)$(DATADIR)/contrib
 	@if [ "$(USE_SYSTEMD)" = yes ]; then \
 		install -d $(DESTDIR)$(UNITDIR) && \
-		install -m 644 contrib/systemd/appzones@.service contrib/systemd/appzones-autostart.service \
-			contrib/systemd/appzones.slice $(DESTDIR)$(UNITDIR)/ && \
+		for u in appzones@.service appzones-autostart.service appzones.slice; do \
+			sed 's|^ExecStart=appzones |ExecStart=$(BINDIR)/appzones |' contrib/systemd/$$u > build/$$u && \
+			install -m 644 build/$$u $(DESTDIR)$(UNITDIR)/$$u || exit 1; \
+		done && \
 		echo "systemd user units in $(UNITDIR) (each user: systemctl --user daemon-reload)"; \
 	fi
 	@if [ "$(SUDOERS)" = yes ]; then \

@@ -34,7 +34,8 @@ pkgs.runCommand "appzones-make-install"
     head -1 $d/usr/local/lib/appzones/appzones-mount-helper | grep -q -- ' -IB$'
     grep -qx 'alice ALL=(root) NOPASSWD: /usr/local/lib/appzones/appzones-mount-helper' $d/etc/sudoers.d/appzones
     visudo -cqf $d/etc/sudoers.d/appzones
-    ! grep -q '@BWRAP@\|@PASTA@' $d/etc/apparmor.d/appzones
+    if grep -q '@BWRAP@\|@PASTA@' $d/etc/apparmor.d/appzones; then echo "AppArmor placeholders left"; exit 1; fi
+    grep -qx 'ExecStart=/usr/local/bin/appzones serve %i' $d/usr/local/lib/systemd/user/appzones@.service
     grep -q "profile appzones-bwrap $(readlink -f $(command -v bwrap))" $d/etc/apparmor.d/appzones
     v=$(python3 -B $d/usr/local/lib/appzones/zone.py --version)
     echo "$v"
@@ -43,6 +44,9 @@ pkgs.runCommand "appzones-make-install"
     make DESTDIR=$d SUDOERS=yes uninstall
     left=$(find $d -type f | grep -v -e '/etc/sudoers.d$' || true)
     [ -z "$left" ] || { echo "left after uninstall: $left"; exit 1; }
-    ! make DESTDIR=$d PREFIX=/opt/appzones install 2>/dev/null  # a zone cannot see /opt
+    if make DESTDIR=$d PREFIX=/opt/appzones install 2>/dev/null; then echo "PREFIX=/opt accepted"; exit 1; fi  # a zone cannot see /opt
+    # PREFIX=/usr (a distribution package): the units where systemd looks for them
+    make DESTDIR=$PWD/stage2 PREFIX=/usr SYSTEMD=yes SUDOERS=no APPARMOR=no install >/dev/null
+    grep -qx 'ExecStart=/usr/bin/appzones serve %i' stage2/usr/lib/systemd/user/appzones@.service
     touch $out
   ''
