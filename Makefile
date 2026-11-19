@@ -39,9 +39,22 @@ WAYLAND_XML = src/zone-wayland/security-context-v1.xml
 USE_APPARMOR = $(shell [ "$(APPARMOR)" = yes ] || { [ "$(APPARMOR)" = auto ] && [ "$$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; } && echo yes)
 USE_SYSTEMD = $(shell [ "$(SYSTEMD)" = yes ] || { [ "$(SYSTEMD)" = auto ] && [ -d /run/systemd/system ]; } && echo yes)
 
-.PHONY: all install uninstall preflight clean zone-wayland
+.PHONY: all install uninstall preflight clean zone-wayland helper
 
-all: zone-wayland
+all: zone-wayland helper
+
+# the Rust helper (helper/, the experiment on rust-version): built where cargo is
+# present and new enough, else a note; nothing uses it yet
+helper:
+	@mkdir -p build
+	@if command -v cargo >/dev/null && cargo build --release --locked --quiet --manifest-path helper/Cargo.toml \
+		--target-dir build/cargo 2>build/helper.log; then \
+		cp build/cargo/release/appzones-helper build/appzones-helper && echo "built build/appzones-helper"; \
+	else \
+		command -v cargo >/dev/null || echo "cargo: not found" >build/helper.log; \
+		rm -f build/appzones-helper; \
+		echo "note: appzones-helper not built (needs cargo and rustc 1.85 or newer; see build/helper.log)"; \
+	fi
 
 # always tried again (cheap): after a source change, or once its build dependencies are installed
 zone-wayland:
@@ -76,6 +89,7 @@ install: all preflight
 	{ echo "#!$(PYTHON) -IB"; cat src/zone_mount_helper.py; } > build/appzones-mount-helper
 	install -m 555 build/appzones-mount-helper $(DESTDIR)$(LIBDIR)/appzones-mount-helper
 	[ ! -f build/zone-wayland ] || install -m 755 build/zone-wayland $(DESTDIR)$(LIBDIR)/zone-wayland
+	[ ! -f build/appzones-helper ] || install -m 755 build/appzones-helper $(DESTDIR)$(LIBDIR)/appzones-helper
 	printf '#!/bin/sh\nexec %s -B %s/zone.py "$$@"\n' "$(PYTHON)" "$(LIBDIR)" > build/appzones
 	install -m 755 build/appzones $(DESTDIR)$(BINDIR)/appzones
 	install -m 644 examples/zones.toml $(DESTDIR)$(DATADIR)/zones.example.toml

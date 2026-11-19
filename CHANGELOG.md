@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **The Rust helper, a skeleton** (the experiment on the branch `rust-version`,
+  `design/rust.md`, #97): `helper/` builds one static binary, `appzones-helper`
+  (`nix build .#helper`; `make` builds it where cargo and rustc 1.85+ are
+  present, else a note with the reason in `build/helper.log`, and `make install`
+  installs it). Its commands are not implemented yet, and nothing uses it.
+
 - **zone-init refuses an argv that is not a list**: `run` took a string as a
   program name, and `shell` did not check its `argv` at all. Found by a new test
   of the agent protocol (the requests and answers between the CLI and zone-init),

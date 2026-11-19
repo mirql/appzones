@@ -15,6 +15,8 @@
       packages = forAll (pkgs: rec {
         appzones = pkgs.callPackage ./nix/package.nix { };
         default = appzones;
+        # the Rust helpers (experiment, design/rust.md): static, with musl
+        helper = pkgs.pkgsStatic.callPackage ./nix/helper.nix { };
       });
 
       overlays.default = final: _prev: {
@@ -33,6 +35,8 @@
           package = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
           # `make install` (outside Nix) into a staging directory
           make-install = import ./tests/make-install.nix { inherit pkgs; };
+          # the Rust helper builds, statically, and its tests pass (cargo test in the build)
+          helper = self.packages.${pkgs.stdenv.hostPlatform.system}.helper;
           # appzones on other distributions, in their disk images (offline, ~3 min each)
           debian12 = import ./tests/distro.nix {
             inherit pkgs;
