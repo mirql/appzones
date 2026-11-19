@@ -17,6 +17,8 @@
         default = appzones;
         # the Rust helpers (experiment, design/rust.md): static, with musl
         helper = pkgs.pkgsStatic.callPackage ./nix/helper.nix { };
+        # appzones with them
+        appzones-rust = appzones.override { inherit helper; };
       });
 
       overlays.default = final: _prev: {
@@ -52,6 +54,12 @@
           vm = import ./tests/vm.nix {
             inherit pkgs;
             module = self.nixosModules.default;
+          };
+          # the same VM test with the Rust helpers
+          vm-rust = import ./tests/vm.nix {
+            inherit pkgs;
+            module = self.nixosModules.default;
+            package = self.packages.${pkgs.stdenv.hostPlatform.system}.appzones-rust;
           };
         }
       );

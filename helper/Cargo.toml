@@ -10,6 +10,13 @@ publish = false
 
 [dependencies]
 mirql-love-sparkle = "=0.7.1"
+# zone-wayland: a Wayland client in pure Rust (no libwayland), and the protocol
+wayland-client = "=0.31.15"
+wayland-protocols = { version = "=0.32.13", features = ["client", "staging"] }
+# the syscalls (prctl PDEATHSIG, pipe2)
+rustix = { version = "=1.1.6", features = ["pipe", "process"] }
+# what rustix keeps experimental (the signal mask)
+libc = "=0.2.191"
 
 [profile.release]
 strip = true

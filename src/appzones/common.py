@@ -60,6 +60,27 @@ def find_tool(name: str) -> str | None:
             or shutil.which(name, path=os.pathsep.join((str(HERE), *SBIN_DIRS))))
 
 
+# Which implementation of the helpers runs (design/rust.md): "rust" when appzones was
+# installed with the Rust helper (the package's or make install's wrapper sets it), so
+# it reaches the server also under systemd. Unset: the Python and C ones.
+HELPER = zonecfg.env("HELPER") or ""
+RUST_HELPERS = ("zone-wayland",)  # done in Rust so far
+
+
+def helper_argv(name: str) -> list[str] | None:
+    """The command that runs helper NAME: $APPZONES_BIN_<NAME> when set (an explicit
+    choice wins), else `appzones-helper NAME` with the Rust helper, else the program NAME
+    (find_tool); None when it is not installed."""
+    override = zonecfg.env("BIN_" + name.upper().replace("-", "_"))
+    if override:
+        return [override]
+    if HELPER == "rust" and name in RUST_HELPERS:
+        p = find_tool("appzones-helper")
+        return [p, name] if p else None
+    p = find_tool(name)
+    return [p] if p else None
+
+
 def tool(name: str) -> str:
     """A helper program a zone cannot do without (find_tool, or exit)."""
     p = find_tool(name)

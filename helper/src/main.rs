@@ -5,9 +5,11 @@
 //!   appzones-helper zone-wayland SOCKET APP_ID INSTANCE
 //!
 //! The experiment on the branch rust-version (design/rust.md). Each command keeps the
-//! interface of the Python or C part it replaces; none is implemented yet.
+//! interface of the Python or C part it replaces. Done: zone-wayland.
 
 use std::process::ExitCode;
+
+mod zone_wayland;
 
 const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-wayland SOCKET APP_ID INSTANCE | --version";
 
@@ -18,7 +20,8 @@ fn main() -> ExitCode {
             println!("appzones-helper {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        Some(cmd @ ("zone-init" | "open-link" | "zone-wayland")) => {
+        Some("zone-wayland") => ExitCode::from(zone_wayland::main(&args[1..])),
+        Some(cmd @ ("zone-init" | "open-link")) => {
             eprintln!("appzones-helper: {cmd} is not implemented yet");
             ExitCode::from(2)
         }
