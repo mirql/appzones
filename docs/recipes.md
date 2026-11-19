@@ -31,6 +31,10 @@ nix_ld   = true                         # prebuilt binaries from npm and pip run
 tmp      = "disk"                       # /tmp survives restarts
 ```
 
+On Ubuntu or Debian, leave out `packages` and `nix_ld` (NixOS's): the zone
+already has the host's `node`, `python3` and the rest of `/usr`, and prebuilt
+binaries run there anyway.
+
 ```bash
 appzones run dev -- kitty -e tmux new -As dev   # a terminal + tmux session inside
 # then, inside: npm install, npm run dev, pip install ...
@@ -48,7 +52,7 @@ Give an agent one project and nothing else:
 colour   = "#cba6f7"
 binds    = [{ path = "~/src/my-app", mode = "rw" }]
 packages = ["nodejs", "git"]
-nix_ld   = true
+nix_ld   = true                         # NixOS; on Ubuntu or Debian leave out these two lines
 ```
 
 ```bash

@@ -146,6 +146,7 @@ netbird  = false                                       # nor the NetBird mesh
 binds    = [{ path = "~/src/my-app", mode = "rw" }]   # this project only
 packages = ["nodejs", "git"]                           # nixpkgs attributes on PATH
 nix_ld   = true                                        # prebuilt binaries (npm, pip) run
+# outside NixOS: no nix_ld (refused there), packages only where Nix is installed
 ```
 
 The tool's login, tokens and caches stay in the zone's home. It cannot read

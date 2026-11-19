@@ -39,8 +39,8 @@ Tested on Ubuntu 24.04 and Debian 12, in VMs, for every change
 **1. The packages.**
 
 ```bash
-sudo apt install python3 bubblewrap passt nftables xdg-dbus-proxy git \
-  make gcc pkg-config libwayland-dev   # to build zone-wayland, for desktop apps; skip on a server
+sudo apt install python3 bubblewrap passt nftables xdg-dbus-proxy git make
+sudo apt install gcc pkg-config libwayland-dev   # to build zone-wayland, for desktop apps; not on a server
 ```
 
 **2. Install from a checkout.**
@@ -82,7 +82,7 @@ the build tools it says so and skips it, and command-line zones still work.
 (with systemd). Then a zone for command-line work:
 
 ```bash
-mkdir -p ~/.config/appzones
+mkdir -p ~/.config/appzones ~/src/my-project    # or bind a project you have
 cat > ~/.config/appzones/zones.toml <<'TOML'
 version = 1
 requires = 5
@@ -93,13 +93,16 @@ devices = []                                     # no GPU, no sound: a server is
 binds   = [{ path = "~/src/my-project", mode = "rw" }]
 TOML
 appzones check
-appzones run --wait dev -- sh -c 'cd ~/src/my-project && npm install'
+appzones run --wait dev -- ls -la ~/src/my-project
+appzones run --wait dev -- sh -c 'cd ~/src/my-project && npm install'   # with nodejs and npm installed on the host
 appzones shell dev
 ```
 
-The zone has its own home (`~/.local/share/appzones/dev/home`), sees only
-`~/src/my-project` of yours, never `~/.ssh` or your keys, and reaches the
-internet but not your LAN or this machine. See [recipes](../recipes.md) for
+The zone has its own home (`~/.local/share/appzones/dev/home`). Of your
+files it sees only `~/src/my-project`, and everything in it: a key or token
+kept inside that folder is readable there. The rest of your home, `~/.ssh`
+and your keyrings stay out (they can never be bound). It reaches the internet
+but not your LAN or this machine. See [recipes](../recipes.md) for
 AI agents in a zone.
 
 **Your own never-list.** Paths no zone may ever bind or mount, on top of the
@@ -155,13 +158,15 @@ firewall has them loaded already; otherwise load them yourself. On NixOS:
 boot.kernelModules = [ "nf_tables" "nft_reject" "nft_reject_inet" "nf_reject_ipv4" "nf_reject_ipv6" ];
 ```
 
-Elsewhere (systemd loads them at every boot):
+Elsewhere, now:
 
 ```bash
-printf '%s\n' nf_tables nft_reject nft_reject_inet nf_reject_ipv4 nf_reject_ipv6 \
-  | sudo tee /etc/modules-load.d/appzones.conf
-sudo systemctl restart systemd-modules-load
+sudo modprobe -a nf_tables nft_reject nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
 ```
+
+and at every boot: with systemd, list them in `/etc/modules-load.d/appzones.conf`
+(one per line); with another init, in its module list (`/etc/modules` on
+Debian's sysvinit, Alpine and others).
 
 ## NVIDIA
 
