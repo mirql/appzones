@@ -3,62 +3,27 @@
 The config schema has its own release number (`requires = N` in
 `zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
 
-## Unreleased
+## 0.8.0
 
-- **Docs: installing on Ubuntu and Debian** (#67): the install page has a part
-  for each, NixOS and Ubuntu 24.04 / Debian 12 (the packages, `make install` and
-  its options, what it installs and why, a first command-line zone, what is
-  different from NixOS, without systemd, update and remove, kernel modules
-  outside NixOS). The README, the docs home page and the agent skill say where
-  appzones runs.
+**0.8: zones beyond NixOS.** appzones ran only on NixOS: a zone's file system was
+built from NixOS's layout, its DNS needed a recent pasta, and it was installed only
+through the flake. 0.8 runs command-line zones on **Ubuntu 24.04 and Debian 12** as a
+preview: dev tools and AI agents, with or without a desktop, also over SSH, installed
+with `make install` and tested on both for every change. Desktop apps there are not
+tested yet. On NixOS nothing changes for you. How to install:
+https://mirql.github.io/appzones/getting-started/install.html (milestone "0.8.0:
+zones beyond NixOS", #68).
 
-- **Tests on Ubuntu 24.04 and Debian 12** (#66): `just test-distros` boots each in
-  a VM from pinned packages and runs `make install`, then zones as an ordinary
-  user without systemd: on-demand start, the home and never-list, a sandbox
-  inside, `appzones shell`, `appzones mount` through the sudo rule, DNS from the
-  host's loopback resolver, the host refused, stop, `make uninstall`. Found and
-  fixed with them: `make install` failed where AppArmor is not active (the
-  profile is now installed and loaded only where AppArmor runs; it needs
-  AppArmor 4); and `appzones mount` on a host whose mounts are private (no
-  systemd) now says why the zone does not see the mount and how to fix it
-  (`mount --make-rshared /`), instead of a wrong hint.
+**Upgrading from 0.7:**
 
-- **An unknown command says so, with the nearest one** (#74): `appzones lsit`
-  now prints `appzones: unknown command 'lsit' (did you mean 'list'?); see
-  appzones --help` and exits 2, instead of the whole 60-line usage text. The
-  suggestion is dropped when nothing is close. `appzones` with no arguments
-  and `--help` still print the full usage.
-- **`make install` outside Nix** (#65): `make && sudo make install` installs
-  appzones under `/usr/local` (must be under `/usr`, which zones see), builds
-  `zone-wayland` when libwayland's development files are there (the protocol
-  file is in the repo, for Debian 12's older wayland-protocols), and installs
-  the systemd user units, a sudo rule for `appzones mount`, and on Ubuntu 23.10+
-  an AppArmor profile so bwrap and pasta may create user namespaces
-  (`contrib/apparmor/`). `sudo make uninstall` removes it all. appzones finds
-  its own `zone-wayland` next to itself, uses `/usr/bin/sudo` outside NixOS, and
-  says clearly when it is installed where a zone cannot see it. Tested on
-  Ubuntu 24.04 and Debian 12; a Nix check runs the install into a staging
-  directory.
+- On NixOS with the module, nothing to do. Running zones keep working; restart them
+  (`appzones restart ZONE`) to get 0.8's DNS in the zone (zone-init on `127.0.0.53`).
+- Hyprland: zone windows that appzones cannot name (a zone started without systemd,
+  another sandbox such as Flatpak) now get a red border and the tag `zone:?` instead
+  of the host's look. Reload Hyprland's config if you copied `appzones.lua`.
+- A mistyped command prints one line and exits 2, no longer the whole usage text.
 
-- **`appzones --version`** (and `-V`) prints the package version and the config release,
-  e.g. `appzones 0.7.0 (config release 5)`, for bug reports and `requires = N` mismatches.
-  A source checkout prints `unknown` for the version.
-
-- **Host tools in `/usr/sbin` and `/sbin`** (#63): appzones looks for `nft`, `bwrap`,
-  `pasta` and its other helpers on `PATH`, then in `/usr/sbin` and `/sbin`. On Debian
-  `nft` lives in `/usr/sbin`, which a user's `PATH` lacks, so a zone with
-  `network = "internet"` did not start ("nft not found on PATH"). `APPZONES_BIN_<NAME>`
-  still overrides.
-
-- **A zone answers its own DNS** (#64): zone-init listens on `127.0.0.53` in
-  the zone and hands each query over `/run/zone/dns.sock` to the zone's server,
-  which asks the host's resolver (`dns = "host"`, also a loopback one like
-  systemd-resolved's) or 1.1.1.1 and 1.0.0.1 (`dns = "public"`). Before, pasta forwarded
-  DNS, which needs a 2024 pasta (`--dns-host`): Ubuntu 24.04's could not do
-  `dns = "public"`, Debian 12's no DNS at all. Now any pasta works; tested on
-  both. Only standard queries, at most 4 KB, 64 at a time and 100 a second,
-  only to that resolver; UDP answers too big for the client come back
-  truncated, then whole over TCP.
+**What changed:**
 
 - **A zone's file system on other distributions** (0.8 milestone "zones beyond
   NixOS", #62): without `/run/current-system`, a zone gets the host's `/usr`
@@ -71,6 +36,52 @@ The config schema has its own release number (`requires = N` in
   home says it must be installed outside it (a zone cannot see it there). Not
   enough on its own yet: an install outside Nix and DNS with older pasta follow.
 
+- **A zone answers its own DNS** (#64): zone-init listens on `127.0.0.53` in
+  the zone and hands each query over `/run/zone/dns.sock` to the zone's server,
+  which asks the host's resolver (`dns = "host"`, also a loopback one like
+  systemd-resolved's) or 1.1.1.1 and 1.0.0.1 (`dns = "public"`). Before, pasta forwarded
+  DNS, which needs a 2024 pasta (`--dns-host`): Ubuntu 24.04's could not do
+  `dns = "public"`, Debian 12's no DNS at all. Now any pasta works; tested on
+  both. Only standard queries, at most 4 KB, 64 at a time and 100 a second,
+  only to that resolver; UDP answers too big for the client come back
+  truncated, then whole over TCP.
+
+- **Host tools in `/usr/sbin` and `/sbin`** (#63): appzones looks for `nft`, `bwrap`,
+  `pasta` and its other helpers on `PATH`, then in `/usr/sbin` and `/sbin`. On Debian
+  `nft` lives in `/usr/sbin`, which a user's `PATH` lacks, so a zone with
+  `network = "internet"` did not start ("nft not found on PATH"). `APPZONES_BIN_<NAME>`
+  still overrides. Thanks to @emreocell (#72).
+
+- **`make install` outside Nix** (#65): `make && sudo make install` installs
+  appzones under `/usr/local` (must be under `/usr`, which zones see), builds
+  `zone-wayland` when libwayland's development files are there (the protocol
+  file is in the repo, for Debian 12's older wayland-protocols), and installs
+  the systemd user units, a sudo rule for `appzones mount`, and on Ubuntu 23.10+
+  an AppArmor profile so bwrap and pasta may create user namespaces
+  (`contrib/apparmor/`). `sudo make uninstall` removes it all. appzones finds
+  its own `zone-wayland` next to itself, uses `/usr/bin/sudo` outside NixOS, and
+  says clearly when it is installed where a zone cannot see it. Tested on
+  Ubuntu 24.04 and Debian 12; a Nix check runs the install into a staging
+  directory.
+
+- **Tests on Ubuntu 24.04 and Debian 12** (#66): `just test-distros` boots each in
+  a VM from pinned packages and runs `make install`, then zones as an ordinary
+  user without systemd: on-demand start, the home and never-list, a sandbox
+  inside, `appzones shell`, `appzones mount` through the sudo rule, DNS from the
+  host's loopback resolver, the host refused, stop, `make uninstall`. Found and
+  fixed with them: `make install` failed where AppArmor is not active (the
+  profile is now installed and loaded only where AppArmor runs; it needs
+  AppArmor 4); and `appzones mount` on a host whose mounts are private (no
+  systemd) now says why the zone does not see the mount and how to fix it
+  (`mount --make-rshared /`), instead of a wrong hint.
+
+- **Docs: installing on Ubuntu and Debian** (#67): the install page has a part
+  for each, NixOS and Ubuntu 24.04 / Debian 12 (the packages, `make install` and
+  its options, what it installs and why, a first command-line zone, what is
+  different from NixOS, without systemd, update and remove, kernel modules
+  outside NixOS). The README, the docs home page and the agent skill say where
+  appzones runs.
+
 - **Window borders fail closed** (Hyprland): a window that comes from a zone but
   cannot be named gets the tag `zone:?` and a red warning border, never the host's
   look. Before, it got none: a zone started without systemd, a process under
@@ -78,9 +89,20 @@ The config schema has its own release number (`requires = N` in
   another pid namespace counts as such a window too (so does another sandbox,
   e.g. Flatpak). The zone's own name still comes from its unit's cgroup, now also
   from a cgroup below it. `appzones active` shows `[?]`.
+
 - **A zone always has its own cgroup namespace**: bwrap's `--unshare-cgroup`
   instead of `--unshare-cgroup-try`, which went on without one when it could not
   make it.
+
+- **`appzones --version`** (and `-V`) prints the package version and the config release,
+  e.g. `appzones 0.7.0 (config release 5)`, for bug reports and `requires = N` mismatches.
+  A source checkout prints `unknown` for the version. Thanks to @emreocell (#71).
+
+- **An unknown command says so, with the nearest one** (#74): `appzones lsit`
+  now prints `appzones: unknown command 'lsit' (did you mean 'list'?); see
+  appzones --help` and exits 2, instead of the whole 60-line usage text. The
+  suggestion is dropped when nothing is close. `appzones` with no arguments
+  and `--help` still print the full usage. Thanks to @tyza66 (#81).
 
 ## 0.7.0
 
