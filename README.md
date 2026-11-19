@@ -21,7 +21,7 @@
   <a href="https://sonarcloud.io/summary/overall?id=mirql_appzones"><img alt="Security rating" src="https://sonarcloud.io/api/project_badges/measure?project=mirql_appzones&metric=security_rating"></a>
   <a href="CONTRIBUTING.md"><img alt="Python dependencies: 0 (standard library only)" src="https://img.shields.io/badge/Python%20dependencies-0-brightgreen?logo=python&logoColor=white"></a>
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-<a href="#contributors"><img alt="All contributors" src="https://img.shields.io/badge/all_contributors-3-orange"></a>
+<a href="#contributors"><img alt="All contributors" src="https://img.shields.io/badge/all_contributors-4-orange"></a>
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 </p>
 
@@ -352,6 +352,7 @@ Thanks to everyone who made appzones what it is
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/askaramirov"><img src="https://avatars.githubusercontent.com/u/59274133?size=80" width="80px" height="80px" alt="Askar Amirov"/><br /><sub><b>Askar Amirov</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=askaramirov" title="Code">💻</a> <a href="https://github.com/mirql/appzones/commits?author=askaramirov" title="Documentation">📖</a> <a href="#design-askaramirov" title="Design">🎨</a> <a href="https://github.com/mirql/appzones/commits?author=askaramirov" title="Tests">⚠️</a> <a href="#security-askaramirov" title="Security">🛡️</a> <a href="#infra-askaramirov" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="#maintenance-askaramirov" title="Maintenance">🚧</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/Saifeldin-H"><img src="https://avatars.githubusercontent.com/u/249896858?size=80" width="80px" height="80px" alt="Saif H"/><br /><sub><b>Saif H</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=Saifeldin-H" title="Documentation">📖</a> <a href="#design-Saifeldin-H" title="Design">🎨</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/Lil-Clanky"><img src="https://avatars.githubusercontent.com/u/190942173?v=4&size=80" width="80px" height="80px" alt="Marnix de Jong"/><br /><sub><b>Marnix de Jong</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=Lil-Clanky" title="Code">💻</a> <a href="https://github.com/mirql/appzones/commits?author=Lil-Clanky" title="Tests">⚠️</a> <a href="https://github.com/mirql/appzones/commits?author=Lil-Clanky" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/emreocell"><img src="https://avatars.githubusercontent.com/u/73295089?v=4&size=80" width="80px" height="80px" alt="Emre Öcel"/><br /><sub><b>Emre Öcel</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=emreocell" title="Code">💻</a> <a href="https://github.com/mirql/appzones/commits?author=emreocell" title="Tests">⚠️</a> <a href="https://github.com/mirql/appzones/commits?author=emreocell" title="Documentation">📖</a></td>
     </tr>
   </tbody>
 </table>

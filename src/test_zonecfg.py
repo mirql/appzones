@@ -736,7 +736,10 @@ os.write(w, b"\\n"); os.close(w)
             return str(f)
 
         zone.SBIN_DIRS = (str(sbin), str(other))
-        old_path = os.environ.get("PATH")
+        saved = {k: os.environ.get(k) for k in ("PATH", "APPZONES_BIN_NFT", "ZONES_BIN_NFT", "APPZONES_BIN_PASTA",
+                                                "ZONES_BIN_PASTA")}
+        for k in saved:
+            os.environ.pop(k, None)  # an override in the developer's environment must not count
         os.environ["PATH"] = str(path)  # a normal user's PATH: no sbin
         try:
             in_sbin = make(sbin, "nft")
@@ -751,11 +754,11 @@ os.write(w, b"\\n"); os.close(w)
                 zone.tool("pasta")  # nowhere: it dies, naming where it looked
             self.assertIn("pasta not found on PATH, " + ", ".join(zone.SBIN_DIRS), err.getvalue())
         finally:
-            os.environ.pop("APPZONES_BIN_NFT", None)
-            if old_path is None:
-                os.environ.pop("PATH", None)
-            else:
-                os.environ["PATH"] = old_path
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
 
     def test_active(self):
         """appzones active: the zone from the window's compositor tag; zone:? is a sandbox it cannot name."""

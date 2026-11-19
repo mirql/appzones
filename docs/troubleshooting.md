@@ -7,6 +7,7 @@ appzones list                 # is the zone running? which network, dns, devices
 appzones which ZONE           # every setting in effect, and where it came from
 appzones logs ZONE            # the zone's journal (-f to follow)
 appzones check --probe ZONE   # validate the config and run isolation probes inside
+appzones --version            # the version and the config release (for a bug report)
 ```
 
 | Symptom | Why | What to do |
@@ -24,5 +25,6 @@ appzones check --probe ZONE   # validate the config and run isolation probes ins
 | An X11-only app, a Flatpak app, an AppImage | X11-only apps do not run yet; Flatpak apps need the host's Flatpak; AppImages need FUSE | Run Flatpaks on the host; AppImages with `--appimage-extract-and-run` |
 | A window has no zone border colour | Borders and tags need Hyprland and the appzones hook | See [Desktop](desktop.md) |
 | A zone does not start at all | Often a missing `wp_security_context_v1`, nftables modules, or an invalid config | `appzones check`, `appzones logs ZONE`; see [Install](getting-started/install.md) |
+| "nft not found" (or bwrap, pasta, ...) | appzones looks for its helpers on `PATH`, then in `/usr/sbin` and `/sbin` | Install the package that has it, or point appzones at it: `APPZONES_BIN_NFT=/path/to/nft` (`APPZONES_BIN_<NAME>` for any helper) |
 
-Still stuck? Ask in [Discussions](https://github.com/mirql/appzones/discussions/categories/q-a), or open an [issue](https://github.com/mirql/appzones/issues/new/choose) with `appzones check` output and the relevant part of your `zones.toml`.
+Still stuck? Ask in [Discussions](https://github.com/mirql/appzones/discussions/categories/q-a), or open an [issue](https://github.com/mirql/appzones/issues/new/choose) with `appzones --version`, `appzones check` output and the relevant part of your `zones.toml`.
