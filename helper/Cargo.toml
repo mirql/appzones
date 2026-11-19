@@ -1,0 +1,19 @@
+[package]
+name = "appzones-helper"
+version = "0.8.2"
+edition = "2021"
+rust-version = "1.85"
+description = "appzones' helpers in Rust: zone-init, open-link and zone-wayland (the experiment on rust-version, design/rust.md)"
+license = "MIT"
+repository = "https://github.com/mirql/appzones"
+publish = false
+
+[dependencies]
+mirql-love-sparkle = "=0.7.1"
+
+[profile.release]
+strip = true
+lto = true
+panic = "abort"
+codegen-units = 1
+opt-level = "s"

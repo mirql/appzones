@@ -155,6 +155,12 @@ handling as today). Release profile: `strip`, `lto`, `panic = "abort"`; `cargo d
 dependencies. aarch64 is not solved by Rust (x86_64 in nix-ld paths, `flatpak_info`,
 `platforms`): it stays its own issue (#21).
 
+## Measured
+
+| Step | Build (Nix, warm toolchain) | Binary | Notes |
+|---|---|---|---|
+| Skeleton (no code yet, one dependency) | about 45 s with the first toolchain download | 393 KiB, static-pie (musl), stripped; no runtime dependencies | `cargo test` runs in the Nix build; `make` builds it where cargo is present |
+
 ## When to stop
 
 After each step this file records what it cost (build time, stripped binary size, test
