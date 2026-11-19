@@ -58,6 +58,9 @@
 {
   pkgs,
   module,
+  # another build of appzones to test (e.g. with a helper in another language);
+  # null: the module's default
+  package ? null,
 }:
 let
   inherit (pkgs) hyprland;
@@ -248,6 +251,7 @@ pkgs.testers.runNixOSTest {
       imports = [ module ];
       programs.appzones = {
         enable = true;
+        package = lib.mkIf (package != null) package;
         user = "alice";
         deniedPaths = [ "/srv/code" ]; # a host's own addition: binds and mounts refuse it
       };

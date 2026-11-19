@@ -7,6 +7,7 @@
 set -eu
 export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 src=$1
+mflags=${2:-}  # extra make arguments (tests/distro.nix makeFlags)
 fail() { echo "FAIL $*"; exit 1; }
 pass() { echo "PASS $*"; }
 U="env -i HOME=/home/alice USER=alice LOGNAME=alice XDG_RUNTIME_DIR=/run/user/1000 PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8"
@@ -39,11 +40,11 @@ while True: s.accept()[0].close()' </dev/null >/dev/null 2>&1  # background: no 
 
 # install as root, from a copy of the checkout
 cp -r "$src" /tmp/appzones && chmod -R u+w /tmp/appzones && cd /tmp/appzones
-make >/tmp/make.log 2>&1 || { cat /tmp/make.log; fail "make"; }
+make $mflags >/tmp/make.log 2>&1 || { cat /tmp/make.log; fail "make"; }
 grep -q "built build/zone-wayland" /tmp/make.log || fail "zone-wayland not built: $(tail -2 /tmp/make.log)"
 # the profile needs AppArmor 4 (Ubuntu 24.04); where there is no restriction (Debian 12) none is installed
 if [ -e /etc/apparmor.d/abi/4.0 ]; then aa=yes; else aa=auto; fi
-make install MOUNT_USERS=alice APPARMOR=$aa SYSTEMD=no >/tmp/install.log 2>&1 || { cat /tmp/install.log; fail "make install"; }
+make install $mflags MOUNT_USERS=alice APPARMOR=$aa SYSTEMD=no >/tmp/install.log 2>&1 || { cat /tmp/install.log; fail "make install"; }
 if [ $aa = yes ]; then
   apparmor_parser -Q -K /etc/apparmor.d/appzones || fail "AppArmor profile does not parse"
   pass "make; make install (zone-wayland built, the AppArmor profile parses)"
@@ -129,7 +130,7 @@ as_alice 'appzones stop off'
 mv /tmp/hidden/zone-wayland /usr/local/lib/appzones/ && mv /tmp/hidden/xdg-dbus-proxy /tmp/hidden/dbus-daemon /usr/bin/
 pass "a server without zone-wayland, xdg-dbus-proxy, dbus-daemon: the zone starts, says why, bus = zone says what is missing"
 
-make uninstall >/dev/null 2>&1 || fail "make uninstall"
+make uninstall $mflags >/dev/null 2>&1 || fail "make uninstall"
 left=$(ls -d /usr/local/lib/appzones /usr/local/bin/appzones /usr/local/share/appzones /etc/sudoers.d/appzones \
   /etc/apparmor.d/appzones 2>/dev/null || true)
 [ -z "$left" ] || fail "left after uninstall: $left"

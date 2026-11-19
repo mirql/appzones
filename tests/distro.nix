@@ -3,7 +3,12 @@
 # `make install`, then zones as an ordinary user. Offline, no systemd. The
 # kernel is nixpkgs', so Ubuntu's AppArmor restriction on user namespaces is
 # not in force here; the profile is only checked to parse.
-{ pkgs, image }:
+{
+  pkgs,
+  image,
+  # extra `make` and `make install` arguments (e.g. another helper implementation)
+  makeFlags ? "",
+}:
 let
   # the VM's kernel modules: pasta's tun device, a dummy link for the test's
   # network, and what the zone's nft deny list uses (no autoload in a user namespace)
@@ -61,7 +66,7 @@ vmTools.runInLinuxImage (
       src = pkgs.lib.cleanSource ../.;
     }
     ''
-      timeout 900 sh ${./distro-test.sh} $src > $NIX_BUILD_TOP/log 2>&1 || true
+      timeout 900 sh ${./distro-test.sh} $src ${pkgs.lib.escapeShellArg makeFlags} > $NIX_BUILD_TOP/log 2>&1 || true
       cat $NIX_BUILD_TOP/log
       grep -qx "ALL PASSED" $NIX_BUILD_TOP/log
       mkdir -p $out && cp $NIX_BUILD_TOP/log $out/log

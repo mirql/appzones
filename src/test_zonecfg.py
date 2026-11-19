@@ -7,6 +7,8 @@ import contextlib
 import importlib
 import io
 import json
+import socket
+import subprocess
 import os
 import re
 import sys
@@ -1746,3 +1748,221 @@ os.write(w, b"\\n"); os.close(w)
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AgentProtocolTest(unittest.TestCase):
+    """The agent protocol of zone-init (the top of zone_init.py), as a specification any
+    implementation must meet: zone-init runs outside a zone here, gets its control socket
+    and its server's pidfd as the host gives them, and is spoken to over the socket as the
+    CLI does. $APPZONES_TEST_ZONE_INIT: another zone-init to test (a command line)."""
+
+    def setUp(self):
+        import shlex
+        self.tmp = tempfile.TemporaryDirectory()
+        t = Path(self.tmp.name)
+        self.sock = str(t / "agent.sock")
+        ls = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        ls.bind(self.sock)
+        ls.listen(16)
+        me = os.pidfd_open(os.getpid())  # its "server": this test process
+        cmd = shlex.split(os.environ.get("APPZONES_TEST_ZONE_INIT", "")) or [sys.executable, "-B",
+                                                                               str(HERE / "zone_init.py")]
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(t), "ZONE": "tt",
+               "ZONE_CTL_FD": str(ls.fileno()), "ZONE_SERVER_FD": str(me), "XDG_RUNTIME_DIR": str(t)}
+        self.proc = subprocess.Popen(cmd, env=env, pass_fds=(ls.fileno(), me), stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+        ls.close()
+        os.close(me)
+        for _ in range(100):  # until it answers
+            try:
+                if self.request({"op": "ping"})[0].get("ok"):
+                    break
+            except OSError:
+                pass
+            time.sleep(0.05)
+
+    def tearDown(self):
+        self.proc.kill()
+        self.proc.wait()
+        self.tmp.cleanup()
+
+    def connect(self, req, fds=()):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(10)
+        s.connect(self.sock)
+        data = (json.dumps(req) + "\n").encode()
+        if fds:
+            socket.send_fds(s, [data], list(fds))
+        else:
+            s.sendall(data)
+        return s
+
+    @staticmethod
+    def lines(s, n):
+        """N reply lines from S (JSON objects)."""
+        buf, out = b"", []
+        while len(out) < n:
+            while b"\n" not in buf:
+                chunk = s.recv(65536)
+                if not chunk:
+                    return out
+                buf += chunk
+            line, buf = buf.split(b"\n", 1)
+            out.append(json.loads(line))
+        return out
+
+    def request(self, req, fds=(), n=1):
+        with self.connect(req, fds) as s:
+            return self.lines(s, n)
+
+    def test_ping(self):
+        r = self.request({"op": "ping"})[0]
+        self.assertEqual((r["ok"], r["zone"]), (True, "tt"))
+        self.assertIsInstance(r["pid"], int)
+
+    def test_bad_requests(self):
+        with self.connect({}) as s:  # no op
+            r = self.lines(s, 1)[0]
+        self.assertFalse(r["ok"])
+        self.assertIn("unknown op", r["error"])
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(self.sock)
+        s.sendall(b"not json\n")
+        self.assertEqual(self.lines(s, 1)[0], {"ok": False, "error": "bad request"})
+        s.close()
+        for argv in ([], "sh", [1]):
+            self.assertFalse(self.request({"op": "run", "argv": argv})[0]["ok"])
+        r = self.request({"op": "run", "argv": ["/nonexistent/program"]})[0]
+        self.assertFalse(r["ok"])
+        self.assertIn("/nonexistent/program", r["error"])
+        self.assertFalse(self.request({"op": "run", "argv": ["true"], "bus": "elsewhere"})[0]["ok"])
+        for argv in ("sh", [1], [["sh"]], [], "", 0, {}):
+            self.assertFalse(self.request({"op": "shell", "argv": argv})[0]["ok"], argv)
+        self.assertFalse(self.request({"op": "busy", "path": "/etc"})[0]["ok"])
+        self.assertTrue(self.request({"op": "mounts"})[0]["ok"])
+        self.assertFalse(self.request({"op": "status", "pid": 1})[0]["ok"])
+        self.assertEqual(self.request({"op": "resize", "pid": 1, "rows": 1, "cols": 1})[0], {"ok": False})
+
+    def test_run_wait(self):
+        """--wait: the client's three fds (pipes) become the command's; the exit code comes last."""
+        in_r, in_w = os.pipe()
+        out_r, out_w = os.pipe()
+        err_r, err_w = os.pipe()
+        s = self.connect({"op": "run", "argv": ["sh", "-c", "read x; echo got $x; echo oops >&2; exit 3"],
+                          "wait": True}, (in_r, out_w, err_w))
+        for f in (in_r, out_w, err_w):
+            os.close(f)
+        first = self.lines(s, 1)[0]
+        self.assertTrue(first["ok"])
+        os.write(in_w, b"hi\n")
+        os.close(in_w)
+        self.assertEqual(self.lines(s, 1)[0], {"exit": 3})
+        s.close()
+        with os.fdopen(out_r) as o, os.fdopen(err_r) as e:
+            self.assertEqual((o.read(), e.read()), ("got hi\n", "oops\n"))
+        # killed by a signal: a negative exit code
+        r = self.request({"op": "run", "argv": ["sh", "-c", "kill -9 $$"], "wait": True},
+                         (os.open(os.devnull, os.O_RDONLY), os.open(os.devnull, os.O_WRONLY),
+                          os.open(os.devnull, os.O_WRONLY)), n=2)
+        self.assertEqual(r[1], {"exit": -9})
+
+    def test_run_wait_refuses(self):
+        """--wait takes pipes, files or /dev/null, never a tty or a socket, and exactly three."""
+        master, slave = os.openpty()
+        a, b = socket.socketpair()
+        null = os.open(os.devnull, os.O_RDWR)
+        try:
+            for fds in ((slave, null, null), (a.fileno(), null, null), (null, null)):
+                r = self.request({"op": "run", "argv": ["true"], "wait": True}, fds)[0]
+                self.assertFalse(r["ok"], fds)
+        finally:
+            for f in (master, slave, null):
+                os.close(f)
+            a.close()
+            b.close()
+
+    def test_run_status_ps(self):
+        """Without --wait: a pid at once; status while running and after, with the output's tail; ps."""
+        go = Path(self.tmp.name) / "go"  # the command waits for it: running until the checks are done
+        r = self.request({"op": "run", "argv": ["sh", "-c", f"echo line-one; while [ ! -e {go} ]; do sleep 0.05; done; "
+                                                            "echo line-two"]})[0]
+        pid = r["pid"]
+        import signal as sg
+        child = os.pidfd_open(pid)  # it waits for `go`, so it is alive here; a pidfd pins it
+
+        def kill_child():  # it runs in its own session, outside any pid namespace here
+            try:
+                sg.pidfd_send_signal(child, sg.SIGKILL)
+            except ProcessLookupError:
+                pass  # done already
+            finally:
+                os.close(child)
+
+        self.addCleanup(kill_child)  # never left polling for `go`, whatever happens below
+        try:
+            st = self.request({"op": "status", "pid": pid})[0]
+            self.assertEqual((st["ok"], st["running"], st["exit"]), (True, True, None))
+            ps = self.request({"op": "ps"})[0]
+            self.assertIn(pid, [p[0] for p in ps["procs"]])
+            self.assertIsInstance(ps["init"], int)
+            self.assertEqual(ps["helpers"], [])
+        finally:
+            go.touch()  # released also when a check fails (it would outlive zone-init)
+        for _ in range(100):
+            st = self.request({"op": "status", "pid": pid})[0]
+            if not st["running"]:
+                break
+            time.sleep(0.1)
+        self.assertEqual((st["running"], st["exit"]), (False, 0))
+        self.assertTrue(any("line-two" in t for t in st["tail"]), st["tail"])
+
+    def test_shell(self):
+        """shell: a pty in the zone; after the first line the connection carries raw bytes."""
+        # the command waits for a line, sent after the reply (zone-init sets the size before it)
+        s = self.connect({"op": "shell", "rows": 30, "cols": 100, "term": "dumb",
+                          "argv": ["sh", "-c", "read x; stty size; echo shell-$TERM-ok"]})
+        first = b""
+        while not first.endswith(b"\n"):
+            c = s.recv(1)
+            if not c:
+                self.fail(f"connection closed before the reply: {first!r}")
+            first += c
+        self.assertTrue(json.loads(first)["ok"])
+        s.sendall(b"go\n")
+        out = b""
+        while True:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            out += chunk
+        s.close()
+        self.assertIn(b"30 100", out)
+        self.assertIn(b"shell-dumb-ok", out)
+
+    def test_ends_with_its_server(self):
+        """zone-init ends when its server's pidfd says the server is gone."""
+        import signal as sg
+        server = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        pidfd = os.pidfd_open(server.pid)
+        ls = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        ls.bind(self.sock + "2")
+        ls.listen(1)
+        cmd = [sys.executable, "-B", str(HERE / "zone_init.py")]
+        import shlex
+        cmd = shlex.split(os.environ.get("APPZONES_TEST_ZONE_INIT", "")) or cmd
+        init = subprocess.Popen(cmd, env={"PATH": os.environ.get("PATH", ""), "HOME": self.tmp.name, "ZONE": "t2",
+                                          "ZONE_CTL_FD": str(ls.fileno()), "ZONE_SERVER_FD": str(pidfd)},
+                                pass_fds=(ls.fileno(), pidfd), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ls.close()
+        os.close(pidfd)
+        try:
+            time.sleep(0.5)
+            self.assertIsNone(init.poll())
+            server.send_signal(sg.SIGKILL)
+            server.wait()
+            self.assertEqual(init.wait(timeout=10), 0)
+        finally:
+            for p in (server, init):
+                if p.poll() is None:
+                    p.kill()
+                    p.wait()
