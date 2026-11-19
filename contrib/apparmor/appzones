@@ -2,7 +2,8 @@
 # restrict unprivileged user namespaces with AppArmor
 # (kernel.apparmor_restrict_unprivileged_userns = 1); without this, every zone
 # fails to start ("setting up uid map: Permission denied"). `make install`
-# fills in the paths and loads it. Other distributions do not need it.
+# fills in the paths and loads it. Needs AppArmor 4 (Ubuntu 24.04 and later);
+# distributions without the restriction (Debian 12) do not need it.
 #
 # This lets bwrap and pasta create user namespaces for every user of the
 # machine, as on distributions without the restriction; nothing else changes

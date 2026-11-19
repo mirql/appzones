@@ -33,6 +33,15 @@
           package = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
           # `make install` (outside Nix) into a staging directory
           make-install = import ./tests/make-install.nix { inherit pkgs; };
+          # appzones on other distributions, in their disk images (offline, ~3 min each)
+          debian12 = import ./tests/distro.nix {
+            inherit pkgs;
+            image = "debian12x86_64";
+          };
+          ubuntu2404 = import ./tests/distro.nix {
+            inherit pkgs;
+            image = "ubuntu2404x86_64";
+          };
         }
         // {
           # NixOS VM test (needs /dev/kvm, ~6 min)

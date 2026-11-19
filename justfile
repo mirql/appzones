@@ -20,6 +20,10 @@ build:
 test-install:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.make-install
 
+# appzones on Ubuntu 24.04 and Debian 12, in their disk images: make install, zones as a user (~3 min each)
+test-distros:
+    nice -n 19 nix build -L --no-link .#checks.x86_64-linux.debian12 .#checks.x86_64-linux.ubuntu2404
+
 # NixOS VM test: Hyprland, zone units, isolation probes, window tags (~6 min, needs /dev/kvm)
 test-vm:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.vm

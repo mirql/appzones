@@ -5,6 +5,17 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **Tests on Ubuntu 24.04 and Debian 12** (#66): `just test-distros` boots each in
+  a VM from pinned packages and runs `make install`, then zones as an ordinary
+  user without systemd: on-demand start, the home and never-list, a sandbox
+  inside, `appzones shell`, `appzones mount` through the sudo rule, DNS from the
+  host's loopback resolver, the host refused, stop, `make uninstall`. Found and
+  fixed with them: `make install` failed where AppArmor is not active (the
+  profile is now installed and loaded only where AppArmor runs; it needs
+  AppArmor 4); and `appzones mount` on a host whose mounts are private (no
+  systemd) now says why the zone does not see the mount and how to fix it
+  (`mount --make-rshared /`), instead of a wrong hint.
+
 - **An unknown command says so, with the nearest one** (#74): `appzones lsit`
   now prints `appzones: unknown command 'lsit' (did you mean 'list'?); see
   appzones --help` and exits 2, instead of the whole 60-line usage text. The

@@ -38,6 +38,30 @@ def helper_failed(r: subprocess.CompletedProcess, what: str):
     die(f"{what}: {err.removeprefix('appzones-mount-helper: ') or r.returncode}")
 
 
+MOUNTINFO = "/proc/self/mountinfo"
+
+
+def propagation_shared(path: Path, mountinfo: str = MOUNTINFO) -> bool | None:
+    """Whether the host mount that holds PATH passes new mounts on (shared), as a
+    running zone needs for `appzones mount`; None when it cannot tell. systemd makes
+    every mount shared at boot; without systemd they are often private."""
+    best, shared = "", None
+    try:
+        lines = Path(mountinfo).read_text().splitlines()
+    except OSError:
+        return None
+    p = str(path)
+    for line in lines:
+        f = line.split(" ")
+        if len(f) < 7:
+            continue
+        point = f[4].replace("\\040", " ")
+        if (p == point or p.startswith(point.rstrip("/") + "/")) and len(point) >= len(best):
+            opts = f[6:f.index("-")] if "-" in f else []
+            best, shared = point, any(o.startswith("shared:") for o in opts)
+    return shared
+
+
 def mount(name: str, path: str, ro: bool, as_name: str | None) -> int:
     load_zone(name)
     if not agent.ping(name):
@@ -65,8 +89,12 @@ def mount(name: str, path: str, ro: bool, as_name: str | None) -> int:
     write_mounts(name, m)
     inside = agent.zone_request(name, {"op": "mounts"})
     if inside and f"/mnt/host/{nm}" not in [p for p, _ in inside.get("mounts", [])]:
-        warn(f"mounted on the host, but zone {name} does not see /mnt/host/{nm} (did the zone start before release "
-             f"3? `appzones restart {name}`)")
+        if propagation_shared(target) is False:
+            warn(f"mounted on the host, but zone {name} does not see /mnt/host/{nm}: the host's mounts do not "
+                 "pass new mounts on (systemd makes them shared at boot; without it they are private). Run "
+                 f"`sudo mount --make-rshared /` (at every boot, before zones start), then `appzones restart {name}`")
+        else:
+            warn(f"mounted on the host, but zone {name} does not see /mnt/host/{nm}: `appzones restart {name}`")
     print(f"{src} is /mnt/host/{nm} in zone {name} ({'read-only' if ro else 'read-write'}), until "
           f"`appzones umount {name} {nm}` or the zone stops")
     return 0

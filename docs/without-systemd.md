@@ -133,6 +133,10 @@ manager's own commands. `appzones run` on a zone that is not running starts
 it as `supervisor` says, not through your manager: start zones through the
 manager first, or set `supervisor = "systemd"` only where systemd is the manager.
 
+`appzones mount` needs the host's mounts to be shared, which systemd sets up at
+boot. Without systemd, run `sudo mount --make-rshared /` once per boot, before
+zones start (from the init system or your session's start script).
+
 Zones stay **long-lived**: a zone runs until you stop it or your session ends.
 When the compositor goes away, the zone's Wayland helper exits and the zone stops
 with it. To have a zone end by itself, give it a `linger` time:

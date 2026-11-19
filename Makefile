@@ -101,8 +101,10 @@ install: all preflight
 		install -d $(DESTDIR)$(APPARMORDIR) && \
 		sed -e "s|@BWRAP@|$$(readlink -f $$bwrap)|" -e "s|@PASTA@|$$(readlink -f $$pasta)|" contrib/apparmor/appzones \
 			> $(DESTDIR)$(APPARMORDIR)/appzones && chmod 644 $(DESTDIR)$(APPARMORDIR)/appzones && \
-		if [ -z "$(DESTDIR)" ] && command -v apparmor_parser >/dev/null; then apparmor_parser -r $(APPARMORDIR)/appzones; fi && \
-		echo "AppArmor profile $(APPARMORDIR)/appzones: bwrap and pasta may create user namespaces"; \
+		echo "AppArmor profile $(APPARMORDIR)/appzones: bwrap and pasta may create user namespaces" && \
+		if [ -z "$(DESTDIR)" ] && [ -d /sys/kernel/security/apparmor ] && command -v apparmor_parser >/dev/null; then \
+			apparmor_parser -r $(APPARMORDIR)/appzones; \
+		else echo "  (not loaded: AppArmor is not active here; it loads at the next boot where it is)"; fi; \
 	fi
 	@echo "installed appzones $(VERSION) in $(PREFIX)"
 
@@ -112,7 +114,8 @@ uninstall:
 	rm -f $(DESTDIR)$(UNITDIR)/appzones@.service $(DESTDIR)$(UNITDIR)/appzones-autostart.service $(DESTDIR)$(UNITDIR)/appzones.slice
 	rm -f $(DESTDIR)$(SUDOERSDIR)/appzones
 	@if [ -f $(DESTDIR)$(APPARMORDIR)/appzones ]; then \
-		if [ -z "$(DESTDIR)" ] && command -v apparmor_parser >/dev/null; then apparmor_parser -R $(APPARMORDIR)/appzones || true; fi; \
+		if [ -z "$(DESTDIR)" ] && [ -d /sys/kernel/security/apparmor ] && command -v apparmor_parser >/dev/null; then \
+			apparmor_parser -R $(APPARMORDIR)/appzones || true; fi; \
 		rm -f $(DESTDIR)$(APPARMORDIR)/appzones; \
 	fi
 

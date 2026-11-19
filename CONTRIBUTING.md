@@ -29,6 +29,8 @@ just check FILE      # validate a zones.toml
 just build           # the package; runs the unit tests too
 just test-vm         # NixOS VM test with Hyprland (~6 min, needs /dev/kvm)
 just test-install    # `make install` into a staging directory; also `make install DESTDIR=/tmp/x` without Nix
+just test-distros    # Ubuntu 24.04 and Debian 12 in a VM (~3 min each, /dev/kvm): run it when you touch the
+                     # install, the zone's file system or the network
 just fmt             # format the Nix files
 just demo            # re-record docs/demo-*.gif in a VM, when the CLI output changes
 just release X.Y.Z   # after the version's PR is merged: tag it, publish its CHANGELOG section

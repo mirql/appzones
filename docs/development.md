@@ -10,6 +10,7 @@ just check FILE     # validate a zones.toml
 just build          # the package (runs the unit tests too)
 just test-vm        # NixOS VM: Hyprland, zone units, isolation, window tags (~6 min, /dev/kvm)
 just test-install   # `make install` into a staging directory (for other distributions)
+just test-distros   # Ubuntu 24.04 and Debian 12 in a VM: make install, zones as a user (~3 min each)
 ```
 
 The VM test (`tests/vm.nix`, `checks.x86_64-linux.vm`) runs Hyprland on a
