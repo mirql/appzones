@@ -5,6 +5,11 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **An unknown command says so, with the nearest one** (#74): `appzones lsit`
+  now prints `appzones: unknown command 'lsit' (did you mean 'list'?); see
+  appzones --help` and exits 2, instead of the whole 60-line usage text. The
+  suggestion is dropped when nothing is close. `appzones` with no arguments
+  and `--help` still print the full usage.
 - **`make install` outside Nix** (#65): `make && sudo make install` installs
   appzones under `/usr/local` (must be under `/usr`, which zones see), builds
   `zone-wayland` when libwayland's development files are there (the protocol
