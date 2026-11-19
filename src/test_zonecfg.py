@@ -1887,6 +1887,14 @@ class AgentProtocolTest(unittest.TestCase):
         r = self.request({"op": "run", "argv": ["sh", "-c", f"echo line-one; while [ ! -e {go} ]; do sleep 0.05; done; "
                                                             "echo line-two"]})[0]
         pid = r["pid"]
+
+        def kill_child():  # it runs in its own session, outside any pid namespace here
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+
+        self.addCleanup(kill_child)  # never left polling for `go`, whatever happens below
         try:
             st = self.request({"op": "status", "pid": pid})[0]
             self.assertEqual((st["ok"], st["running"], st["exit"]), (True, True, None))
