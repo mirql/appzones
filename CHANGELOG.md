@@ -3,7 +3,9 @@
 The config schema has its own release number (`requires = N` in
 `zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
 
-## Unreleased
+## 0.8.1
+
+Arch Linux as a preview, like Ubuntu and Debian in 0.8.0: an AUR package. Nothing changes on NixOS.
 
 - **Arch Linux** (preview): a `PKGBUILD` in `contrib/arch/` (for the AUR). It
   installs under `/usr`, with the systemd user units and a sudo rule for
