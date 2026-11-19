@@ -5,6 +5,9 @@ by one question: does this make a zone easier to escape, or let it see more
 of the host? Changes that widen what a zone can reach need a reason and a
 test.
 
+We try to be kind, humble and curious here, and ask the same of everyone who
+joins in.
+
 ## Before you start
 
 - **New here?** Pick one of the [good first issues](https://github.com/mirql/appzones/labels/good%20first%20issue):
