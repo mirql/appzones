@@ -17,18 +17,19 @@ cache=${XDG_CACHE_HOME:-$HOME/.cache}/appzones-test-arch
 mkdir -p "$cache"
 if ! echo "$IMAGE_SHA256  $cache/$IMAGE" | sha256sum -c --status 2>/dev/null; then
   echo "downloading $IMAGE"
-  curl -fL --retry 3 -o "$cache/$IMAGE.part" "$IMAGE_URL"
-  echo "$IMAGE_SHA256  $cache/$IMAGE.part" | sha256sum -c --status || { echo "sha256 mismatch: $IMAGE_URL"; exit 1; }
-  mv "$cache/$IMAGE.part" "$cache/$IMAGE"
+  part=$(mktemp "$cache/$IMAGE.XXXXXX")  # (each run its own: two runs never share a file)
+  curl -fL --retry 3 --proto '=https' --proto-redir '=https' -o "$part" "$IMAGE_URL"
+  echo "$IMAGE_SHA256  $part" | sha256sum -c --status || { rm -f "$part"; echo "sha256 mismatch: $IMAGE_URL"; exit 1; }
+  mv "$part" "$cache/$IMAGE"
 fi
 
 work=$(mktemp -d)
 # APPZONES_TEST_KEEP=1: on a failure the VM stays up, for a look (the command is printed)
 cleanup() {
-  if [ "${APPZONES_TEST_KEEP:-}" = 1 ] && [ "${ok:-}" != yes ]; then
+  if [[ "${APPZONES_TEST_KEEP:-}" == 1 && "${ok:-}" != yes ]]; then
     echo "kept: ssh -i $work/key -p $port tester@127.0.0.1 (then: kill \$(cat $work/qemu.pid))"; return
   fi
-  [ -f "$work/qemu.pid" ] && kill "$(cat "$work/qemu.pid")" 2>/dev/null || true; rm -rf "$work"
+  [[ -f "$work/qemu.pid" ]] && kill "$(cat "$work/qemu.pid")" 2>/dev/null || true; rm -rf "$work"
 }
 trap cleanup EXIT
 qemu-img create -q -f qcow2 -b "$cache/$IMAGE" -F qcow2 "$work/disk.qcow2" 20G
@@ -58,7 +59,7 @@ vm true || { echo "the VM did not come up"; tail -20 "$work/serial.log"; exit 1;
 # the packages of one date, then what the package and the test need. The archive is a
 # courtesy service: two downloads at a time, and the packages kept in the cache for the
 # next run (only the first run downloads them)
-if [ -f "$cache/pacman-pkg.tar" ]; then
+if [[ -f "$cache/pacman-pkg.tar" ]]; then
   vm "sudo tar x -C /var/cache/pacman/pkg" <"$cache/pacman-pkg.tar"
 fi
 vm "echo 'Server = $ARCHIVE/\$repo/os/\$arch' | sudo tee /etc/pacman.d/mirrorlist >/dev/null && \
@@ -66,7 +67,8 @@ vm "echo 'Server = $ARCHIVE/\$repo/os/\$arch' | sudo tee /etc/pacman.d/mirrorlis
   sudo pacman -Syyuu --noconfirm --needed --disable-download-timeout base-devel python bubblewrap passt nftables iproute2 wayland \
   pkgconf xdg-dbus-proxy dbus sudo dnsmasq procps-ng psmisc util-linux weston wayland-utils sway foot \
   >/tmp/pacman.log 2>&1 || { tail -20 /tmp/pacman.log; exit 1; }"
-vm "sudo tar c -C /var/cache/pacman/pkg ." >"$cache/pacman-pkg.tar.part" && mv "$cache/pacman-pkg.tar.part" "$cache/pacman-pkg.tar"
+part=$(mktemp "$cache/pacman-pkg.tar.XXXXXX")
+vm "sudo tar c -C /var/cache/pacman/pkg ." >"$part" && mv "$part" "$cache/pacman-pkg.tar"
 
 # the package from this checkout: a tarball of the tracked files, as GitHub's would be
 version=$(sed -n 's/^  version = "\(.*\)";/\1/p' "$here/nix/package.nix")
