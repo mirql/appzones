@@ -819,7 +819,8 @@ os.write(w, b"\\n"); os.close(w)
         self.assertEqual((fhs["XDG_DATA_DIRS"], fhs["TZDIR"]), ("/usr/local/share:/usr/share", "/usr/share/zoneinfo"))
         self.assertTrue(nix["PATH"].endswith("/run/current-system/sw/bin"))
         # the xdg-open shim: a shell every layout has, and the real xdg-open filled in
-        shim = zone.XDG_OPEN.format(links="zone", target="aa", python="/usr/bin/python3", xdg_open="/usr/bin/xdg-open")
+        shim = zone.XDG_OPEN.format(links="zone", target="aa", open_link=zone.open_link_command("/usr/bin/python3"),
+                                    xdg_open="/usr/bin/xdg-open")
         self.assertTrue(shim.startswith("#!/bin/sh\n"))
         self.assertIn('exec /usr/bin/xdg-open "$@"', shim)
         # packages without Nix: a warning, no build
@@ -889,8 +890,42 @@ os.write(w, b"\\n"); os.close(w)
         self.assertTrue(zone.propagation_shared(Path("/homeX/a"), str(info)))  # /homeX is not under /home
         self.assertIsNone(zone.propagation_shared(Path("/x"), str(info) + ".missing"))
 
+    def test_code_dir_never_bound(self):
+        """appzones' own code directory is on the never-list: a bind that is it, contains it or
+        is inside it is refused (a zone that could write it would run its code on the host)."""
+        code = self.z.CODE_DIR
+        self.assertIn(code, self.z.denied_paths())
+        for p in (code, code.parent, code / "appzones"):
+            err = self.z.policy_error(p, str(p))
+            self.assertIsNotNone(err, p)
+            self.assertIn("never enters a zone", err)
+
+    def test_open_link_command(self):
+        """The xdg-open shim's http(s) part: the Python one-liner, or the Rust helper in the zone."""
+        zone = self._zone_mod()
+        zone.HELPER = ""
+        py = zone.open_link_command("/usr/bin/python3")
+        self.assertTrue(py.startswith("/usr/bin/python3 -c "))
+        self.assertIn('b"\\n"', py)  # the shell gets \n, which Python reads as a newline
+        zone.HELPER = "rust"
+        zone.zone_helper = lambda: "/x/appzones-helper"
+        zone.implements = lambda h, c: True
+        self.assertEqual(zone.open_link_command("/usr/bin/python3"), "/run/appzones-helper open-link")
+        zone.implements = lambda h, c: c != "open-link"  # an older helper: the Python shim stays
+        self.assertTrue(zone.open_link_command("/usr/bin/python3").startswith("/usr/bin/python3 -c "))
+        zone.HELPER = ""
+
     def test_install_error(self):
-        """appzones must be installed where a zone sees it: /usr outside NixOS, /nix/store on NixOS."""
+        """appzones must be installed where a zone sees it: /usr outside NixOS, /nix/store on NixOS;
+        anywhere with the Rust helper (only the helper, bound in, runs in the zone)."""
+        zone = self._zone_mod()
+        zone.HELPER = "rust"
+        zone.zone_helper = lambda: "/x/appzones-helper"
+        zone.implements = lambda h, c: True
+        self.assertIsNone(zone.install_error(Path("/opt/appzones"), "fhs"))
+        self.assertIsNone(zone.install_error(Path("/home/u/appzones/src"), "nixos"))
+        zone.implements = lambda h, c: c != "open-link"  # the helper lacks a part: the rule stays
+        self.assertIsNotNone(zone.install_error(Path("/opt/appzones"), "fhs"))
         zone = self._zone_mod()
         self.assertIsNone(zone.install_error(Path("/usr/local/lib/appzones"), "fhs"))
         self.assertIsNone(zone.install_error(Path("/nix/store/abc-appzones/libexec/appzones"), "nixos"))

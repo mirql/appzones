@@ -63,6 +63,21 @@
             inherit pkgs;
             image = "ubuntu2404x86_64";
           };
+          # the same with the Rust helper (the static build), installed outside /usr
+          debian12-rust = import ./tests/distro.nix {
+            inherit pkgs;
+            image = "debian12x86_64";
+            makeFlags = "PREFIX=/opt/appzones HELPER=rust HELPER_BIN=${
+              self.packages.${pkgs.stdenv.hostPlatform.system}.helper
+            }/bin/appzones-helper";
+          };
+          ubuntu2404-rust = import ./tests/distro.nix {
+            inherit pkgs;
+            image = "ubuntu2404x86_64";
+            makeFlags = "PREFIX=/opt/appzones HELPER=rust HELPER_BIN=${
+              self.packages.${pkgs.stdenv.hostPlatform.system}.helper
+            }/bin/appzones-helper";
+          };
         }
         // {
           # NixOS VM test (needs /dev/kvm, ~6 min)

@@ -64,7 +64,7 @@ def find_tool(name: str) -> str | None:
 # installed with the Rust helper (the package's or make install's wrapper sets it), so
 # it reaches the server also under systemd. Unset: the Python and C ones.
 HELPER = zonecfg.env("HELPER") or ""
-RUST_HELPERS = ("zone-wayland", "zone-init")  # done in Rust so far
+RUST_HELPERS = ("zone-wayland", "zone-init", "open-link")  # done in Rust so far
 
 
 _implements: dict[tuple[str, str], bool] = {}
@@ -94,6 +94,17 @@ def rust_helper(command: str) -> str | None:
         candidates = [str(own)] if own.is_file() else []
         candidates.append(shutil.which("appzones-helper") or "")
     return next((p for p in candidates if p and implements(p, command)), None)
+
+
+def zone_helper() -> str | None:
+    """The Rust helper bound into zones (it runs zone-init there), or None."""
+    return rust_helper("zone-init") if HELPER == "rust" and "zone-init" in RUST_HELPERS else None
+
+
+def zone_helper_has(command: str) -> bool:
+    """The helper bound into zones implements COMMAND too (an older one may not)."""
+    h = zone_helper()
+    return bool(h) and command in RUST_HELPERS and implements(h, command)
 
 
 def helper_argv(name: str) -> list[str] | None:

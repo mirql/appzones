@@ -125,9 +125,16 @@ def take_lock(name: str, lock_fd: int | None = None) -> int:
     return fd
 
 
+IN_ZONE = ("zone-init", "open-link")  # appzones' own parts that run inside a zone
+
+
 def install_error(here: Path, layout: str) -> str | None:
-    """Why appzones installed at HERE cannot run zones, or None: zone-init runs from
-    there inside the zone, which sees only the host's /nix/store (NixOS) or /usr."""
+    """Why appzones installed at HERE cannot run zones, or None: zone-init (and the
+    xdg-open shim's link part) run inside the zone, which sees only the host's /nix/store
+    (NixOS) or /usr. With the Rust helper they are a read-only copy of it bound into the
+    zone, and HERE does not matter."""
+    if all(common.zone_helper_has(c) for c in IN_ZONE):
+        return None  # (appzones' code directory is on the never-list: no zone can write it)
     seen = "/nix/store" if layout == "nixos" else "/usr"
     if here.resolve().is_relative_to(seen):
         return None
@@ -227,7 +234,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         if target:
             (zrt / "ctl/bin").mkdir()
             xo = zrt / "ctl/bin/xdg-open"
-            xo.write_text(portals.XDG_OPEN.format(links=s["links"], target=target, python=os.path.realpath(sys.executable),
+            xo.write_text(portals.XDG_OPEN.format(links=s["links"], target=target,
+                                                  open_link=portals.open_link_command(os.path.realpath(sys.executable)),
                                                   xdg_open=portals.real_xdg_open()))
             xo.chmod(0o755)
             links_srv = portals.serve_links(z, zrt, target)

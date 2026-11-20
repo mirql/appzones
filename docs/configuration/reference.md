@@ -74,6 +74,8 @@ inside any of these:
   as the system bus, devices, other users' files);
 - `/run/user`, `/run/secrets`, `/var/lib/sops-nix`, `/etc/ssh`,
   `/nix/var`;
+- appzones' own code directory (where `zone.py` is, also a checkout): the host
+  runs that code, so no zone may ever write it;
 - the host's own additions: `/etc/appzones/denied-paths`, one path per line,
   `~/` for the home (`programs.appzones.deniedPaths`);
 - `~/.ssh`, `~/.gnupg`, `~/.config/sops`, `~/.password-store`, the keyrings

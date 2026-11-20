@@ -78,10 +78,22 @@ XDG_OPEN = """#!/bin/sh
 # browser through the zone's link socket; anything else goes to the real xdg-open.
 case "$1" in
   http://*|https://*)
-    exec {python} -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect("/run/zone/links.sock"); s.sendall(sys.argv[1].encode()+b"\\n"); sys.exit(0 if s.recv(3)==b"ok\\n" else 1)' "$1" ;;
+    exec {open_link} "$1" ;;
 esac
 exec {xdg_open} "$@"
 """
+
+
+PY_OPEN_LINK = ("{python} -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(\"/run/zone/links.sock\"); "
+                "s.sendall(sys.argv[1].encode()+b\"\\n\"); sys.exit(0 if s.recv(3)==b\"ok\\n\" else 1)'")
+
+
+def open_link_command(python: str) -> str:
+    """What the xdg-open shim runs for an http(s) link: with the Rust helper, its open-link
+    from the read-only copy in the zone (fs.ZONE_HELPER); else PYTHON with a one-liner."""
+    if common.zone_helper_has("open-link"):  # checked on the very helper bound into the zone
+        return f"{fs.ZONE_HELPER} open-link"
+    return PY_OPEN_LINK.format(python=python)
 
 
 def real_xdg_open() -> str:

@@ -5,12 +5,17 @@
 # local dnsmasq is the host's resolver). Prints "PASS ..." per check, exits non-zero
 # on the first failure.
 set -eu
-export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 src=$1
 mflags=${2:-}  # extra make arguments (tests/distro.nix makeFlags)
+# where it installs (make's PREFIX), and whether with the Rust helper
+prefix=/usr/local
+for f in $mflags; do case $f in PREFIX=*) prefix=${f#PREFIX=};; esac; done
+rust=no
+case " $mflags " in *" HELPER=rust "*) rust=yes;; esac
+export PATH=$prefix/bin:/usr/sbin:/usr/bin:/sbin:/bin
 fail() { echo "FAIL $*"; exit 1; }
 pass() { echo "PASS $*"; }
-U="env -i HOME=/home/alice USER=alice LOGNAME=alice XDG_RUNTIME_DIR=/run/user/1000 PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8"
+U="env -i HOME=/home/alice USER=alice LOGNAME=alice XDG_RUNTIME_DIR=/run/user/1000 PATH=$prefix/bin:/usr/bin:/bin LANG=C.UTF-8"
 # every step as alice gets a time limit: a hang fails with a message, not a stuck build
 as_alice() {
   rc=0; timeout 120 su alice -s /bin/sh -c "$U sh -c '$1'" || rc=$?
@@ -79,6 +84,14 @@ echo "$out" | grep -qx alice && echo "$out" | grep -qx hello && echo "$out" | gr
 pass "a zone without network starts on demand: its own home, the bind, no ~/.ssh"
 as_alice 'appzones run --wait off -- unshare -Ur true </dev/null' || fail "a sandbox inside the zone"
 pass "a sandbox inside the zone (user namespace)"
+if [ $rust = yes ]; then
+  init=$(pgrep -u alice -x zone-init | head -1)
+  cmd=$(tr '\0' ' ' </proc/$init/cmdline)
+  [ "$cmd" = "/run/appzones-helper zone-init " ] || fail "zone-init is not the Rust helper: $cmd"
+  inside=$(as_alice 'appzones run --wait off -- sh -c "cat /proc/[0-9]*/cmdline | tr \"\\000\" \" \""' </dev/null)
+  if echo "$inside" | grep -q python; then fail "Python runs in the zone: $inside"; fi
+  pass "the Rust helper: zone-init runs from /run/appzones-helper, no Python in the zone (installed under $prefix)"
+fi
 (sleep 2; printf 'echo in-shell-$ZONE\r'; sleep 1; printf 'exit\r') \
   | timeout 60 su alice -s /bin/sh -c "$U script -qfc 'appzones shell off' /dev/null" >/tmp/shell.out \
   || fail "appzones shell did not end: $(tr -d '\r' </tmp/shell.out)"
@@ -115,23 +128,30 @@ if pgrep -u alice -x zone-init >/dev/null; then fail "a zone-init left after sto
 [ -s /home/alice/.local/state/appzones/web.log ] || fail "no log in ~/.local/state/appzones"
 pass "stop: no server left; logs in ~/.local/state/appzones"
 
-# a server without the desktop's parts: a session bus and WAYLAND_DISPLAY are set (as
-# over SSH with systemd), but zone-wayland, xdg-dbus-proxy and dbus-daemon are not there
-mkdir /tmp/hidden && mv /usr/local/lib/appzones/zone-wayland /usr/bin/xdg-dbus-proxy /usr/bin/dbus-daemon /tmp/hidden/
-U="$U WAYLAND_DISPLAY=wayland-1 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
+# a server without the desktop's parts: a session bus is set (as over SSH with systemd),
+# but xdg-dbus-proxy and dbus-daemon are not there; and with the C zone-wayland also
+# WAYLAND_DISPLAY without zone-wayland (the Rust one is zone-init's binary: always there)
+mkdir /tmp/hidden && mv /usr/bin/xdg-dbus-proxy /usr/bin/dbus-daemon /tmp/hidden/
+U="$U DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
+if [ $rust = no ]; then
+  mv $prefix/lib/appzones/zone-wayland /tmp/hidden/
+  U="$U WAYLAND_DISPLAY=wayland-1"
+fi
 out=$(as_alice 'appzones run --wait off -- sh -c "echo works; echo bus=\$DBUS_SESSION_BUS_ADDRESS wl=\$WAYLAND_DISPLAY" </dev/null' 2>&1)
 echo "$out"
 echo "$out" | grep -qx works && echo "$out" | grep -qx "bus= wl=" || fail "a zone without the desktop's parts: $out"
 log=/home/alice/.local/state/appzones/off.log
-grep -q "zone-wayland not found" $log && grep -q "xdg-dbus-proxy not found" $log || fail "no warning in the log: $(tail -5 $log)"
+grep -q "xdg-dbus-proxy not found" $log || fail "no warning in the log: $(tail -5 $log)"
+[ $rust = yes ] || grep -q "zone-wayland not found" $log || fail "no zone-wayland warning: $(tail -5 $log)"
 if out=$(as_alice 'appzones run --wait --bus zone off -- true </dev/null' 2>&1); then fail "bus = zone without dbus-daemon: $out"; fi
 echo "$out" | grep -q "no dbus-daemon" || fail "bus = zone without dbus-daemon, not said: $out"
 as_alice 'appzones stop off'
-mv /tmp/hidden/zone-wayland /usr/local/lib/appzones/ && mv /tmp/hidden/xdg-dbus-proxy /tmp/hidden/dbus-daemon /usr/bin/
+[ $rust = yes ] || mv /tmp/hidden/zone-wayland $prefix/lib/appzones/
+mv /tmp/hidden/xdg-dbus-proxy /tmp/hidden/dbus-daemon /usr/bin/
 pass "a server without zone-wayland, xdg-dbus-proxy, dbus-daemon: the zone starts, says why, bus = zone says what is missing"
 
 make uninstall $mflags >/dev/null 2>&1 || fail "make uninstall"
-left=$(ls -d /usr/local/lib/appzones /usr/local/bin/appzones /usr/local/share/appzones /etc/sudoers.d/appzones \
+left=$(ls -d $prefix/lib/appzones $prefix/bin/appzones $prefix/share/appzones /etc/sudoers.d/appzones \
   /etc/apparmor.d/appzones 2>/dev/null || true)
 [ -z "$left" ] || fail "left after uninstall: $left"
 pass "make uninstall removes it all"
