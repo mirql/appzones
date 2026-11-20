@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.11.1
+
+An RPM for Fedora, attached to the release like the .deb. Fedora 45 (SELinux enforcing) and Arch are now tested in VMs (`just test-fedora`, `just test-arch`), and KDE Plasma 6 is documented. One small fix in the mount helper.
+
 - **An RPM for Fedora** (#22): `contrib/fedora/appzones.spec`, the same layout as the
   .deb (Python and the C zone-wayland; the sudo rule for the group `appzones`, made
   through sysusers). `just test-fedora` builds it with rpmbuild from the checkout,
