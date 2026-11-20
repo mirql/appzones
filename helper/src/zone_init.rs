@@ -15,7 +15,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -349,10 +349,14 @@ impl Init {
         env
     }
 
-    fn cwd(&self, req: &Value) -> String {
-        let home = var(&self.env, "HOME").filter(|h| !h.is_empty()).unwrap_or_else(|| "/".into());
-        let want = req.get("cwd").and_then(Value::as_str).filter(|c| !c.is_empty()).unwrap_or(&home);
-        if Path::new(want).is_dir() { want.to_string() } else { home }
+    /// The command's directory: the request's when it is one, else $HOME (its bytes), else /.
+    fn cwd(&self, req: &Value) -> PathBuf {
+        let home = self.env.get(OsStr::new("HOME")).filter(|h| !h.is_empty())
+            .map_or_else(|| PathBuf::from("/"), PathBuf::from);
+        match req.get("cwd").and_then(Value::as_str).filter(|c| !c.is_empty()) {
+            Some(want) if Path::new(want).is_dir() => PathBuf::from(want),
+            _ => home,
+        }
     }
 
     fn op_run(&mut self, mut conn: UnixStream, req: &Value, fds: Vec<OwnedFd>) {
@@ -440,9 +444,12 @@ impl Init {
             },
         };
         let mut env = self.child_env(req);
-        let term = req.get("term").and_then(Value::as_str).map(String::from)
-            .unwrap_or_else(|| var(&env, "TERM").unwrap_or_else(|| "xterm-256color".into()));
-        env.insert("TERM".into(), term.into());
+        // the request's term, else the inherited one as it is (bytes), else xterm-256color
+        if let Some(term) = req.get("term").and_then(Value::as_str) {
+            env.insert("TERM".into(), term.into());
+        } else {
+            env.entry("TERM".into()).or_insert_with(|| "xterm-256color".into());
+        }
         let (mut master, mut slave) = (0 as RawFd, 0 as RawFd);
         // Safety: openpty fills two descriptors, which we own from here on.
         if unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(),
