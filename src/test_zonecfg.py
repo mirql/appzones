@@ -819,7 +819,8 @@ os.write(w, b"\\n"); os.close(w)
         self.assertEqual((fhs["XDG_DATA_DIRS"], fhs["TZDIR"]), ("/usr/local/share:/usr/share", "/usr/share/zoneinfo"))
         self.assertTrue(nix["PATH"].endswith("/run/current-system/sw/bin"))
         # the xdg-open shim: a shell every layout has, and the real xdg-open filled in
-        shim = zone.XDG_OPEN.format(links="zone", target="aa", python="/usr/bin/python3", xdg_open="/usr/bin/xdg-open")
+        shim = zone.XDG_OPEN.format(links="zone", target="aa", open_link=zone.open_link_command("/usr/bin/python3"),
+                                    xdg_open="/usr/bin/xdg-open")
         self.assertTrue(shim.startswith("#!/bin/sh\n"))
         self.assertIn('exec /usr/bin/xdg-open "$@"', shim)
         # packages without Nix: a warning, no build
@@ -889,9 +890,25 @@ os.write(w, b"\\n"); os.close(w)
         self.assertTrue(zone.propagation_shared(Path("/homeX/a"), str(info)))  # /homeX is not under /home
         self.assertIsNone(zone.propagation_shared(Path("/x"), str(info) + ".missing"))
 
-    def test_install_error(self):
-        """appzones must be installed where a zone sees it: /usr outside NixOS, /nix/store on NixOS."""
+    def test_open_link_command(self):
+        """The xdg-open shim's http(s) part: the Python one-liner, or the Rust helper in the zone."""
         zone = self._zone_mod()
+        zone.HELPER = ""
+        py = zone.open_link_command("/usr/bin/python3")
+        self.assertTrue(py.startswith("/usr/bin/python3 -c "))
+        self.assertIn('b"\\n"', py)  # the shell gets \n, which Python reads as a newline
+        zone.HELPER = "rust"
+        self.assertEqual(zone.open_link_command("/usr/bin/python3"), "/run/appzones-helper open-link")
+        zone.HELPER = ""
+
+    def test_install_error(self):
+        """appzones must be installed where a zone sees it: /usr outside NixOS, /nix/store on NixOS;
+        anywhere with the Rust helper (only the helper, bound in, runs in the zone)."""
+        zone = self._zone_mod()
+        zone.HELPER = "rust"
+        self.assertIsNone(zone.install_error(Path("/opt/appzones"), "fhs"))
+        self.assertIsNone(zone.install_error(Path("/home/u/appzones/src"), "nixos"))
+        zone.HELPER = ""
         self.assertIsNone(zone.install_error(Path("/usr/local/lib/appzones"), "fhs"))
         self.assertIsNone(zone.install_error(Path("/nix/store/abc-appzones/libexec/appzones"), "nixos"))
         for here, layout in [("/home/u/appzones/src", "fhs"), ("/opt/appzones", "fhs"), ("/usr/local/lib/appzones", "nixos")]:

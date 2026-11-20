@@ -596,6 +596,9 @@ pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds(
             "grep -qx https://example.com/clicked-in-tz /home/alice/.local/share/appzones/tz/home/opened-link", timeout=60)
         print("PASS  a link clicked in a links = zone zone opens in that zone's browser")
+        if "APPZONES_HELPER" in machine.succeed("cat $(readlink -f /run/current-system/sw/bin/appzones)"):
+            ok("tz", "! grep -q python /run/zone/bin/xdg-open && grep -q '/run/appzones-helper open-link' "
+                     "/run/zone/bin/xdg-open", "the Rust helper: the link part of xdg-open, no Python")
         rc, out = u("appzones run --wait tz -- xdg-open 'https://example.com/x y' </dev/null 2>&1; echo rc=$?", check=False)
         assert "rc=0" in out, out  # a space is fine; only http(s) URLs leave the zone this way
         # that link arrived too (its browser starts in the background), before the next check

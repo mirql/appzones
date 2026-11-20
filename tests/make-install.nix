@@ -45,6 +45,15 @@ pkgs.runCommand "appzones-make-install"
     left=$(find $d -type f | grep -v -e '/etc/sudoers.d$' || true)
     [ -z "$left" ] || { echo "left after uninstall: $left"; exit 1; }
     if make DESTDIR=$d PREFIX=/opt/appzones install 2>/dev/null; then echo "PREFIX=/opt accepted"; exit 1; fi  # a zone cannot see /opt
+    # with the Rust helper /opt is fine (the zone gets the helper bound in), but a staged
+    # install outside /usr gets no sudo rule (root's file must sit where only root writes)
+    printf '#!/bin/sh\n[ "$1" = --commands ] && printf "zone-wayland\\nzone-init\\nopen-link\\n"\n' > fake-helper
+    chmod 755 fake-helper
+    make DESTDIR=$PWD/stage3 PREFIX=/opt/appzones HELPER=rust HELPER_BIN=$PWD/fake-helper APPARMOR=no SYSTEMD=no \
+      install > opt.log
+    grep -q "no sudo rule" opt.log
+    [ -x stage3/opt/appzones/lib/appzones/appzones-helper ] && [ ! -e stage3/etc/sudoers.d/appzones ]
+    grep -q APPZONES_HELPER=rust stage3/opt/appzones/bin/appzones
     # PREFIX=/usr (a distribution package): the units where systemd looks for them
     make DESTDIR=$PWD/stage2 PREFIX=/usr SYSTEMD=yes SUDOERS=no APPARMOR=no install >/dev/null
     grep -qx 'ExecStart=/usr/bin/appzones serve %i' stage2/usr/lib/systemd/user/appzones@.service

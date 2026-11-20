@@ -5,6 +5,14 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **No Python in a zone with the Rust helper** (the experiment, #97): the
+  `xdg-open` shim of `links = "zone"` zones runs `appzones-helper open-link`
+  instead of the host's Python, so nothing of appzones but the bound helper runs
+  in a zone. appzones with the Rust helper may then be installed outside `/usr`
+  (`make install HELPER=rust PREFIX=/opt/appzones`); outside `/usr` the sudo rule
+  for `appzones mount` is written only when the mount helper and every directory
+  above it belong to root and nobody else can write them.
+
 - **zone-init in Rust** (the experiment, #97): with the Rust helper, the server binds
   `appzones-helper` read-only at `/run/appzones-helper` in the zone and runs its
   `zone-init` there, instead of the host's Python with `zone_init.py`. The same

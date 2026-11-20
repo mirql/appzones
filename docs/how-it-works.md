@@ -72,7 +72,8 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   `$XDG_RUNTIME_DIR/appzones/NAME/agent.sock`, outside the zone. zone-init
   gets it as an inherited fd; there is no socket file inside the zone. zone-init
   is not dumpable, so apps in the zone cannot trace it or take that fd.
-- `/run/zone` inside is read-only: the `xdg-open` shim (`bin/`) and the
+- `/run/zone` inside is read-only: the `xdg-open` shim (`bin/`; its link part
+  is a Python one-liner, or `appzones-helper open-link` with the Rust helper) and the
   host's `links.sock`, through which clicked links leave the zone, and
   `dns.sock`, through which DNS queries do.
 - DNS (`network = "internet"`): the zone's `resolv.conf` names `127.0.0.53`,
