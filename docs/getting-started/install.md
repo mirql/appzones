@@ -144,16 +144,16 @@ process manager ([Zones without systemd](../without-systemd.md)). For
 `appzones mount`, run `sudo mount --make-rshared /` at every boot, before zones
 start (systemd does this itself).
 
-**The Rust helper (experiment).** On the branch `rust-version`, parts of
-appzones are being written in Rust (`design/rust.md`); so far everything that
-runs inside a zone (zone-init, and the part of the `xdg-open` shim that hands
-links out), zone-wayland, and the mount helper (the one step of `appzones
-mount` that runs as root, its own small executable). A zone then gets a read-only copy of the helper and
-no Python of the host's, so appzones can be installed outside `/usr` too
+**The Rust helpers (optional).** Everything that runs inside a zone (zone-init,
+and the part of the `xdg-open` shim that hands links out), zone-wayland, and the
+mount helper (the one step of `appzones mount` that runs as root, its own small
+executable) also exist in Rust (`design/rust.md`). With them a zone gets a
+read-only copy of the helper and no Python of the host's, so appzones can be
+installed outside `/usr` too
 (`make install HELPER=rust PREFIX=/opt/appzones`; the sudo rule for `appzones
 mount` is written only when that directory and everything above it belong to
 root alone).
-To try it: `make` with cargo and rustc 1.85 or newer, then `sudo make install
+To use them: `make` with cargo and rustc 1.85 or newer, then `sudo make install
 HELPER=rust` (or `HELPER_BIN=PATH` and `MOUNT_HELPER_BIN=PATH` for helpers
 built elsewhere; without a Rust mount helper, the Python one is installed); on
 Nix, the package `appzones-rust`. The `appzones` command then runs the Rust

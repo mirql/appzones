@@ -15,7 +15,7 @@
       packages = forAll (pkgs: rec {
         appzones = pkgs.callPackage ./nix/package.nix { };
         default = appzones;
-        # the Rust helpers (experiment, design/rust.md): static, with musl
+        # the Rust helpers (optional, design/rust.md): static, with musl
         helper = pkgs.pkgsStatic.callPackage ./nix/helper.nix { };
         # appzones with them
         # the root step of `appzones mount` in Rust: linked against glibc, not static

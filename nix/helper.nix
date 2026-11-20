@@ -24,7 +24,7 @@ rustPlatform.buildRustPackage {
   ];
   stripAllList = [ "bin" ]; # the symbol table too, not only debug info
   meta = {
-    description = "appzones' helpers in Rust (experiment: design/rust.md)";
+    description = "appzones' helpers in Rust (optional: design/rust.md)";
     license = lib.licenses.mit;
     platforms = [ "x86_64-linux" ];
     mainProgram = bin;

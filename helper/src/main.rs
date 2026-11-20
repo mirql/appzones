@@ -4,8 +4,8 @@
 //!   appzones-helper open-link URL      in a zone: hand an http(s) link to the host
 //!   appzones-helper zone-wayland SOCKET APP_ID INSTANCE
 //!
-//! The experiment on the branch rust-version (design/rust.md). Each command keeps the
-//! interface of the Python or C part it replaces. All three are done.
+//! Optional (design/rust.md): installed with `make install HELPER=rust` or the Nix package
+//! appzones-rust. Each command keeps the interface of the Python or C part it replaces.
 
 use std::process::ExitCode;
 

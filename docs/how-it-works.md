@@ -59,8 +59,7 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   pasta closes inherited fds) and ends the zone when it becomes readable;
   zone-wayland (the C helper, or `appzones-helper zone-wayland` when appzones
   was installed with the Rust helper: the `appzones-rust` package or `make
-  install HELPER=rust`, which set `APPZONES_HELPER=rust`; on the experiment
-  branch `rust-version`) gets SIGTERM when the server dies (`PR_SET_PDEATHSIG`); the
+  install HELPER=rust`, which set `APPZONES_HELPER=rust`) gets SIGTERM when the server dies (`PR_SET_PDEATHSIG`); the
   D-Bus proxy is tied the same way. Waiting for zone-wayland's "ready", the
   proxy's bus, the pidfd hand-over and zone-init's answer each have a deadline
   (`start_timeout`, 30 seconds by default); building `packages` comes before

@@ -49,8 +49,8 @@ USE_SYSTEMD = $(shell [ "$(SYSTEMD)" = yes ] || { [ "$(SYSTEMD)" = auto ] && [ -
 
 all: zone-wayland helper
 
-# the Rust helper (helper/, the experiment on rust-version): built where cargo is
-# present and new enough, else a note; nothing uses it yet
+# the Rust helpers (helper/, design/rust.md): built where cargo is present and new
+# enough, else a note; used only with `make install HELPER=rust`
 helper:
 	@mkdir -p build
 	@if command -v cargo >/dev/null && cargo build --release --locked --quiet --manifest-path helper/Cargo.toml \

@@ -28,6 +28,16 @@ test-distros:
 test-vm:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.vm
 
+# The Rust helpers (helper/): cargo test, the protocol and never-list tests, the VM and distro tests with them (~15 min)
+test-rust:
+    nice -n 19 nix build -L --no-link .#checks.x86_64-linux.helper .#checks.x86_64-linux.policy-rust \
+        .#checks.x86_64-linux.agent-protocol-rust .#checks.x86_64-linux.vm-rust \
+        .#checks.x86_64-linux.debian12-rust .#checks.x86_64-linux.ubuntu2404-rust
+
+# The Rust helpers' dependencies: advisories, licenses, sources (cargo deny; needs the network)
+audit:
+    cd helper && nix shell --inputs-from .. nixpkgs#cargo nixpkgs#cargo-deny -c cargo deny check
+
 # Record the README's terminal demos in a VM: docs/demo-*.gif, docs/demo-*.cast (needs /dev/kvm)
 demo:
     nice -n 19 nix build -L -o result-demo .#demo
