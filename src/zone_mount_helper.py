@@ -236,7 +236,7 @@ def do_umount_all(c: Caller, zone: str) -> int:
             umount_one(pfd, f"{mnt}/{x}", x, lazy=True)
             n += 1
     left = mounted()
-    print(f"{n} mount(s) under {mnt} detached" + (f"; still mounted: {', '.join(left)}" if left else ""))
+    print(f"{n} mount(s) under {mnt} detached" + (f"; still mounted: {', '.join(map(repr, left))}" if left else ""))
     return 1 if left else 0
 
 

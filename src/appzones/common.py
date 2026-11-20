@@ -177,7 +177,7 @@ def host_wayland_socket() -> str | None:
     d = os.environ.get("WAYLAND_DISPLAY", "")
     if not d:
         return None
-    p = d if d.startswith("/") else os.path.join(os.environ.get("XDG_RUNTIME_DIR", ""), d)
+    p = d if d.startswith("/") else str(HOST_RT / d)
     p = os.path.realpath(p)
     try:
         return p if stat.S_ISSOCK(os.stat(p).st_mode) else None

@@ -190,7 +190,7 @@ out=$(timeout 120 su alice -s /bin/sh -c "$UW sh -c 'appzones run --wait gui -- 
   || fail "wayland = host: $out"
 echo "$out"
 echo "$out" | grep -qx "wl=wayland-0" && echo "$out" | grep -qx 1 || fail "wayland = host: $out"
-grep -q 'wayland = "host": the host' /home/alice/.local/state/appzones/gui.log || fail "wayland = host not logged"
+grep -q 'wayland = "host": the compositor has no security context' /home/alice/.local/state/appzones/gui.log || fail "wayland = host not logged"
 as_alice 'appzones stop gui'
 pkill -u alice weston || true
 pass "wayland = \"host\": the zone's apps reach the host's compositor (Weston) through wayland-0"
@@ -223,6 +223,12 @@ grep -q zwlr_screencopy_manager_v1 /tmp/wl-host.txt || { echo "the host has no s
 if grep -q -e zwlr_screencopy_manager_v1 -e zwlr_data_control_manager_v1 /tmp/wl-zone.txt; then
   echo "the zone's client sees screencopy or data-control"; exit 1
 fi
+# wayland = "host" is only for compositors without a security context: here the zone gets its own
+appzones run --wait gui -- wayland-info </dev/null >/tmp/wl-gui.txt 2>&1 || { cat /tmp/wl-gui.txt; exit 1; }
+if grep -q -e zwlr_screencopy_manager_v1 -e wp_security_context_manager_v1 /tmp/wl-gui.txt; then
+  echo "wayland = host got the host's socket although sway has a security context"; exit 1
+fi
+appzones stop gui
 # contrib/sway/appzones-sway marks the zone's window, not the host's (this zone runs
 # without systemd and sway 1.9 has no sandbox fields: "zone:?", as on Hyprland)
 "$HOOK" >/tmp/hook.log 2>&1 &
@@ -283,7 +289,7 @@ SH
 rc=0; out=$(timeout 120 su alice -s /bin/sh -c "$U HOOK=$prefix/share/appzones/contrib/sway/appzones-sway sh /tmp/desktop.sh" 2>&1) || rc=$?
 echo "$out"
 case $rc in
-  0) pass "a desktop (headless sway): the zone's client in a security context (no screencopy, no data-control), its window opens, appzones-sway marks it (not the host's), appzones active reads the mark";;
+  0) pass "a desktop (headless sway): the zone's client in a security context (no screencopy, no data-control), wayland = host gets its own context here too, its window opens, appzones-sway marks it (not the host's), appzones active reads the mark";;
   3) pkill -u alice sway || true
      pass "a desktop (headless sway): this sway has no security-context protocol ($out), as Weston above";;
   *) fail "a desktop (headless sway): $out";;

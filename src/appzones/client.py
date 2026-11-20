@@ -799,8 +799,8 @@ def _sway_send(s: socket.socket, kind: int, payload: str = "") -> None:
     s.sendall(SWAY_MAGIC + struct.pack("=II", len(data), kind) + data)
 
 
-def _sway_focused_marks(path: str) -> list[str]:
-    """The marks of sway's focused window."""
+def _sway_focused_marks(path: str) -> tuple[int | None, list[str]]:
+    """Sway's focused window: its id and its marks."""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.settimeout(5)
         s.connect(path)
@@ -811,9 +811,9 @@ def _sway_focused_marks(path: str) -> list[str]:
         n = stack.pop()
         if isinstance(n, dict):
             if n.get("focused") and n.get("pid"):
-                return [m for m in n.get("marks", []) if isinstance(m, str)]
+                return n.get("id"), [m for m in n.get("marks", []) if isinstance(m, str)]
             stack += n.get("nodes", []) + n.get("floating_nodes", [])
-    return []
+    return None, []
 
 
 def _focused_zone() -> str:
@@ -824,16 +824,19 @@ def _focused_zone() -> str:
     sway = os.environ.get("SWAYSOCK")
     if sway and not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         try:
-            marks = _sway_focused_marks(sway)
+            con, marks = _sway_focused_marks(sway)
         except (OSError, EOFError, ValueError, TypeError):
             return ""  # sway gone: no label, never a crash in the bar
+        zones = []
         for m in marks:
             if m.startswith("zone:"):
-                # exactly the hook's form, zone:NAME:ID (or zone:?:ID); anything else is "?"
+                # exactly the hook's form, zone:NAME:ID (or zone:?:ID) for this very window;
+                # anything else is "?"
                 parts = m.split(":")
-                ok = len(parts) == 3 and parts[2].isdigit() and (parts[1] == "?" or zonecfg.NAME_RE.fullmatch(parts[1]))
-                return parts[1] if ok else "?"
-        return ""
+                ok = (len(parts) == 3 and parts[2] == str(con)
+                      and (parts[1] == "?" or zonecfg.NAME_RE.fullmatch(parts[1])))
+                zones.append(parts[1] if ok else "?")
+        return zones[0] if len(set(zones)) == 1 else "?" if zones else ""
     try:
         r = subprocess.run(["hyprctl", "-j", "activewindow"], capture_output=True, text=True, timeout=5)
         tags = json.loads(r.stdout or "{}").get("tags", [])

@@ -176,8 +176,8 @@ KEYS: dict[str, tuple[object, object, str]] = {
                       "hidraw nodes and sysfs; bound at zone start)"),
     "wayland": ("zone", _enum("zone", "none", "host"), "zone (its own security context: the compositor hides "
                                                          "screencopy, clipboard snooping and the like) | none | host "
-                                                         "(the host's Wayland socket, for a compositor without "
-                                                         "wp_security_context_v1, such as GNOME)"),
+                                                         "(as zone, but the host's Wayland socket where the compositor "
+                                                         "has no wp_security_context_v1, such as GNOME)"),
     "x11": ("none", _enum("none", "own"), "none | own (xwayland-satellite in the zone)"),
     "clipboard": ("both", _enum("both"), "both (the only value for now)"),
     "autostart": (False, _bool, "start the zone at login"),
@@ -628,9 +628,9 @@ def load_text(text: str, path: str | Path = "zones.toml") -> Config:
             warnings.append(f"[zones.{z.name}] network = \"host\": the zone reaches everything the host reaches, "
                             f"localhost and the tailnet included")
         if s["wayland"] == "host":
-            warnings.append(f"[zones.{z.name}] wayland = \"host\": the zone's apps get the host's Wayland socket, "
-                            f"without a security context: whatever the compositor offers any app (on Hyprland or "
-                            f"sway: screencopy and clipboard snooping too), and windows not marked as the zone's")
+            warnings.append(f"[zones.{z.name}] wayland = \"host\": where the compositor has no security context "
+                            f"(GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, "
+                            f"and windows not marked as the zone's (elsewhere the zone gets its own context)")
         if s["machine_id"] == "host":
             warnings.append(f"[zones.{z.name}] machine_id = \"host\": apps can link this zone to the host and to "
                             f"other zones by it")

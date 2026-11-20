@@ -5,6 +5,18 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`wayland = "host"` only where the compositor has no security context.** Before, it
+  gave a zone the host's raw Wayland socket everywhere: on Hyprland, sway or KWin that
+  also meant screencopy, virtual input, the lock screen, and the security-context
+  manager itself (so a zone could claim another zone's name in the sway hook). Now the
+  zone gets its own context wherever the compositor offers one, and the host's socket
+  only where it does not (GNOME's Mutter, Weston), as intended.
+- **A zone does not start with last run's mounts**: when `umount-all` cannot detach
+  them, the server says so and does not start the zone.
+- `make install` (and so the .deb) never installs `contrib/` writable by others,
+  whatever the checkout's umask; `appzones active` on sway takes only a mark for the
+  focused window itself; smaller fixes from the same review.
+
 ## 0.11.2
 
 On Fedora, internet zones log again: what runs inside them (zone-init, the apps) was lost, because SELinux gave pasta and everything it starts `/dev/null` as output. Restart running zones after the update.

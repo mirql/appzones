@@ -121,6 +121,8 @@ install: all preflight
 	install -m 644 examples/zones.toml $(DESTDIR)$(DATADIR)/zones.example.toml
 	install -m 644 examples/minimal.toml $(DESTDIR)$(DATADIR)/zones.minimal.toml
 	rm -rf $(DESTDIR)$(DATADIR)/contrib && cp -r contrib $(DESTDIR)$(DATADIR)/contrib
+	@# never writable by others, whatever the checkout's umask (appzones-sway is run from a sway config)
+	chmod -R go-w $(DESTDIR)$(DATADIR)/contrib
 	@if [ "$(USE_SYSTEMD)" = yes ]; then \
 		install -d $(DESTDIR)$(UNITDIR) && \
 		for u in appzones@.service appzones-autostart.service appzones.slice; do \

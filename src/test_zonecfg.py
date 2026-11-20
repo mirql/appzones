@@ -1005,8 +1005,8 @@ os.write(w, b"\\n"); os.close(w)
                     n, kind = struct.unpack("=II", head[6:])
                     c.recv(n) if n else b""
                     tree = {"nodes": [{"nodes": [
-                        {"pid": 10, "focused": False, "marks": ["zone:other:1"], "nodes": []},
-                        {"pid": 11, "focused": True, "marks": list(marks), "nodes": []}]}]}
+                        {"pid": 10, "id": 1, "focused": False, "marks": ["zone:other:1"], "nodes": []},
+                        {"pid": 11, "id": 5, "focused": True, "marks": list(marks), "nodes": []}]}]}
                     body = js.dumps(tree).encode()
                     c.sendall(b"i3-ipc" + struct.pack("=II", len(body), kind) + body)
 
@@ -1021,7 +1021,10 @@ os.write(w, b"\\n"); os.close(w)
                                   (["zone:Bad_Name:3"], "[?]", ("[?]", "zone-unidentified")),
                                   (["zone:work"], "[?]", ("[?]", "zone-unidentified")),
                                   (["zone:work:x"], "[?]", ("[?]", "zone-unidentified")),
-                                  (["zone:work:5:6"], "[?]", ("[?]", "zone-unidentified"))]:
+                                  (["zone:work:5:6"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work:7"], "[?]", ("[?]", "zone-unidentified")),  # another window's
+                                  (["zone:work:5", "zone:home:5"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work:5", "mine"], "[work]", ("[work]", "zone-work"))]:
                 marks[:] = m
                 for as_json in (False, True):
                     with contextlib.redirect_stdout(io.StringIO()) as out:
@@ -1606,6 +1609,7 @@ os.write(w, b"\\n"); os.close(w)
         old = {k: os.environ.get(k) for k in ("WAYLAND_DISPLAY", "XDG_RUNTIME_DIR")}
         try:
             os.environ.update(WAYLAND_DISPLAY="wayland-5", XDG_RUNTIME_DIR=str(t))
+            zone.HOST_RT = t  # (read once, at import)
             self.assertEqual(zone.host_wayland_socket(), str(t / "wayland-5"))
             os.environ["WAYLAND_DISPLAY"] = str(t / "wayland-5")  # a path works too
             self.assertEqual(zone.host_wayland_socket(), str(t / "wayland-5"))
@@ -1615,11 +1619,15 @@ os.write(w, b"\\n"); os.close(w)
             os.environ["WAYLAND_DISPLAY"] = "plain"  # not a socket
             self.assertIsNone(zone.host_wayland_socket())
             os.environ["WAYLAND_DISPLAY"] = "wayland-5"
-            for wl, src in [("zone", str(zrt / "wayland-0")), ("host", str(t / "wayland-5")), ("none", None)]:
+            # wayland = "host": the context socket where zone-wayland made one, the host's only when
+            # the server found no security context (host_wayland)
+            for wl, host_wayland, src in [("zone", False, str(zrt / "wayland-0")), ("host", False, str(zrt / "wayland-0")),
+                                          ("host", True, str(t / "wayland-5")), ("zone", True, str(zrt / "wayland-0")),
+                                          ("none", False, None)]:
                 z = self.cfg(f'version = 1\n[zones.tt]\ncolour = "#112233"\nwayland = "{wl}"\n').zones["tt"]
-                a = zone.bwrap_argv(z, t / "zdir", zrt, "none", [])
+                a = zone.bwrap_argv(z, t / "zdir", zrt, "none", [], host_wayland=host_wayland)
                 binds = [a[i + 1] for i, x in enumerate(a) if x == "--bind" and a[i + 2].endswith("/wayland-0")]
-                with self.subTest(wayland=wl):
+                with self.subTest(wayland=wl, host_wayland=host_wayland):
                     self.assertEqual(binds, [src] if src else [])
                     self.assertEqual("WAYLAND_DISPLAY" in " ".join(a), src is not None)
         finally:
@@ -1628,6 +1636,22 @@ os.write(w, b"\\n"); os.close(w)
             for k, v in old.items():
                 os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
             shutil.rmtree(t, ignore_errors=True)
+
+    def test_prepare_mnt_leftovers(self):
+        """A runtime mount that umount-all could not detach: prepare_mnt says so (the server then
+        does not start the zone with it)."""
+        import subprocess as sp
+        zone = self._zone_mod()
+        zdir = Path(tempfile.mkdtemp())
+        try:
+            zone.helper = lambda *a: sp.CompletedProcess(a, 1, "1 mount(s) detached; still mounted: 'x'", "")
+            zone.host_mounts = lambda name: ["x"]
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertFalse(zone.prepare_mnt("tt", zdir))
+            zone.host_mounts = lambda name: []
+            self.assertTrue(zone.prepare_mnt("tt", zdir))
+        finally:
+            shutil.rmtree(zdir, ignore_errors=True)
 
     def test_binds_never_list(self):
         for path, why in [("~/.ssh", "is"), ("~", "never allowed"), ("/", "never allowed"),

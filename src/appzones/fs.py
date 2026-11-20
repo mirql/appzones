@@ -345,8 +345,9 @@ def helper(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run([common.SUDO, "-n", common.MOUNT_HELPER, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)  # NOSONAR: argv list, no shell; the helper re-validates every argument
 
 
-def prepare_mnt(zone: str, zdir: Path) -> None:
-    """At zone start and stop: no runtime mount outlives a zone run."""
+def prepare_mnt(zone: str, zdir: Path) -> bool:
+    """At zone start and stop: no runtime mount outlives a zone run. False when some are
+    still mounted (the server then does not start the zone with them)."""
     mnt = zdir / "mnt"
     mnt.mkdir(mode=0o700, exist_ok=True)
     os.chmod(mnt, 0o700)
@@ -359,9 +360,13 @@ def prepare_mnt(zone: str, zdir: Path) -> None:
                 d.rmdir()  # empty mount points; never what is still mounted (not empty)
         except OSError:
             pass
+    return not host_mounts(zone)
 
 
-def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path: list[str]) -> list[str]:
+def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path: list[str],
+               host_wayland: bool = False) -> list[str]:
+    """bwrap's command line for zone Z. HOST_WAYLAND: wayland = "host" and the compositor
+    has no security context (the server tried it): the host's own socket."""
     s = z.settings
     home = Path(os.path.expanduser(s["home"])) if s["home"] else zdir / "home"
     if s["home"]:
@@ -477,12 +482,12 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
               "XCURSOR_SIZE", "QT_QPA_PLATFORMTHEME", "GTK_THEME", "GDK_SCALE", "QT_SCALE_FACTOR"):
         if os.environ.get(k):
             env[k] = os.environ[k]
-    host_wl = common.host_wayland_socket() if s["wayland"] == "host" else None
+    host_wl = common.host_wayland_socket() if host_wayland and s["wayland"] == "host" else None
     if host_wl:
         # wayland = "host": the compositor's own socket, no security context (warned by check)
         a += ["--bind", host_wl, f"{common.ZRT}/wayland-0"]
         env["WAYLAND_DISPLAY"] = "wayland-0"
-    elif s["wayland"] == "zone" and (zrt / "wayland-0").exists():
+    elif s["wayland"] != "none" and (zrt / "wayland-0").exists():
         a += ["--bind", str(zrt / "wayland-0"), f"{common.ZRT}/wayland-0"]
         env["WAYLAND_DISPLAY"] = "wayland-0"
     if (zrt / "bus").exists():

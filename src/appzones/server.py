@@ -282,7 +282,9 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         write_colours(cfg)
         if s["tmp"] == "disk":
             fs.prepare_tmp(zdir)
-        fs.prepare_mnt(name, zdir)
+        if not fs.prepare_mnt(name, zdir):
+            die(f"mounts from the last run of {name} are still there (see above); not starting the zone with them: "
+                f"`appzones umount {name} NAME` or end what holds them")
         extra_path = fs.package_paths(z, zdir) if s["packages"] else []
         target = portals.link_target(z)
         links_srv = None
@@ -301,17 +303,15 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         return stop_code()
     # the desktop's parts are optional: without their helper (a server, a package
     # without them) the zone starts without them, and says so
+    # wayland = "host" is a fallback: the zone's own security context wherever the
+    # compositor has the protocol (with the raw socket a zone's client would also get
+    # the context manager, screencopy, virtual input...), the host's socket only where
+    # it has none (GNOME's Mutter, Weston)
     wl = z.settings["wayland"]
-    wayland_helper = common.helper_argv("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") and wl == "zone" else None
+    host_wayland = False
+    wayland_helper = common.helper_argv("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") and wl != "none" else None
     if wl == "none":
         print(f"[zone] {name}: wayland = \"none\": no Wayland socket", flush=True)
-    elif wl == "host":
-        if common.host_wayland_socket():
-            print(f"[zone] {name}: wayland = \"host\": the host's Wayland socket, without a security context",
-                  flush=True)
-        else:
-            print(f"[zone] {name}: wayland = \"host\", but no host Wayland socket ($WAYLAND_DISPLAY): "
-                  "the zone starts without one", flush=True)
     elif os.environ.get("WAYLAND_DISPLAY") and not wayland_helper:
         print(f"[zone] {name}: zone-wayland not found: the zone starts without a Wayland socket "
               "(desktop apps will not open windows; install appzones with zone-wayland)", flush=True)
@@ -320,13 +320,22 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
                              stdout=subprocess.PIPE,
                              env=dict(os.environ, ZONE_WAYLAND_PARENT=str(os.getpid())))
         helpers.append(h)  # (a stop while it starts ends it too)
-        if read_line(h.stdout.fileno(), START_TIMEOUT) != b"ready":
+        ready = read_line(h.stdout.fileno(), START_TIMEOUT) == b"ready"
+        if ready and wl == "host":
+            print(f"[zone] {name}: wayland = \"host\", but the compositor has a security context: the zone "
+                  "gets its own (the host's socket is only for compositors without one)", flush=True)
+        if not ready:
             rc = _exit_status(h)
             if rc != WAYLAND_NO_PROTOCOL:
                 return abort(f"zone-wayland exited with status {rc} (its message is above)" if rc is not None
                              else f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
-            # less, never more: no Wayland socket in the zone, and never the host's
             helpers.remove(h)
+        if not ready and wl == "host" and common.host_wayland_socket():
+            host_wayland = True
+            print(f"[zone] {name}: wayland = \"host\": the compositor has no security context, so the zone's apps "
+                  "get the host's Wayland socket", flush=True)
+        elif not ready:
+            # less, never more: no Wayland socket in the zone, and never the host's
             print(f"[zone] {name}: the compositor has no security-context protocol (wp_security_context_v1), "
                   "so the zone starts without a Wayland socket (desktop apps will not open windows). "
                   "Compositors with it: Hyprland, sway 1.9 and later, others built on wlroots 0.17 or later, "
@@ -352,7 +361,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     # $XDG_RUNTIME_DIR/.flatpak/<instance>/bwrapinfo.json
     fp = common.HOST_RT / ".flatpak" / instance
     fp.mkdir(parents=True, exist_ok=True)
-    inner = fs.bwrap_argv(z, zdir, zrt, network, extra_path)
+    inner = fs.bwrap_argv(z, zdir, zrt, network, extra_path, host_wayland=host_wayland)
     # pasta closes inherited fds, so the info fd is opened by _netsetup, in
     # pasta's namespace, right before it execs bwrap.
     argv = [sys.executable, str(common.HERE / "zone.py"), "_netsetup", str(zrt / "nft.rules") if network == "internet" else "-",
@@ -370,16 +379,14 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         log_sock.bind(str(log_path))
         os.chmod(log_path, 0o600)
         log_sock.listen(1)
+        os.environ["ZONE_LOG_SOCK"] = str(log_path)  # for _netsetup, through pasta (before any thread)
     if stopped:  # asked to stop before the zone itself was started
         return abort("")
     # _netsetup's own deadline (bwrap clears the environment: it goes no further)
     # the zone's DNS answers in threads: started only now, after every launch with a
     # preexec_fn (die_with), which is not safe once a process has threads
     dns_srv = dns.serve(zrt / "ctl" / "dns.sock", dns.upstreams(z)) if network == "internet" else None  # noqa: F841
-    if log_sock:  # for _netsetup, through pasta's environment
-        os.environ["ZONE_LOG_SOCK"] = str(zrt / "log.sock")
     child = subprocess.Popen(argv, env=dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT)))  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
-    os.environ.pop("ZONE_LOG_SOCK", None)
     if log_sock:  # a thread, like the DNS: after the last launch with a preexec_fn
         relay.append(threading.Thread(target=_relay_output, args=(log_sock,), daemon=True))
         relay[0].start()
