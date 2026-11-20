@@ -381,7 +381,7 @@ impl Policy {
 }
 
 /// A zone name (zonecfg.NAME_RE: ^[a-z][a-z0-9-]{1,20}$, no trailing newline either).
-#[allow(dead_code)] // the mount helper's (next step)
+#[allow(dead_code)] // the mount helper's; not every binary uses all
 pub fn zone_name_ok(s: &str) -> bool {
     let b = s.as_bytes();
     (2..=21).contains(&b.len())
@@ -390,11 +390,11 @@ pub fn zone_name_ok(s: &str) -> bool {
 }
 
 /// Directories under the state directory that are not zones (zonecfg.RESERVED).
-#[allow(dead_code)] // the mount helper's (next step)
+#[allow(dead_code)] // the mount helper's; not every binary uses all
 pub const RESERVED: &[&str] = &["launcher", "share", "bin", "lib", "etc"];
 
 /// A runtime mount's name (zonecfg.MOUNT_NAME_RE: ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$).
-#[allow(dead_code)] // the mount helper's (next step)
+#[allow(dead_code)] // the mount helper's; not every binary uses all
 pub fn mount_name_ok(s: &str) -> bool {
     let b = s.as_bytes();
     (1..=64).contains(&b.len())

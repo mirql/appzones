@@ -91,6 +91,11 @@ if [ $rust = yes ]; then
   inside=$(as_alice 'appzones run --wait off -- sh -c "cat /proc/[0-9]*/cmdline | tr \"\\000\" \" \""' </dev/null)
   if echo "$inside" | grep -q python; then fail "Python runs in the zone: $inside"; fi
   pass "the Rust helper: zone-init runs from /run/appzones-helper, no Python in the zone (installed under $prefix)"
+  case " $mflags " in *" MOUNT_HELPER_BIN="*)
+    [ "$(head -c 4 $prefix/lib/appzones/appzones-mount-helper | od -An -c | tr -d ' ')" = '177ELF' ] \
+      || fail "the mount helper is not the Rust one"
+    pass "the mount helper is the Rust one";;
+  esac
 fi
 (sleep 2; printf 'echo in-shell-$ZONE\r'; sleep 1; printf 'exit\r') \
   | timeout 60 su alice -s /bin/sh -c "$U script -qfc 'appzones shell off' /dev/null" >/tmp/shell.out \

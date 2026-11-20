@@ -33,6 +33,8 @@ SYSTEMD ?= auto
 # what it has replaced so far (design/rust.md); empty: the Python and C ones
 HELPER ?=
 HELPER_BIN ?= build/appzones-helper
+# the Rust root step of `appzones mount`, with HELPER=rust when it is there (else the Python one)
+MOUNT_HELPER_BIN ?= build/appzones-mount-helper-rust
 VERSION = $(shell sed -n 's/^  version = "\(.*\)";/\1/p' nix/package.nix)
 CC ?= cc
 # a distribution's own flags (hardening) when it sets them; -Werror only in our default
@@ -54,6 +56,7 @@ helper:
 	@if command -v cargo >/dev/null && cargo build --release --locked --quiet --manifest-path helper/Cargo.toml \
 		--target-dir build/cargo 2>build/helper.log; then \
 		cp build/cargo/release/appzones-helper build/appzones-helper && echo "built build/appzones-helper"; \
+		cp build/cargo/release/appzones-mount-helper build/appzones-mount-helper-rust; \
 	elif [ -f build/appzones-helper ]; then \
 		echo "using build/appzones-helper, built before (cargo is missing or failed here, as under sudo)"; \
 	else \
@@ -102,9 +105,13 @@ install: all preflight
 	sed 's/@version@/$(VERSION)/' src/zone.py > build/zone.py
 	install -m 644 build/zone.py $(DESTDIR)$(LIBDIR)/zone.py
 	install -m 644 src/appzones/*.py $(DESTDIR)$(LIBDIR)/appzones/
-	@# the root step of `appzones mount`: isolated Python (-I), root-owned, read-only
-	{ echo "#!$(PYTHON) -IB"; cat src/zone_mount_helper.py; } > build/appzones-mount-helper
-	install -m 555 build/appzones-mount-helper $(DESTDIR)$(LIBDIR)/appzones-mount-helper
+	@# the root step of `appzones mount`: the Rust one with HELPER=rust, else isolated Python (-I)
+	if [ "$(HELPER)" = rust ] && [ -f "$(MOUNT_HELPER_BIN)" ]; then \
+		install -m 555 "$(MOUNT_HELPER_BIN)" $(DESTDIR)$(LIBDIR)/appzones-mount-helper; \
+	else \
+		{ echo "#!$(PYTHON) -IB"; cat src/zone_mount_helper.py; } > build/appzones-mount-helper && \
+		install -m 555 build/appzones-mount-helper $(DESTDIR)$(LIBDIR)/appzones-mount-helper; \
+	fi
 	[ ! -f build/zone-wayland ] || install -m 755 build/zone-wayland $(DESTDIR)$(LIBDIR)/zone-wayland
 	[ ! -f $(HELPER_BIN) ] || install -m 755 $(HELPER_BIN) $(DESTDIR)$(LIBDIR)/appzones-helper
 	printf '#!/bin/sh\n%sexec %s -B %s/zone.py "$$@"\n' "$(if $(filter rust,$(HELPER)),APPZONES_HELPER=rust export APPZONES_HELPER; ,)" "$(PYTHON)" "$(LIBDIR)" > build/appzones
