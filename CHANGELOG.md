@@ -5,6 +5,11 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **The never-list for runtime mounts in Rust** (the experiment, #97), for the
+  Rust mount helper that follows: `helper/src/policy.rs`, the port of
+  `zonecfg.mount_source_error` with the same messages. A differential test runs
+  both on the same paths and wants the same answer for each.
+
 - **No Python in a zone with the Rust helper** (the experiment, #97): the
   `xdg-open` shim of `links = "zone"` zones runs `appzones-helper open-link`
   instead of the host's Python, so nothing of appzones but the bound helper runs

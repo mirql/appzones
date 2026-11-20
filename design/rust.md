@@ -98,9 +98,12 @@ outside `/usr` works with the Rust helper.
 ## Phase 1b: the policy core and the root helper
 
 - **The never-list in Rust first**: `denied_paths`, `host_denied_paths`, `policy_error`,
-  `mount_source_error`, `kind_error`, the name rules. The Python `zonecfg` calls it for
-  these checks (a small command), so there is one implementation, not a copy in the root
-  step. Parity: Python's `os.path.realpath` is non-strict (a home that does not exist yet);
+  `mount_source_error`, `kind_error`, the name rules (`helper/src/policy.rs`). Changed while
+  building it: the Python `zonecfg` keeps its own copy for binds and `appzones check` (they
+  should not need the helper), and a differential test (`DifferentialPolicyTest`, the
+  flake check `policy-rust`) runs both on the same paths, every never-list entry included,
+  and wants the same answer and message for each: a path added on one side only fails it.
+  The root step uses only the Rust one. Parity: Python's `os.path.realpath` is non-strict (a home that does not exist yet);
   `fnmatch`'s `*` matches `/` and `.`, unlike Rust glob crates.
 - **The mount helper as its own executable**, `appzones-mount-helper`, not a command of
   `appzones-helper`: the sudo rule allows its file with any arguments, so nothing else may

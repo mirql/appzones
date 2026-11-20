@@ -10,6 +10,7 @@
 use std::process::ExitCode;
 
 mod open_link;
+mod policy;
 mod zone_dns;
 mod zone_init;
 mod zone_wayland;
@@ -37,11 +38,37 @@ fn main() -> ExitCode {
         Some("zone-wayland") => ExitCode::from(zone_wayland::main(&args[1..])),
         Some("zone-init") => ExitCode::from(zone_init::main(&args[1..])),
         Some("open-link") => ExitCode::from(open_link::main(&args[1..])),
+        // for the differential test of the never-list (not the root step's own command)
+        Some("check-mount-source") => ExitCode::from(check_mount_source(&args[1..])),
         _ => {
             eprintln!("{USAGE}");
             ExitCode::from(2)
         }
     }
+}
+
+/// `check-mount-source --home H --code-dir C [--denied-file F] PATH...`: for each PATH, a
+/// JSON line: null (allowed) or the refusal, as zonecfg.mount_source_error says it.
+fn check_mount_source(args: &[String]) -> u8 {
+    let mut policy = policy::Policy { home: String::new(), code_dir: String::new(), denied_file: None };
+    let mut paths = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--home" => policy.home = it.next().cloned().unwrap_or_default(),
+            "--code-dir" => policy.code_dir = it.next().cloned().unwrap_or_default(),
+            "--denied-file" => policy.denied_file = it.next().cloned(),
+            _ => paths.push(a.clone()),
+        }
+    }
+    if policy.home.is_empty() || policy.code_dir.is_empty() {
+        eprintln!("usage: appzones-helper check-mount-source --home H --code-dir C [--denied-file F] PATH...");
+        return 2;
+    }
+    for p in paths {
+        println!("{}", serde_json::to_string(&policy.mount_source_error(&p)).unwrap_or_else(|_| "null".into()));
+    }
+    0
 }
 
 #[cfg(test)]

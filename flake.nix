@@ -54,6 +54,20 @@
                   HOME=$TMPDIR python3 -B -m unittest -v test_zonecfg.AgentProtocolTest
                 touch $out
               '';
+          # the never-list in Rust (the root step's) answers as zonecfg's, path by path
+          policy-rust =
+            pkgs.runCommand "appzones-policy-rust"
+              {
+                nativeBuildInputs = [ pkgs.python3 ];
+                src = ./.;
+              }
+              ''
+                cp -r --no-preserve=mode $src/src $src/examples $src/contrib . && cd src
+                APPZONES_TEST_HELPER="${
+                  self.packages.${pkgs.stdenv.hostPlatform.system}.helper
+                }/bin/appzones-helper" HOME=$TMPDIR python3 -B -m unittest -v test_zonecfg.DifferentialPolicyTest
+                touch $out
+              '';
           # appzones on other distributions, in their disk images (offline, ~3 min each)
           debian12 = import ./tests/distro.nix {
             inherit pkgs;
