@@ -219,8 +219,13 @@ it all. Then [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3)
 - x86_64 Linux: NixOS, or Ubuntu 24.04, Debian 12, Arch (preview, above).
   Python 3.11 or newer.
 - For desktop apps, a Wayland compositor with `wp_security_context_v1`
-  (Hyprland, sway 1.9 and later, other wlroots 0.17+ compositors): every zone
-  gets its own security context. Under a compositor without it (GNOME's
+  (Hyprland, sway 1.9 and later, other wlroots 0.17+ compositors, KDE Plasma
+  6's KWin): every zone gets its own security context. What the compositor
+  hides from a zone's apps differs: Hyprland and sway hide screencopy,
+  clipboard snooping, virtual input and the window list; KWin 6.8 hides
+  clipboard snooping, fake input, the window list and screencast, but still
+  offers them display configuration (`kde_output_management_v2`), DPMS and
+  `org_kde_plasma_shell`, so a zone's app could rearrange or blank the screens. Under a compositor without it (GNOME's
   Mutter 46, Weston, older sway) a zone starts without a Wayland socket and
   its log says why; `wayland = "host"` then gives that zone the host's socket
   (no security context; under GNOME that hides little, since Mutter offers no
