@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""appzones-sway: mark every sway window by the app zone its process runs in
+(appzones docs/desktop.md; tested in tests/distro-test.sh). Start it from the sway
+config: `exec /usr/share/appzones/contrib/sway/appzones-sway` (or this file's path).
+
+The zone comes from what cannot be changed from inside a zone, never from the window's
+title or app_id, which the app chooses:
+- the window's security context (sway 1.10 and later): engine "dev.mirql.zones" and app
+  id "dev.mirql.zone.NAME", which appzones' zone-wayland sets on the host (a zone's
+  clients never see the security-context manager, so cannot make their own);
+- its process's cgroup, .../appzones.slice/appzones@NAME.service (also a cgroup below
+  it), which systemd sets and a zone process cannot leave.
+If both are there they must agree. Fails closed: another sandbox's security context, a
+process under appzones.slice that is not a zone's unit, a nested pid namespace (a zone
+sway 1.9 cannot name, or another sandbox), or an unreadable pid: "zone:?".
+
+A zone window gets the mark "zone:NAME:ID" (a sway mark names one window), the title
+prefix "[NAME]", and
+`shortcuts_inhibitor disable` (zone clients can see
+zwp_keyboard_shortcuts_inhibit_manager_v1; they never switch off sway's shortcuts).
+Sway has no per-window border colour; marks show in the title bar with `show_marks yes`.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import socket
+import struct
+import sys
+
+MAGIC = b"i3-ipc"
+RUN_COMMAND, SUBSCRIBE, GET_TREE = 0, 2, 4
+NAME_RE = re.compile(r"[a-z][a-z0-9-]{1,20}")  # zonecfg.NAME_RE
+ENGINE, APP_PREFIX = "dev.mirql.zones", "dev.mirql.zone."
+
+
+def _read(path: str) -> str | None:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def zone_of(pid: int | None, sandbox: dict | None = None, proc: str = "/proc") -> str | None:
+    """The zone's name, "?" for a window from a zone (or another sandbox) that cannot be
+    named, None for a host window. SANDBOX: the window's sandbox_engine and sandbox_app_id."""
+    sandbox = sandbox or {}
+    by_ctx = None
+    if sandbox.get("sandbox_engine"):
+        app = sandbox.get("sandbox_app_id") or ""
+        name = app[len(APP_PREFIX):] if app.startswith(APP_PREFIX) else ""
+        if sandbox["sandbox_engine"] != ENGINE or not NAME_RE.fullmatch(name):
+            return "?"  # another sandbox, or not a name
+        by_ctx = name
+    if not pid or pid <= 0:
+        return by_ctx  # (None: no pid and no security context, nothing to say)
+    cgroup, status = _read(f"{proc}/{pid}/cgroup"), _read(f"{proc}/{pid}/status")
+    if cgroup is None or status is None:
+        return "?"  # gone already, or unreadable: cannot tell
+    by_cgroup = None
+    for line in cgroup.splitlines():
+        if "/appzones.slice/" in line:
+            m = re.search(r"/appzones\.slice/appzones@([a-z0-9-]+)\.service(/|$)", line)
+            if not m or not NAME_RE.fullmatch(m.group(1)):
+                return "?"
+            by_cgroup = m.group(1)
+    if by_ctx and by_cgroup and by_ctx != by_cgroup:
+        return "?"  # two answers: name neither
+    if by_ctx or by_cgroup:
+        return by_ctx or by_cgroup
+    m = re.search(r"^NSpid:\s*(.*)$", status, re.M)
+    if m and len(m.group(1).split()) > 1:
+        return "?"  # a process in a nested pid namespace
+    return None
+
+
+def command(con_id: int, zone: str) -> str:
+    """The sway command for window CON_ID of ZONE (a name or "?": nothing to quote)."""
+    return (f'[con_id={con_id}] mark --add "zone:{zone}:{con_id}", title_format "[{zone}] %title", '
+            f"shortcuts_inhibitor disable")
+
+
+class Ipc:
+    def __init__(self, path: str):
+        self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.s.connect(path)
+
+    def send(self, kind: int, payload: str = "") -> None:
+        data = payload.encode()
+        self.s.sendall(MAGIC + struct.pack("=II", len(data), kind) + data)
+
+    def _exact(self, n: int) -> bytes:
+        buf = b""
+        while len(buf) < n:
+            chunk = self.s.recv(n - len(buf))
+            if not chunk:
+                raise EOFError("sway closed the IPC socket")
+            buf += chunk
+        return buf
+
+    def recv(self) -> tuple[int, object]:
+        head = self._exact(14)
+        if head[:6] != MAGIC:
+            raise ValueError("not an i3-ipc reply")
+        n, kind = struct.unpack("=II", head[6:])
+        return kind, json.loads(self._exact(n))
+
+    def ask(self, kind: int, payload: str = "") -> object:
+        self.send(kind, payload)
+        return self.recv()[1]
+
+
+def windows(node: dict):
+    """Every window (a node with a pid) in a get_tree reply."""
+    if node.get("pid"):
+        yield node
+    for c in node.get("nodes", []) + node.get("floating_nodes", []):
+        yield from windows(c)
+
+
+def mark(cmds: Ipc, w: dict) -> None:
+    z = zone_of(w.get("pid"), w)
+    if z is not None:
+        cmds.ask(RUN_COMMAND, command(w["id"], z))
+
+
+def main() -> int:
+    path = os.environ.get("SWAYSOCK")
+    if not path:
+        print("appzones-sway: no $SWAYSOCK (start it from the sway config)", file=sys.stderr)
+        return 1
+    cmds, events = Ipc(path), Ipc(path)
+    if not events.ask(SUBSCRIBE, '["window"]').get("success"):
+        print("appzones-sway: could not subscribe to window events", file=sys.stderr)
+        return 1
+    for w in windows(cmds.ask(GET_TREE)):  # the windows open already
+        mark(cmds, w)
+    while True:
+        try:
+            _, ev = events.recv()
+        except EOFError:
+            return 0  # sway exited
+        if isinstance(ev, dict) and ev.get("change") == "new" and isinstance(ev.get("container"), dict):
+            mark(cmds, ev["container"])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

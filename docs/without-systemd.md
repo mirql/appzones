@@ -158,8 +158,9 @@ start_timeout = "1m"   # a slow machine: a minute for each startup step
 - On Hyprland, a zone's border colour comes from its cgroup, which systemd
   provides. Without systemd, a zone's windows get the tag `zone:?` and a red
   warning border: appzones knows they come from a zone, not which one. Naming
-  them needs window identity from the Wayland security context. Sway already
-  exposes it; Hyprland needs a small upstream change.
+  them needs window identity from the Wayland security context. Sway 1.10 and
+  later expose it, and `contrib/sway/appzones-sway` uses it; Hyprland needs a
+  small upstream change.
 
 See [How it works](how-it-works.md) for how a zone is built, and the
 [CHANGELOG](https://github.com/mirql/appzones/blob/main/CHANGELOG.md) for every

@@ -207,16 +207,36 @@ grep -q zwlr_screencopy_manager_v1 /tmp/wl-host.txt || { echo "the host has no s
 if grep -q -e zwlr_screencopy_manager_v1 -e zwlr_data_control_manager_v1 /tmp/wl-zone.txt; then
   echo "the zone's client sees screencopy or data-control"; exit 1
 fi
+# contrib/sway/appzones-sway marks the zone's window, not the host's (this zone runs
+# without systemd and sway 1.9 has no sandbox fields: "zone:?", as on Hyprland)
+"$HOOK" >/tmp/hook.log 2>&1 &
+hook=$!
+sleep 1
+foot </dev/null >/dev/null 2>&1 &
+hostfoot=$!
 appzones run off -- foot </dev/null >/dev/null 2>&1
-for _ in $(seq 50); do swaymsg -t get_tree | grep -q '"app_id": "foot"' && break; sleep 0.2; done
-swaymsg -t get_tree | grep -q '"app_id": "foot"' || { echo "no foot window: $(appzones logs off 2>&1 | tail -5)"; exit 1; }
+for _ in $(seq 50); do [ "$(swaymsg -t get_tree | grep -c '"app_id": "foot"')" = 2 ] && break; sleep 0.2; done
+python3 - "$hostfoot" <<'PY' || { echo "hook: $(cat /tmp/hook.log)"; exit 1; }
+import json, subprocess, sys
+def wins(n):
+    if n.get("pid"): yield n
+    for c in n.get("nodes", []) + n.get("floating_nodes", []): yield from wins(c)
+ws = [w for w in wins(json.loads(subprocess.check_output(["swaymsg", "-t", "get_tree"]))) if w.get("app_id") == "foot"]
+host = [w for w in ws if w["pid"] == int(sys.argv[1])]
+zone = [w for w in ws if w["pid"] != int(sys.argv[1])]
+assert len(host) == 1 and len(zone) == 1, ws
+assert host[0]["marks"] == [], host[0]["marks"]
+assert zone[0]["marks"] == [f"zone:?:{zone[0]['id']}"], zone[0]["marks"]
+print("marks: host", host[0]["marks"], "zone", zone[0]["marks"])
+PY
+kill $hostfoot $hook
 appzones stop off
 kill $sway
 SH
-rc=0; out=$(timeout 120 su alice -s /bin/sh -c "$U sh /tmp/desktop.sh" 2>&1) || rc=$?
+rc=0; out=$(timeout 120 su alice -s /bin/sh -c "$U HOOK=$prefix/share/appzones/contrib/sway/appzones-sway sh /tmp/desktop.sh" 2>&1) || rc=$?
 echo "$out"
 case $rc in
-  0) pass "a desktop (headless sway): the zone's client in a security context (no screencopy, no data-control), its window opens";;
+  0) pass "a desktop (headless sway): the zone's client in a security context (no screencopy, no data-control), its window opens, appzones-sway marks it (not the host's)";;
   3) pkill -u alice sway || true
      pass "a desktop (headless sway): this sway has no security-context protocol ($out), as Weston above";;
   *) fail "a desktop (headless sway): $out";;
