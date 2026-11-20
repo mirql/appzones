@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.10.0
+
+Desktop apps under GNOME: `wayland = "host"` gives a zone's apps the host's Wayland socket where the compositor has no security-context protocol (GNOME's Mutter, Ubuntu's default). Zones release 6: files that use `wayland` set `requires = 6`.
+
 - **`wayland`** (zones release 6): `"zone"` (the default, the zone's own security
   context, as before), `"none"` (no Wayland), or `"host"`: the host's Wayland
   socket, for compositors without `wp_security_context_v1`. GNOME's Mutter 46,

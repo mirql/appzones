@@ -1,6 +1,6 @@
 [package]
 name = "appzones-helper"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2021"
 rust-version = "1.85"
 description = "appzones' helpers in Rust: zone-init, open-link, zone-wayland and the mount helper (design/rust.md)"
