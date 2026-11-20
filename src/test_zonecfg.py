@@ -2066,3 +2066,67 @@ class AgentProtocolTest(unittest.TestCase):
                 if p.poll() is None:
                     p.kill()
                     p.wait()
+
+
+@unittest.skipUnless(os.environ.get("APPZONES_TEST_HELPER"), "needs $APPZONES_TEST_HELPER (the Rust helper)")
+class DifferentialPolicyTest(unittest.TestCase):
+    """The never-list for runtime mounts in Rust (the root step's) is zonecfg's: both lists
+    are the same, entry by entry and in order (so an entry added on one side only fails
+    this test), and both give the same answer, with the same message, for every path here:
+    every entry, what contains it and what is inside it, symlinks to them, the system
+    trees, the host's own additions, appzones' code directory, files, a missing path."""
+
+    def test_same_answers(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        t = Path(tmp.name).resolve()
+        home = t / "home"
+        for d in ("proj/sub", ".ssh", ".local/share/opencode-x", ".local/share/opencodeish", ".claude", ".claude-2",
+                  "Secrets/inner", "data", ".config", ".local/state/appzones"):
+            (home / d).mkdir(parents=True, exist_ok=True)
+        (home / "file").write_text("x")
+        (home / "ssh-link").symlink_to(home / ".ssh")
+        (home / "proj-link").symlink_to(home / "proj")
+        (home / "dangling").symlink_to(t / "nowhere")
+        srv = t / "srv/code"
+        srv.mkdir(parents=True)
+        denied = t / "denied-paths"
+        denied.write_text(f"# the host's own\n~/Secrets\n{srv}   # code\n\n")
+        saved = {k: os.environ.get(k) for k in ("APPZONES_HOME_FOR_TESTS", "APPZONES_DENIED_PATHS", "XDG_STATE_HOME")}
+        os.environ["APPZONES_HOME_FOR_TESTS"] = str(home)
+        os.environ["APPZONES_DENIED_PATHS"] = str(denied)
+        os.environ.pop("XDG_STATE_HOME", None)
+        try:
+            sys.path.insert(0, str(HERE))
+            import zonecfg
+            z = importlib.reload(zonecfg)
+            paths = ["~/proj", "~/proj/sub", str(home / "proj"), "~/proj-link", "~/ssh-link", "~/dangling", "~/file",
+                     "~/missing", "relative/path", "~", str(home), str(home.parent), "/", "/home", "/etc", "/etc/ssh",
+                     "/nix", "/nix/store", "/tmp", "/var/tmp", "/run", "/proc/1", "/usr", "/usr/share", "/boot",
+                     "/root", str(srv), str(srv.parent), str(srv / "x"), "~/Secrets", "~/Secrets/inner", "~/data",
+                     "~/.config", "~//proj/./sub/", str(z.CODE_DIR), str(z.CODE_DIR.parent), str(z.CODE_DIR / "appzones"),
+                     "~/.local/state", "~/.local/share", str(t)]
+            for d in z.denied_paths():  # every entry, what contains it, what is inside it
+                d = Path(d)
+                if d.is_relative_to(home):
+                    (d / "inner").mkdir(parents=True, exist_ok=True)
+                paths += [str(d), str(d.parent), str(d / "inner")]
+            want = [z.mount_source_error(p) for p in paths]
+            want_list = [str(d) for d in z.denied_paths()]
+        finally:
+            sys.path.remove(str(HERE))
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        out = subprocess.run([os.environ["APPZONES_TEST_HELPER"], "check-mount-source", "--home", str(home),
+                              "--code-dir", str(z.CODE_DIR), "--denied-file", str(denied), "--list-denied", *paths],
+                             capture_output=True, text=True, check=True).stdout.removesuffix("\n").split("\n")
+        self.assertEqual(json.loads(out[0]), want_list)
+        got = [json.loads(line) for line in out[1:]]
+        self.assertEqual(len(got), len(paths))
+        diffs = [(p, w, g) for p, w, g in zip(paths, want, got) if w != g]
+        self.assertEqual(diffs, [], "\n".join(f"{p}:\n  python: {w}\n  rust:   {g}" for p, w, g in diffs))
+        self.assertGreater(sum(w is None for w in want), 3)  # some allowed, too
+        self.assertGreater(sum(w is not None for w in want), 30)
