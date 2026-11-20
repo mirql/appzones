@@ -112,6 +112,11 @@ out=$(as_alice 'appzones run --wait off -- sh -c "id -un; cat ~/proj/f; ls -A ~;
 echo "$out"
 echo "$out" | grep -qx alice && echo "$out" | grep -qx hello && echo "$out" | grep -qx no-ssh || fail "zone off"
 pass "a zone without network starts on demand: its own home, the bind, no ~/.ssh"
+# the zone's plan (what appzones serve worked out, for the part that holds the zone): there, 0600, JSON
+[ "$(stat -c %a /run/user/1000/appzones/off/plan.json)" = 600 ] || fail "no 0600 plan.json for zone off"
+python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["version"] == 1 and p["name"] == "off"' \
+  /run/user/1000/appzones/off/plan.json || fail "plan.json is not a version-1 plan of zone off"
+pass "the zone's plan: plan.json, 0600, version 1"
 as_alice 'appzones run --wait off -- unshare -Ur true </dev/null' || fail "a sandbox inside the zone"
 pass "a sandbox inside the zone (user namespace)"
 if [ $rust = yes ]; then

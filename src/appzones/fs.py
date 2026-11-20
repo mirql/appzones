@@ -363,10 +363,38 @@ def prepare_mnt(zone: str, zdir: Path) -> bool:
     return not host_mounts(zone)
 
 
+# Parts of bwrap's command line that depend on what the helpers produce, marked in a
+# zone's plan (plan=True): "\0if:COND" ... "\0end" around them, and "\0host-wayland" for
+# the host's socket. NUL can never be in a real argument, so a marker cannot be one.
+# COND: "wayland-0" (zone-wayland made the zone's socket), "wayland-host" (no security
+# context, wayland = "host": the host's socket), "bus" (the D-Bus proxy made the bus).
+PLAN_IF, PLAN_END, PLAN_HOST_WAYLAND = "\0if:", "\0end", "\0host-wayland"
+
+
+def resolve_plan_argv(argv: list[str], have: set[str], host_wayland: str | None = None) -> list[str]:
+    """ARGV with each marked group kept when its condition is in HAVE, else dropped, and
+    the host's Wayland socket filled in. Groups do not nest."""
+    out: list[str] = []
+    keep = True
+    for a in argv:
+        if a.startswith(PLAN_IF):
+            keep = a[len(PLAN_IF):] in have
+        elif a == PLAN_END:
+            keep = True
+        elif keep:
+            if a == PLAN_HOST_WAYLAND:
+                if not host_wayland:
+                    raise ValueError("the plan uses the host's Wayland socket, but there is none")
+                a = host_wayland
+            out.append(a)
+    return out
+
+
 def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path: list[str],
-               host_wayland: bool = False) -> list[str]:
+               host_wayland: bool = False, plan: bool = False) -> list[str]:
     """bwrap's command line for zone Z. HOST_WAYLAND: wayland = "host" and the compositor
-    has no security context (the server tried it): the host's own socket."""
+    has no security context (the server tried it): the host's own socket. PLAN: the parts
+    that depend on the helpers marked instead (resolve_plan_argv)."""
     s = z.settings
     home = Path(os.path.expanduser(s["home"])) if s["home"] else zdir / "home"
     if s["home"]:
@@ -483,14 +511,24 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
         if os.environ.get(k):
             env[k] = os.environ[k]
     host_wl = common.host_wayland_socket() if host_wayland and s["wayland"] == "host" else None
-    if host_wl:
+    if plan:
+        zwl = f"{common.ZRT}/wayland-0"
+        if s["wayland"] != "none":
+            a += [PLAN_IF + "wayland-0", "--bind", str(zrt / "wayland-0"), zwl,
+                  "--setenv", "WAYLAND_DISPLAY", "wayland-0", PLAN_END]
+        if s["wayland"] == "host":
+            a += [PLAN_IF + "wayland-host", "--bind", PLAN_HOST_WAYLAND, zwl,
+                  "--setenv", "WAYLAND_DISPLAY", "wayland-0", PLAN_END]
+        a += [PLAN_IF + "bus", "--bind", str(zrt / "bus"), f"{common.ZRT}/bus",
+              "--setenv", "DBUS_SESSION_BUS_ADDRESS", f"unix:path={common.ZRT}/bus", PLAN_END]
+    elif host_wl:
         # wayland = "host": the compositor's own socket, no security context (warned by check)
         a += ["--bind", host_wl, f"{common.ZRT}/wayland-0"]
         env["WAYLAND_DISPLAY"] = "wayland-0"
     elif s["wayland"] != "none" and (zrt / "wayland-0").exists():
         a += ["--bind", str(zrt / "wayland-0"), f"{common.ZRT}/wayland-0"]
         env["WAYLAND_DISPLAY"] = "wayland-0"
-    if (zrt / "bus").exists():
+    if not plan and (zrt / "bus").exists():
         a += ["--bind", str(zrt / "bus"), f"{common.ZRT}/bus"]
         env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={common.ZRT}/bus"
     # for zone-init: the zone's own bus (bus = "zone") and the nested bwrap
