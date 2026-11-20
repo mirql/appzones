@@ -11,6 +11,9 @@ The config schema has its own release number (`requires = N` in
   environment read but `SUDO_UID`). Same checks and messages as the Python one, with
   the never-list from `policy.rs`. The `appzones-rust` package and `make install
   HELPER=rust` install it at the same path, so the sudo rule does not change.
+- `appzones mount`: the zone's copy of the folder is private. Before, a mount made
+  under the source afterwards (a USB stick, a FUSE mount) also showed up in the zone.
+- Zone and mount names with a trailing newline are refused (`fullmatch`, not `match`).
 
 - **The never-list for runtime mounts in Rust** (the experiment, #97), for the
   Rust mount helper that follows: `helper/src/policy.rs`, the port of

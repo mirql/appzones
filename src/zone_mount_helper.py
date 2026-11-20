@@ -23,7 +23,8 @@ Why a caller cannot abuse it (docs/configuration/files.md, "Runtime mounts"):
   or is inside, on the resolved path, plus /proc /sys /dev /run /etc /nix
   /boot /root /var /tmp) is checked on the path of that open directory, and
   the mount is made from the same descriptor (open_tree), so nothing can be
-  swapped in between. Non-recursive: mounts below SOURCE do not come along.
+  swapped in between. Non-recursive and private: mounts below SOURCE do not come along,
+  and mounts made under SOURCE later never propagate into the zone.
   Always nosuid and nodev; ro is set before the mount is attached
   (mount_setattr on the detached tree), so the zone never sees it writable.
 - where: ZONE and NAME are plain names (no "/", no ".."); the target is
@@ -56,6 +57,7 @@ OPEN_TREE_CLONE = 1
 OPEN_TREE_CLOEXEC = os.O_CLOEXEC
 MOVE_MOUNT_F_EMPTY_PATH, MOVE_MOUNT_T_EMPTY_PATH = 0x04, 0x40
 MOUNT_ATTR_RDONLY, MOUNT_ATTR_NOSUID, MOUNT_ATTR_NODEV = 0x1, 0x2, 0x4
+MS_PRIVATE = 1 << 18
 RESOLVE_NO_MAGICLINKS, RESOLVE_NO_SYMLINKS = 0x02, 0x04
 MNT_DETACH, UMOUNT_NOFOLLOW = 2, 8
 USAGE = __doc__.split("\n\n")[1]
@@ -117,7 +119,7 @@ class Caller:
         zonecfg.HOME = Path(self.home)  # the never-list is the caller's
 
     def mnt_dir(self, zone: str) -> str:
-        if not zonecfg.NAME_RE.match(zone or "") or zone in zonecfg.RESERVED:
+        if not zonecfg.NAME_RE.fullmatch(zone or "") or zone in zonecfg.RESERVED:
             die(f"zone {zone!r}: not a zone name")
         # the caller's state directory, chosen as appzones (appzones/common.py) chooses
         # it; either way open_owned refuses a symlink anywhere on the path and
@@ -157,7 +159,7 @@ class Caller:
 
 def do_mount(c: Caller, zone: str, name: str, source: str, ro: bool) -> int:
     mnt = c.mnt_dir(zone)
-    if not zonecfg.MOUNT_NAME_RE.match(name or ""):
+    if not zonecfg.MOUNT_NAME_RE.fullmatch(name or ""):
         die(f"name {name!r}: letters, digits, . _ - (not first), at most 64")
     if not source.startswith("/"):
         die(f"{source}: must be an absolute path")
@@ -175,7 +177,8 @@ def do_mount(c: Caller, zone: str, name: str, source: str, ro: bool) -> int:
         die(f"refused: {err}")
     tree = check(libc.syscall(ctypes.c_long(SYS_OPEN_TREE), ctypes.c_int(sfd), b"",
                               ctypes.c_uint(OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC | AT_EMPTY_PATH)), "open_tree")
-    attr = MountAttr(MOUNT_ATTR_NOSUID | MOUNT_ATTR_NODEV | (MOUNT_ATTR_RDONLY if ro else 0), 0, 0, 0)
+    # MS_PRIVATE: no longer a peer of SOURCE's mount
+    attr = MountAttr(MOUNT_ATTR_NOSUID | MOUNT_ATTR_NODEV | (MOUNT_ATTR_RDONLY if ro else 0), 0, MS_PRIVATE, 0)
     check(libc.syscall(ctypes.c_long(SYS_MOUNT_SETATTR), ctypes.c_int(tree), b"", ctypes.c_uint(AT_EMPTY_PATH),
                        ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(attr))), "mount_setattr")
     check(libc.syscall(ctypes.c_long(SYS_MOVE_MOUNT), ctypes.c_int(tree), b"", ctypes.c_int(tfd), b"",
@@ -200,7 +203,7 @@ def umount_one(pfd: int, target: str, name: str, lazy: bool) -> int:
 
 def do_umount(c: Caller, zone: str, name: str, lazy: bool) -> int:
     mnt = c.mnt_dir(zone)
-    if not zonecfg.MOUNT_NAME_RE.match(name or ""):
+    if not zonecfg.MOUNT_NAME_RE.fullmatch(name or ""):
         die(f"name {name!r}: not a mount name")
     target = f"{mnt}/{name}"
     pfd = c.open_owned(mnt)
@@ -220,7 +223,7 @@ def do_umount_all(c: Caller, zone: str) -> int:
     n = 0
     for _ in range(256):  # a stacked mount shows up again under the same name
         names = [m[len(mnt) + 1:] for m in mount_points() if m.startswith(mnt + "/")]
-        names = [x for x in names if zonecfg.MOUNT_NAME_RE.match(x)]
+        names = [x for x in names if zonecfg.MOUNT_NAME_RE.fullmatch(x)]
         if not names:
             break
         for x in names:

@@ -18,6 +18,7 @@ mod policy;
 
 use std::ffi::{OsStr, OsString};
 use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
@@ -47,21 +48,30 @@ mod sys {
         unsafe { libc::geteuid() }
     }
 
-    /// The caller's user: (gid, name, home), from NSS.
+    /// The caller's user: (gid, name, home), from NSS (a larger buffer on ERANGE).
     pub fn getpwuid(uid: u32) -> Result<(u32, Vec<u8>, Vec<u8>)> {
-        let mut buf = vec![0u8; 16384];
-        // Safety: getpwuid_r fills `pw` with pointers into `buf`, which outlives their use.
-        unsafe {
-            let mut pw: libc::passwd = std::mem::zeroed();
-            let mut out: *mut libc::passwd = std::ptr::null_mut();
-            let rc = libc::getpwuid_r(uid, &mut pw, buf.as_mut_ptr().cast(), buf.len(), &mut out);
-            if rc != 0 {
-                return Err(Error::from_raw_os_error(rc));
+        let mut size = 16384;
+        loop {
+            let mut buf = vec![0u8; size];
+            // Safety: getpwuid_r fills `pw` with pointers into `buf`, which outlives their use;
+            // each pointer is checked before it is read.
+            unsafe {
+                let mut pw: libc::passwd = std::mem::zeroed();
+                let mut out: *mut libc::passwd = std::ptr::null_mut();
+                let rc = libc::getpwuid_r(uid, &mut pw, buf.as_mut_ptr().cast(), buf.len(), &mut out);
+                if rc == libc::ERANGE && size < (1 << 20) {
+                    size *= 4;
+                    continue;
+                }
+                if rc != 0 {
+                    return Err(Error::from_raw_os_error(rc));
+                }
+                if out.is_null() || pw.pw_name.is_null() || pw.pw_dir.is_null() {
+                    return Err(Error::from_raw_os_error(libc::ENOENT));
+                }
+                return Ok((pw.pw_gid, CStr::from_ptr(pw.pw_name).to_bytes().to_vec(),
+                           CStr::from_ptr(pw.pw_dir).to_bytes().to_vec()));
             }
-            if out.is_null() {
-                return Err(Error::from_raw_os_error(libc::ENOENT));
-            }
-            Ok((pw.pw_gid, CStr::from_ptr(pw.pw_name).to_bytes().to_vec(), CStr::from_ptr(pw.pw_dir).to_bytes().to_vec()))
         }
     }
 
@@ -159,9 +169,11 @@ mod sys {
         userns_fd: u64,
     }
 
-    /// Set ATTRS on the detached tree, before anyone can see it.
+    /// Set ATTRS on the detached tree, before anyone can see it, and make it private: no
+    /// longer a peer of the source, so a mount made later under the source never
+    /// propagates into it (the zone gets SOURCE, not what is mounted there afterwards).
     pub fn mount_setattr(tree: RawFd, attrs: u64) -> Result<()> {
-        let a = MountAttr { attr_set: attrs, attr_clr: 0, propagation: 0, userns_fd: 0 };
+        let a = MountAttr { attr_set: attrs, attr_clr: 0, propagation: libc::MS_PRIVATE as u64, userns_fd: 0 };
         // Safety: mount_setattr reads the struct of the given size; the path is empty.
         check(unsafe {
             libc::syscall(libc::SYS_mount_setattr, tree, c"".as_ptr(), libc::AT_EMPTY_PATH as libc::c_uint,
@@ -204,14 +216,17 @@ fn strerror(e: &std::io::Error) -> String {
     s.rsplit_once(" (os error").map_or(s.clone(), |(t, _)| t.to_string())
 }
 
+/// The path of descriptor FD, as the kernel sees it now (never a guess: dies otherwise).
 fn fd_path(fd: RawFd) -> Vec<u8> {
-    std::fs::read_link(format!("/proc/self/fd/{fd}")).map(|p| p.into_os_string().into_vec()).unwrap_or_default()
+    std::fs::read_link(format!("/proc/self/fd/{fd}")).map(|p| p.into_os_string().into_vec())
+        .unwrap_or_else(|e| die(format!("the path of descriptor {fd}: {}", strerror(&e))))
 }
 
 /// /proc/self/mountinfo's mount points (\ooo escapes undone): sudo keeps the caller's
-/// mount namespace.
+/// mount namespace. Dies when it cannot read them (never an empty list).
 fn mount_points() -> Vec<Vec<u8>> {
-    let text = std::fs::read("/proc/self/mountinfo").unwrap_or_default();
+    let text = std::fs::read("/proc/self/mountinfo")
+        .unwrap_or_else(|e| die(format!("/proc/self/mountinfo: {}", strerror(&e))));
     text.split(|&b| b == b'\n').filter_map(|line| {
         let field = line.split(|&b| b == b' ').filter(|f| !f.is_empty()).nth(4)?;
         Some(unescape(field))
@@ -231,6 +246,13 @@ fn unescape(f: &[u8]) -> Vec<u8> {
         }
     }
     out
+}
+
+/// appzones' code: the directory this executable sits in, which is where zonecfg.py and
+/// zone.py are too (the package and `make install` put them side by side).
+fn code_dir() -> OsString {
+    let exe = std::env::current_exe().unwrap_or_else(|e| die(format!("own path: {}", strerror(&e))));
+    exe.parent().map(|p| p.as_os_str().to_owned()).unwrap_or_else(|| die("own directory unknown"))
 }
 
 struct Caller {
@@ -258,10 +280,7 @@ impl Caller {
     }
 
     fn policy(&self) -> policy::Policy {
-        // appzones' code: the directory this executable sits in (as zonecfg.CODE_DIR)
-        let exe = std::env::current_exe().unwrap_or_else(|e| die(format!("own path: {}", strerror(&e))));
-        let code_dir = exe.parent().map(|p| p.as_os_str().to_owned()).unwrap_or_default();
-        policy::Policy { home: OsString::from_vec(self.home.clone()), code_dir, denied_file: None }
+        policy::Policy { home: OsString::from_vec(self.home.clone()), code_dir: code_dir(), denied_file: None }
     }
 
     fn mnt_dir(&self, zone: &str) -> Vec<u8> {
@@ -336,14 +355,19 @@ fn do_mount(c: &Caller, zone: &str, name: &str, source: &[u8], ro: bool) -> u8 {
     if real.ends_with(b" (deleted)") {
         die(format!("{}: deleted", show(source)));
     }
-    if let Some(err) = c.policy().mount_source_error(&real) {
+    // the never-list on the path of the open directory as it is, not walked again (a
+    // rename in between cannot change what is checked), and its type from the descriptor
+    let meta = File::from(sfd.try_clone().unwrap_or_else(|e| die(strerror(&e)))).metadata()
+        .unwrap_or_else(|e| die(format!("{}: {}", show(&real), strerror(&e))));
+    if let Some(err) = c.policy().mount_source_error_resolved(&real, &meta) {
         die(format!("refused: {err}"));
     }
     let tree = sys::open_tree_clone(sfd.as_raw_fd()).unwrap_or_else(|e| die(format!("open_tree: {}", strerror(&e))));
     let attrs = sys::MOUNT_ATTR_NOSUID | sys::MOUNT_ATTR_NODEV | if ro { sys::MOUNT_ATTR_RDONLY } else { 0 };
     sys::mount_setattr(tree.as_raw_fd(), attrs).unwrap_or_else(|e| die(format!("mount_setattr: {}", strerror(&e))));
     sys::move_mount(tree.as_raw_fd(), tfd.as_raw_fd()).unwrap_or_else(|e| die(format!("move_mount: {}", strerror(&e))));
-    println!("mounted {} at {} ({})", show(&real), show(&target), if ro { "ro" } else { "rw" });
+    // mounted: from here nothing may fail (a closed stdout is not a failure)
+    let _ = writeln!(std::io::stdout(), "mounted {} at {} ({})", show(&real), show(&target), if ro { "ro" } else { "rw" });
     0
 }
 
@@ -433,6 +457,12 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn code_dir_is_the_executables() {
+        let exe = std::env::current_exe().unwrap();
+        assert_eq!(code_dir(), exe.parent().unwrap().as_os_str());
+    }
 
     #[test]
     fn mountinfo_escapes() {
