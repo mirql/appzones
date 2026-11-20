@@ -173,7 +173,7 @@ mod sys {
     /// longer a peer of the source, so a mount made later under the source never
     /// propagates into it (the zone gets SOURCE, not what is mounted there afterwards).
     pub fn mount_setattr(tree: RawFd, attrs: u64) -> Result<()> {
-        let a = MountAttr { attr_set: attrs, attr_clr: 0, propagation: libc::MS_PRIVATE as u64, userns_fd: 0 };
+        let a = MountAttr { attr_set: attrs, attr_clr: 0, propagation: libc::MS_PRIVATE, userns_fd: 0 };
         // Safety: mount_setattr reads the struct of the given size; the path is empty.
         check(unsafe {
             libc::syscall(libc::SYS_mount_setattr, tree, c"".as_ptr(), libc::AT_EMPTY_PATH as libc::c_uint,

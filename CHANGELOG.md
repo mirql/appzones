@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **The server in Rust (rust-version, stage 1 of #157)**: `appzones serve` writes the
+  zone's plan (`plan.json`), then, with the Rust helper, becomes `appzones-helper serve`,
+  which holds the zone (helpers, the pidfd handoff, readiness, autostart, the log and DNS
+  relays, links, linger, cleanup). The same pid, lock and messages; about 930 KB of memory
+  per running zone instead of about 26 MB.
+
 - **openSUSE Leap 16 tested** (`just test-opensuse`, #22): `make install` and the whole
   distro test pass with SELinux enforcing, once pasta may run: on Leap 16
   `/usr/bin/pasta` links to the passt binary, so SELinux runs it in passt's domain,

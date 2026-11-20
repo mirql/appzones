@@ -228,7 +228,26 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     except _Stopped:
         print(f"[zone] {name}: stopped while starting", flush=True)
         return 0 if stopped[-1] == signal.SIGINT else 128 + stopped[-1]
-    write_plan(plan)
+    path = write_plan(plan)
+    runner = common.rust_helper("serve") if common.HELPER == "rust" and "serve" in common.RUST_HELPERS else None
+    # a stop from here to the exec must not be lost: blocked (the mask goes through exec),
+    # and the runner lets it through once it handles them
+    stops = {signal.SIGTERM, signal.SIGINT}
+    if runner:
+        signal.pthread_sigmask(signal.SIG_BLOCK, stops)
+    if runner and not stopped:
+        # the part that holds the zone in Rust: this process becomes it (the same pid, the
+        # lock and the readiness fd kept), so no Python stays in memory for the zone's life
+        argv = [runner, "serve", "--plan", str(path), "--lock-fd", str(lock)]
+        os.set_inheritable(lock, True)
+        if notify_fd is not None:
+            os.set_inheritable(notify_fd, True)
+            argv += ["--notify-fd", str(notify_fd)]
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.execv(runner, argv)
+    if runner:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, stops)  # a stop pending: handled by run_plan
     return run_plan(plan, notify_fd, stopped)
 
 
