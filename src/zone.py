@@ -129,7 +129,12 @@ def main(argv: list[str]) -> int:
     if cmd == "ping":
         r = agent.ping(one()); print(json.dumps(r)); return 0 if r else 1
     if cmd == "ps":
-        for p, c in agent.zone_procs(one()):
+        name = one()
+        try:
+            procs = agent.zone_procs(name)
+        except (OSError, ValueError):  # no socket, or a garbled reply
+            die(f"zone {name} is not running (start it: appzones up {name})")
+        for p, c in procs:
             print(p, c)
         return 0
     if cmd == "logs":

@@ -26,6 +26,8 @@ appzones mounts work               # what is mounted, from where, ro or rw
 appzones umount work thing         # gone again (busy: says by what; --lazy detaches anyway)
 ```
 
+- **Processes.** If the zone is stopped, `appzones ps ZONE` prints a
+  start hint on stderr and exits with status 1.
 - **Launcher.** Every app in `[apps]` gets a launcher entry per zone, named
   `Firefox (work)`. The entries are written to
   `~/.local/share/appzones/launcher/share/applications`, which is on

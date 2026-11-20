@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`appzones ps` on a zone that is not running** prints one line
+  (`appzones: zone web is not running (start it: appzones up web)`) and exits 1,
+  instead of a Python traceback (#130).
+
 ## 0.9.1
 
 Zones start under GNOME (Ubuntu's default desktop), Weston and sway before 1.9: without a Wayland socket there, since those compositors have no security-context protocol. Before, a zone did not start at all under them. And a .deb for Debian 12 and Ubuntu 24.04, attached to the release.
