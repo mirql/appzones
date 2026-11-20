@@ -1661,6 +1661,14 @@ os.write(w, b"\\n"); os.close(w)
                     if want:
                         self.assertIn("semanage permissive -a passt_t", got)
             self.assertIsNone(zone.pasta_selinux_problem(str(t / "pasta"), selinux=str(t / "none")))  # no SELinux
+            # a bare name, as APPZONES_BIN_PASTA=pasta: found on PATH, as the launch would
+            (t / "selinux/enforce").write_text("1")
+            labels[str(t / "passt")] = b"system_u:object_r:passt_exec_t:s0\0"
+            os.chmod(t / "passt", 0o755)
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = f"{t}:{old_path}"
+            self.addCleanup(os.environ.__setitem__, "PATH", old_path)
+            self.assertIsNotNone(zone.pasta_selinux_problem("pasta", selinux=str(t / "selinux")))
         finally:
             shutil.rmtree(t, ignore_errors=True)
 

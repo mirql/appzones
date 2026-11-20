@@ -4,6 +4,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -94,6 +95,8 @@ def pasta_selinux_problem(pasta: str, selinux: str = "/sys/fs/selinux") -> str |
         with open(f"{selinux}/enforce") as f:
             if f.read().strip() != "1":
                 return None
+        if "/" not in pasta:  # a bare name (an APPZONES_BIN_PASTA override): as the launch finds it
+            pasta = shutil.which(pasta) or pasta
         label = os.getxattr(os.path.realpath(pasta), "security.selinux").decode(errors="replace")
     except OSError:
         return None
