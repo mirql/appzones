@@ -51,14 +51,13 @@ all: zone-wayland helper
 # present and new enough, else a note; nothing uses it yet
 helper:
 	@mkdir -p build
-	@if ! command -v cargo >/dev/null && [ -f build/appzones-helper ]; then \
-		echo "using build/appzones-helper, built before (no cargo here, as under sudo)"; \
-	elif command -v cargo >/dev/null && cargo build --release --locked --quiet --manifest-path helper/Cargo.toml \
+	@if command -v cargo >/dev/null && cargo build --release --locked --quiet --manifest-path helper/Cargo.toml \
 		--target-dir build/cargo 2>build/helper.log; then \
 		cp build/cargo/release/appzones-helper build/appzones-helper && echo "built build/appzones-helper"; \
+	elif [ -f build/appzones-helper ]; then \
+		echo "using build/appzones-helper, built before (cargo is missing or failed here, as under sudo)"; \
 	else \
 		command -v cargo >/dev/null || echo "cargo: not found" >build/helper.log; \
-		rm -f build/appzones-helper; \
 		echo "note: appzones-helper not built (needs cargo and rustc 1.85 or newer; see build/helper.log)"; \
 	fi
 
