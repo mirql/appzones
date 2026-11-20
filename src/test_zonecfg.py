@@ -1018,7 +1018,10 @@ os.write(w, b"\\n"); os.close(w)
             for m, text, want in [(["zone:work:5"], "[work]", ("[work]", "zone-work")),
                                   (["zone:?:6"], "[?]", ("[?]", "zone-unidentified")),
                                   ([], "", ("", "host")), (["mine"], "", ("", "host")),
-                                  (["zone:Bad_Name:3"], "[?]", ("[?]", "zone-unidentified"))]:
+                                  (["zone:Bad_Name:3"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work:x"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work:5:6"], "[?]", ("[?]", "zone-unidentified"))]:
                 marks[:] = m
                 for as_json in (False, True):
                     with contextlib.redirect_stdout(io.StringIO()) as out:

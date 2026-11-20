@@ -243,9 +243,13 @@ host=$(appzones active)
 zid=$(swaymsg -t get_tree | grep -o '"zone:?:[0-9]*"' | head -1 | tr -d '"' | cut -d: -f3)
 swaymsg "[con_id=$zid] focus" >/dev/null; sleep 0.5
 zone=$(appzones active --json)
+swaymsg workspace 9 >/dev/null; sleep 0.5  # an empty workspace: no window, no label
+empty=$(appzones active)
+swaymsg workspace 1 >/dev/null; sleep 0.5
 kill $follow
 echo "active: host '$host', zone $zone, follow: $(tr '\n' '|' </tmp/follow.txt)"
-[ "$host" = "" ] && echo "$zone" | grep -q '"text": "\[?\]"' || { echo "appzones active on sway"; exit 1; }
+[ "$host" = "" ] && [ "$empty" = "" ] && echo "$zone" | grep -q '"text": "\[?\]"' || { echo "appzones active on sway"; exit 1; }
+[ "$(tail -2 /tmp/follow.txt | head -1)" = "" ] || { echo "--follow kept a label on the empty workspace"; exit 1; }
 grep -qx '\[?\]' /tmp/follow.txt && grep -qx '' /tmp/follow.txt || { echo "appzones active --follow on sway"; exit 1; }
 kill $hostfoot $hook
 appzones stop off

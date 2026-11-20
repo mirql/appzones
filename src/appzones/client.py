@@ -829,8 +829,10 @@ def _focused_zone() -> str:
             return ""  # sway gone: no label, never a crash in the bar
         for m in marks:
             if m.startswith("zone:"):
-                name = m[5:].rsplit(":", 1)[0]
-                return name if name == "?" or zonecfg.NAME_RE.fullmatch(name) else "?"
+                # exactly the hook's form, zone:NAME:ID (or zone:?:ID); anything else is "?"
+                parts = m.split(":")
+                ok = len(parts) == 3 and parts[2].isdigit() and (parts[1] == "?" or zonecfg.NAME_RE.fullmatch(parts[1]))
+                return parts[1] if ok else "?"
         return ""
     try:
         r = subprocess.run(["hyprctl", "-j", "activewindow"], capture_output=True, text=True, timeout=5)
@@ -852,19 +854,23 @@ def active(follow: bool, as_json: bool) -> int:  # NOSONAR: an exit status: 0 is
             return json.dumps({"text": f"[{z}]" if z else "", "class": f"zone-{z}" if z else "host",
                                "tooltip": f"active window runs in app zone {z}" if z else ""})
         return f"[{z}]" if z else ""
-    print(current(), flush=True)
     if not follow:
+        print(current(), flush=True)
         return 0
-    last = None
+    # subscribed first, then the first label: no change in between is missed
     sway = os.environ.get("SWAYSOCK")
     if sway and not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.connect(sway)
-        _sway_send(s, SWAY_SUBSCRIBE, '["window"]')
+        # window events (focus, title, mark, close), and workspace ones: focus can move
+        # to an empty workspace, which has no window to send an event for
+        _sway_send(s, SWAY_SUBSCRIBE, '["window", "workspace"]')
         _sway_recv(s)  # {"success": true}
+        last = current()
+        print(last, flush=True)
         while True:
             try:
-                _sway_recv(s)  # any window event: focus, title, mark, close
+                _sway_recv(s)
             except EOFError:
                 return 0
             cur = current()
@@ -873,9 +879,12 @@ def active(follow: bool, as_json: bool) -> int:  # NOSONAR: an exit status: 0 is
                 last = cur
     sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
     if not sig:
+        print(current(), flush=True)
         die("no HYPRLAND_INSTANCE_SIGNATURE or SWAYSOCK")
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.connect(str(common.HOST_RT / "hypr" / sig / ".socket2.sock"))
+    last = current()
+    print(last, flush=True)
     buf = b""
     while True:
         data = s.recv(4096)
