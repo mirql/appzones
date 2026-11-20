@@ -5,6 +5,11 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **KDE Plasma 6 named as a compositor with the security-context protocol**: tried
+  with KWin 6.8, which hides clipboard snooping, fake input, the window list and
+  screencast from a zone's apps, but still offers them display configuration, DPMS
+  and the Plasma shell protocol. The install page says so.
+
 - **The mount helper's `umount-all` says when mounts are left** (both helpers): it exits
   1 and names them if any are still mounted after it is done, instead of always 0.
 

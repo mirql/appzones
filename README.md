@@ -283,7 +283,7 @@ first: [install](https://raw.githubusercontent.com/mirql/appzones/main/docs/gett
 
 1. **Check first**, and tell me what you find before changing anything:
    - x86_64 NixOS configured with flakes (find my flake and this host's config);
-   - a Wayland compositor with `wp_security_context_v1` (Hyprland, sway, KWin, ...);
+   - a Wayland compositor with `wp_security_context_v1` (Hyprland, sway 1.9+, KDE Plasma 6's KWin, ...);
      window borders and tags per zone need Hyprland;
    - unprivileged user namespaces, `xdg-desktop-portal`, PipeWire;
    - an nftables firewall, or the kernel modules in the install page's "Kernel modules".
@@ -356,10 +356,10 @@ Issues, ideas and PRs are welcome. Good places to start:
 - **[Good first issues](https://github.com/mirql/appzones/labels/good%20first%20issue).** Small, self-contained
   tasks, each saying where to start and what done looks like. Most need no
   NixOS to build and test.
-- **Other compositors.** Only Hyprland gets window tags and border
-  colours. Sway, niri or KWin hooks would help.
-- **Other distributions.** Ubuntu and Debian are in progress
-  ([milestone 0.8.0](https://github.com/mirql/appzones/milestone/2)).
+- **Other compositors.** Hyprland gets window tags and border colours, sway
+  marks and title prefixes. niri or KWin hooks would help ([#20](https://github.com/mirql/appzones/issues/20)).
+- **Other distributions.** Fedora, openSUSE and others: a package, and a VM
+  test like the Debian and Ubuntu ones ([#22](https://github.com/mirql/appzones/issues/22)).
 - **aarch64.** Nothing has been tried there yet.
 - **Docs.** If something in the [docs](https://mirql.github.io/appzones/) was unclear to you,
   it will be to the next person too.

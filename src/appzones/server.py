@@ -290,7 +290,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             helpers.remove(h)
             print(f"[zone] {name}: the compositor has no security-context protocol (wp_security_context_v1), "
                   "so the zone starts without a Wayland socket (desktop apps will not open windows). "
-                  "Compositors with it: Hyprland, sway 1.9 and later, others built on wlroots 0.17 or later. "
+                  "Compositors with it: Hyprland, sway 1.9 and later, others built on wlroots 0.17 or later, "
+                  "KDE Plasma 6. "
                   "To give this zone's apps the host's socket instead (GNOME): wayland = \"host\"",
                   flush=True)
     else:
