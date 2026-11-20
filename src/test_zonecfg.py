@@ -2122,7 +2122,7 @@ class DifferentialPolicyTest(unittest.TestCase):
                     os.environ[k] = v
         out = subprocess.run([os.environ["APPZONES_TEST_HELPER"], "check-mount-source", "--home", str(home),
                               "--code-dir", str(z.CODE_DIR), "--denied-file", str(denied), "--list-denied", *paths],
-                             capture_output=True, text=True, check=True).stdout.splitlines()
+                             capture_output=True, text=True, check=True).stdout.removesuffix("\n").split("\n")
         self.assertEqual(json.loads(out[0]), want_list)
         got = [json.loads(line) for line in out[1:]]
         self.assertEqual(len(got), len(paths))

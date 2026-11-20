@@ -76,6 +76,11 @@ pub fn realpath(path: &[u8]) -> Option<Vec<u8>> {
         let next = join(&resolved, &c);
         let p = Path::new(OsStr::from_bytes(&next));
         match fs::symlink_metadata(p) {
+            // missing (or below a non-directory): the rest stays as it is, as Python's
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory) => {
+                resolved = next
+            }
+            Err(_) => return None, // could not look: never a guess
             Ok(m) if m.file_type().is_symlink() => {
                 links += 1;
                 if links > MAX_LINKS {
@@ -163,6 +168,11 @@ fn inside(p: &[u8], dir: &[u8]) -> bool {
     Path::new(OsStr::from_bytes(p)).starts_with(Path::new(OsStr::from_bytes(dir)))
 }
 
+/// Python's str.strip(): its whitespace is Unicode's and \x1c-\x1f.
+fn py_strip(s: &str) -> &str {
+    s.trim_matches(|c: char| c.is_whitespace() || ('\x1c'..='\x1f').contains(&c))
+}
+
 /// The line breaks Python's str.splitlines() knows ("\r\n" is one).
 fn split_lines(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
@@ -215,7 +225,7 @@ impl Policy {
         };
         let mut out = Vec::new();
         for (n, line) in split_lines(&text).into_iter().enumerate() {
-            let p = line.split('#').next().unwrap_or("").trim();
+            let p = py_strip(line.split('#').next().unwrap_or(""));
             if p.is_empty() {
                 continue;
             }
@@ -244,8 +254,11 @@ impl Policy {
         out.extend(self.host_denied_paths()?);
         for (dir, prefix) in [(join(&h, b".local/share"), &b"opencode"[..]), (h.clone(), &b".claude"[..])] {
             let p = Path::new(OsStr::from_bytes(&dir));
-            if !p.is_dir() {
-                continue; // absent: nothing to deny there
+            match fs::metadata(p) {
+                Ok(m) if m.is_dir() => {}
+                Ok(_) => continue, // not a directory: nothing to deny there
+                Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory) => continue,
+                Err(e) => return Err(format!("{}: cannot look at it: {e}", show(&dir))),
             }
             let entries = fs::read_dir(p).map_err(|e| format!("{}: cannot list it: {e}", show(&dir)))?;
             for e in entries {
@@ -260,8 +273,9 @@ impl Policy {
     }
 
     /// zonecfg.policy_error: why the resolved path REAL may never enter a zone.
-    pub fn policy_error(&self, real: &[u8], raw: &str) -> Option<String> {
-        let via = if real != self.expand(raw.as_bytes()).as_slice() {
+    pub fn policy_error(&self, real: &[u8], raw_b: &[u8]) -> Option<String> {
+        let raw = show(raw_b);
+        let via = if real != self.expand(raw_b).as_slice() {
             format!(" (resolves to {})", show(real))
         } else {
             String::new()
@@ -323,26 +337,28 @@ impl Policy {
     }
 
     /// zonecfg.bind_error.
-    pub fn bind_error(&self, raw: &str) -> Option<String> {
-        let p = self.expand(raw.as_bytes());
+    pub fn bind_error(&self, raw_b: &[u8]) -> Option<String> {
+        let raw = show(raw_b);
+        let p = self.expand(raw_b);
         if !p.starts_with(b"/") {
             return Some(format!("{raw}: must be absolute or start with ~"));
         }
         let Some(real) = realpath(&p) else {
             return Some(format!("{raw}: its symlinks cannot be resolved (a loop?)"));
         };
-        if let Some(e) = self.policy_error(&real, raw) {
+        if let Some(e) = self.policy_error(&real, raw_b) {
             return Some(e);
         }
         match fs::metadata(OsStr::from_bytes(&p)) {
-            Ok(m) => Self::kind_error(&m, raw),
+            Ok(m) => Self::kind_error(&m, &raw),
             Err(_) => Some(format!("{raw}: does not exist")),
         }
     }
 
     /// zonecfg.mount_source_error: why a folder may not be mounted into a zone at run time.
-    pub fn mount_source_error(&self, raw: &str) -> Option<String> {
-        let p = self.expand(raw.as_bytes());
+    pub fn mount_source_error(&self, raw_b: &[u8]) -> Option<String> {
+        let raw = show(raw_b);
+        let p = self.expand(raw_b);
         if !p.starts_with(b"/") {
             return Some(format!("{raw}: must be absolute or start with ~"));
         }
@@ -357,7 +373,7 @@ impl Policy {
                 }
             }
         }
-        if let Some(e) = self.bind_error(raw) {
+        if let Some(e) = self.bind_error(raw_b) {
             return Some(e);
         }
         if Path::new(OsStr::from_bytes(&p)).is_dir() { None } else { Some(format!("{raw}: not a directory")) }
@@ -434,6 +450,7 @@ mod tests {
         assert_eq!(py_repr("a'b\"c"), "'a\\'b\"c'");
         assert_eq!(py_repr("x\ty"), "'x\\ty'");
         assert_eq!(split_lines("a\r\nb\rc\nd"), vec!["a", "b", "c", "d"]);
+        assert_eq!(py_strip(" \x1f~/x\x1c\t"), "~/x");
     }
 
     #[test]
@@ -457,7 +474,7 @@ mod tests {
         assert_eq!(rp(format!("{tr}/real/sub/..")), Some(format!("{tr}/real")));
         assert_eq!(rp(format!("{tr}/loop/x")), None);
         let policy = Policy { home: t.0.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None };
-        assert!(policy.mount_source_error(&format!("{tr}/loop")).unwrap().contains("cannot be resolved"));
+        assert!(policy.mount_source_error(format!("{tr}/loop").as_bytes()).unwrap().contains("cannot be resolved"));
     }
 
     #[test]
