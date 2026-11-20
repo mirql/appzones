@@ -598,6 +598,19 @@ pkgs.testers.runNixOSTest {
         print("PASS  a link clicked in a links = zone zone opens in that zone's browser")
         rc, out = u("appzones run --wait tz -- xdg-open 'https://example.com/x y' </dev/null 2>&1; echo rc=$?", check=False)
         assert "rc=0" in out, out  # a space is fine; only http(s) URLs leave the zone this way
+        # that link arrived too (its browser starts in the background), before the next check
+        machine.wait_until_succeeds(
+            "grep -qx 'https://example.com/x y' /home/alice/.local/share/appzones/tz/home/opened-link", timeout=60)
+        # anything else sent to the link socket is refused, and no browser runs
+        u("rm -f ~/.local/share/appzones/tz/home/opened-link")
+        for bad in ["file:///etc/passwd", "javascript:alert(1)", "https://a.example/\nhttps://b.example/"]:  # a real line break: two links
+            out = u("appzones run --wait tz -- ${pkgs.python3}/bin/python3 -c " + shlex.quote(
+                "import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect('/run/zone/links.sock'); "
+                f"s.sendall({bad!r}.encode() + b'\\n'); sys.stdout.write(s.recv(3).decode())") + " </dev/null 2>&1")
+            assert out.strip() == "no", (bad, out)
+        machine.sleep(2)
+        u("test ! -e ~/.local/share/appzones/tz/home/opened-link")
+        print("PASS  the link socket refuses anything but one http(s) URL; no browser runs for it")
         # zones have no /sys/class/net; /proc/net/dev is the zone's own netns
         ok("tb", "[ \"$(tail -n +3 /proc/net/dev | cut -d: -f1 | tr -d ' ')\" = lo ]", "network = none: only lo")
 
