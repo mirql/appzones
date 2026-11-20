@@ -963,6 +963,8 @@ os.write(w, b"\\n"); os.close(w)
         import subprocess as sp
         zone = self._zone_mod()
         real = zone.subprocess.run
+        sway = os.environ.pop("SWAYSOCK", None)  # (Hyprland's path)
+        self.addCleanup(lambda: sway is None or os.environ.__setitem__("SWAYSOCK", sway))
         try:
             for tags, text, want in [(["zone:ta"], "[ta]", ("[ta]", "zone-ta")), (["zone:?"], "[?]", ("[?]", "zone-unidentified")),
                                      ([], "", ("", "host")), (["other", "zone:tb*"], "[tb]", ("[tb]", "zone-tb"))]:
@@ -977,6 +979,64 @@ os.write(w, b"\\n"); os.close(w)
                         self.assertEqual(out.getvalue().strip(), text, tags)
         finally:
             zone.subprocess.run = real
+
+    def test_active_sway(self):
+        """appzones active on sway: the zone from the focused window's mark zone:NAME:ID
+        (contrib/sway/appzones-sway); a malformed one is "?", never a name."""
+        import json as js
+        import struct
+        import threading
+        zone = self._zone_mod()
+        t = Path(tempfile.mkdtemp())
+        path = str(t / "sway-ipc.sock")
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(path)
+        srv.listen(4)
+        marks: list = []
+
+        def serve():
+            while True:
+                try:
+                    c, _ = srv.accept()
+                except OSError:
+                    return
+                with c:
+                    head = c.recv(14)
+                    n, kind = struct.unpack("=II", head[6:])
+                    c.recv(n) if n else b""
+                    tree = {"nodes": [{"nodes": [
+                        {"pid": 10, "focused": False, "marks": ["zone:other:1"], "nodes": []},
+                        {"pid": 11, "focused": True, "marks": list(marks), "nodes": []}]}]}
+                    body = js.dumps(tree).encode()
+                    c.sendall(b"i3-ipc" + struct.pack("=II", len(body), kind) + body)
+
+        threading.Thread(target=serve, daemon=True).start()
+        old = {k: os.environ.get(k) for k in ("SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE")}
+        try:
+            os.environ["SWAYSOCK"] = path
+            os.environ.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
+            for m, text, want in [(["zone:work:5"], "[work]", ("[work]", "zone-work")),
+                                  (["zone:?:6"], "[?]", ("[?]", "zone-unidentified")),
+                                  ([], "", ("", "host")), (["mine"], "", ("", "host")),
+                                  (["zone:Bad_Name:3"], "[?]", ("[?]", "zone-unidentified"))]:
+                marks[:] = m
+                for as_json in (False, True):
+                    with contextlib.redirect_stdout(io.StringIO()) as out:
+                        self.assertEqual(zone.active(False, as_json), 0)
+                    if as_json:
+                        d = js.loads(out.getvalue())
+                        self.assertEqual((d["text"], d["class"]), want, m)
+                    else:
+                        self.assertEqual(out.getvalue().strip(), text, m)
+            os.environ["SWAYSOCK"] = str(t / "gone.sock")  # sway gone: no label, no crash
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(zone.active(False, False), 0)
+            self.assertEqual(out.getvalue().strip(), "")
+        finally:
+            srv.close()
+            for k, v in old.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+            shutil.rmtree(t, ignore_errors=True)
 
     def test_hyprland_zones_lua_is_a_copy(self):
         """contrib/hyprland/zones.lua (pre-0.6 name) is appzones.lua's code, past each file's header comment."""

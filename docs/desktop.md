@@ -54,3 +54,10 @@ exec /usr/share/appzones/contrib/sway/appzones-sway
 That is the path of the .deb and the Arch package; after `make install` it is
 `/usr/local/share/appzones/contrib/sway/appzones-sway` (`PREFIX/share/...`), with
 Nix `share/appzones/contrib/sway/appzones-sway` in the package.
+
+`appzones active` reads the focused window's mark on sway (the hook must run),
+so the same Waybar module works there:
+
+```json
+"custom/zone": { "exec": "appzones active --follow --json", "return-type": "json" }
+```

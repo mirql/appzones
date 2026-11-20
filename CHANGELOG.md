@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`appzones active` on sway**: the focused window's zone from the mark that
+  `contrib/sway/appzones-sway` sets (never from its title or app id), also with
+  `--follow` (sway's window events) for a Waybar module.
+
 - **Zone markers on sway** (#20): `contrib/sway/appzones-sway` marks every window from a
   zone (`zone:NAME:ID`, the title prefix `[NAME]`, its shortcuts inhibitor off), with
   the zone taken from the window's security context (sway 1.11+) or its cgroup, never

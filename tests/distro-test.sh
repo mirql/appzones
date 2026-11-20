@@ -233,6 +233,20 @@ assert host[0]["marks"] == [], host[0]["marks"]
 assert zone[0]["marks"] == [f"zone:?:{zone[0]['id']}"], zone[0]["marks"]
 print("marks: host", host[0]["marks"], "zone", zone[0]["marks"])
 PY
+# appzones active (a bar's label) from the mark: the zone's window "[?]", the host's ""
+appzones active --follow >/tmp/follow.txt 2>&1 &
+follow=$!
+sleep 0.5
+swaymsg "[pid=$hostfoot] focus" >/dev/null; sleep 0.5
+host=$(appzones active)
+# (by con_id: con_mark is a regex, and "?" is a quantifier there)
+zid=$(swaymsg -t get_tree | grep -o '"zone:?:[0-9]*"' | head -1 | tr -d '"' | cut -d: -f3)
+swaymsg "[con_id=$zid] focus" >/dev/null; sleep 0.5
+zone=$(appzones active --json)
+kill $follow
+echo "active: host '$host', zone $zone, follow: $(tr '\n' '|' </tmp/follow.txt)"
+[ "$host" = "" ] && echo "$zone" | grep -q '"text": "\[?\]"' || { echo "appzones active on sway"; exit 1; }
+grep -qx '\[?\]' /tmp/follow.txt && grep -qx '' /tmp/follow.txt || { echo "appzones active --follow on sway"; exit 1; }
 kill $hostfoot $hook
 appzones stop off
 kill $sway
@@ -240,7 +254,7 @@ SH
 rc=0; out=$(timeout 120 su alice -s /bin/sh -c "$U HOOK=$prefix/share/appzones/contrib/sway/appzones-sway sh /tmp/desktop.sh" 2>&1) || rc=$?
 echo "$out"
 case $rc in
-  0) pass "a desktop (headless sway): the zone's client in a security context (no screencopy, no data-control), its window opens, appzones-sway marks it (not the host's)";;
+  0) pass "a desktop (headless sway): the zone's client in a security context (no screencopy, no data-control), its window opens, appzones-sway marks it (not the host's), appzones active reads the mark";;
   3) pkill -u alice sway || true
      pass "a desktop (headless sway): this sway has no security-context protocol ($out), as Weston above";;
   *) fail "a desktop (headless sway): $out";;

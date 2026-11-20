@@ -24,7 +24,7 @@
     appzones check [--probe ZONE]          validate zones.toml; --probe also runs isolation probes in ZONE
     appzones --version | -V                the package version and the config release, for bug reports
     appzones apps                          (re)write launcher entries "App (zone)" from [apps]
-    appzones active [--follow] [--json]    "[zone]" for Hyprland's active window (for bars;
+    appzones active [--follow] [--json]    "[zone]" for the focused window on Hyprland or sway (for bars;
                                            --json: Waybar custom-module JSON)
     appzones mount ZONE HOST-DIR [--ro] [--as NAME]
                                            HOST-DIR appears at /mnt/host/NAME in the running
