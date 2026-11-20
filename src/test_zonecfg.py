@@ -564,8 +564,9 @@ os.write(w, b"\\n"); os.close(w)
         command when appzones was installed with it, else the program."""
         zone = self._zone_mod()
         t = Path(self.tmp.name)
+        (t / "zone-wayland").write_text("#!/bin/sh\n")
+        (t / "appzones-helper").write_text("#!/bin/sh\n[ \"$1\" = --commands ] && printf 'zone-wayland\\nzone-init\\n'\n")
         for name in ("zone-wayland", "appzones-helper"):
-            (t / name).write_text("#!/bin/sh\n")
             (t / name).chmod(0o755)
         zone.HERE = t
         saved = {k: os.environ.pop(k, None) for k in ("APPZONES_BIN_ZONE_WAYLAND", "ZONES_BIN_ZONE_WAYLAND",
@@ -587,6 +588,38 @@ os.write(w, b"\\n"); os.close(w)
         finally:
             os.environ.pop("APPZONES_BIN_ZONE_WAYLAND", None)
             os.environ.pop("PATH", None)
+            for k, v in saved.items():
+                if v is not None:
+                    os.environ[k] = v
+
+    def test_zone_init_argv(self):
+        """zone-init: the host's Python and zone_init.py, or with the Rust helper the binary
+        bound read-only at /run/appzones-helper and run from there."""
+        zone = self._zone_mod()
+        t = Path(self.tmp.name)
+        (t / "appzones-helper").write_text("#!/bin/sh\n[ \"$1\" = --commands ] && printf 'zone-wayland\\nzone-init\\n'\n")
+        (t / "appzones-helper").chmod(0o755)
+        zone.HERE = t
+        zone.HELPER = ""
+        a = zone.zone_init_argv()
+        self.assertEqual(a[0], "--")
+        self.assertTrue(a[-1].endswith("zone_init.py"))
+        zone.HELPER = "rust"
+        saved = {k: os.environ.pop(k, None) for k in ("APPZONES_BIN_APPZONES_HELPER", "ZONES_BIN_APPZONES_HELPER")}
+        try:
+            self.assertEqual(zone.zone_init_argv(), ["--ro-bind", str((t / "appzones-helper").resolve()),
+                                                     "/run/appzones-helper", "--", "/run/appzones-helper",
+                                                     "zone-init"])
+            # an older helper (no zone-init) is refused before bwrap starts
+            old = t / "old-helper"
+            old.write_text("#!/bin/sh\n[ \"$1\" = --commands ] && echo zone-wayland\n")
+            old.chmod(0o755)
+            os.environ["APPZONES_BIN_APPZONES_HELPER"] = str(old)
+            with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+                zone.zone_init_argv()
+            self.assertIn("implements zone-init", err.getvalue())
+            os.environ.pop("APPZONES_BIN_APPZONES_HELPER")
+        finally:
             for k, v in saved.items():
                 if v is not None:
                     os.environ[k] = v

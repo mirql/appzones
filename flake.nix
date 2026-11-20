@@ -39,6 +39,21 @@
           make-install = import ./tests/make-install.nix { inherit pkgs; };
           # the Rust helper builds, statically, and its tests pass (cargo test in the build)
           helper = self.packages.${pkgs.stdenv.hostPlatform.system}.helper;
+          # the Rust zone-init meets the agent protocol's specification (AgentProtocolTest)
+          agent-protocol-rust =
+            pkgs.runCommand "appzones-agent-protocol-rust"
+              {
+                nativeBuildInputs = [ pkgs.python3 ];
+                src = ./.;
+              }
+              ''
+                cp -r --no-preserve=mode $src/src $src/examples $src/contrib . && cd src
+                APPZONES_TEST_ZONE_INIT="${
+                  self.packages.${pkgs.stdenv.hostPlatform.system}.helper
+                }/bin/appzones-helper zone-init" \
+                  HOME=$TMPDIR python3 -B -m unittest -v test_zonecfg.AgentProtocolTest
+                touch $out
+              '';
           # appzones on other distributions, in their disk images (offline, ~3 min each)
           debian12 = import ./tests/distro.nix {
             inherit pkgs;

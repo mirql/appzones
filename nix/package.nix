@@ -96,7 +96,9 @@ runCommand "appzones-${version}"
       helper != null
     ) "install -m 555 ${helper}/bin/appzones-helper $lib/appzones-helper"}
     makeWrapper ${python3}/bin/python3 $out/bin/appzones \
-      --add-flags "-B $lib/zone.py" ${lib.optionalString (helper != null) "--set APPZONES_HELPER rust"} \
+      --add-flags "-B $lib/zone.py" ${
+        lib.optionalString (helper != null) "--set APPZONES_HELPER rust"
+      } \
       --prefix PATH : ${runtimePath} \
       --suffix PATH : /run/current-system/sw/bin
   ''

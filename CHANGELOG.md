@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **zone-init in Rust** (the experiment, #97): with the Rust helper, the server binds
+  `appzones-helper` read-only at `/run/appzones-helper` in the zone and runs its
+  `zone-init` there, instead of the host's Python with `zone_init.py`. The same
+  protocol (it passes `AgentProtocolTest`), DNS, zone bus, pty shell, reaping and
+  crash containment; the VM test passes with it.
+
 - **zone-wayland in Rust** (the experiment, #97): `appzones-helper zone-wayland`
   replaces the C helper when appzones is installed with the Rust helper (the Nix
   package `appzones-rust`, or `make install HELPER=rust`, which set

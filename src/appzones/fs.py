@@ -508,4 +508,23 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
     env.update(s["env"])
     for k, v in env.items():
         a += ["--setenv", k, v]
-    return a + ["--", os.path.realpath(sys.executable), str(common.HERE / "zone_init.py")]
+    return a + zone_init_argv()
+
+
+# where the Rust helper appears in a zone: bwrap's /run is a fresh tmpfs, so the bind
+# never lands on anything of the zone's
+ZONE_HELPER = "/run/appzones-helper"
+
+
+def zone_init_argv() -> list[str]:
+    """The end of bwrap's command line: zone-init. With the Rust helper, the binary bound
+    read-only into the zone and run from there (it needs nothing else of appzones in the
+    zone); else the host's Python running zone_init.py, which the zone sees in /usr or
+    the Nix store."""
+    if common.HELPER == "rust" and "zone-init" in common.RUST_HELPERS:
+        helper = common.rust_helper("zone-init")
+        if not helper:
+            die("appzones was installed with the Rust helper, but there is no appzones-helper that implements "
+                "zone-init (`appzones-helper --commands`); reinstall it")
+        return ["--ro-bind", os.path.realpath(helper), ZONE_HELPER, "--", ZONE_HELPER, "zone-init"]
+    return ["--", os.path.realpath(sys.executable), str(common.HERE / "zone_init.py")]

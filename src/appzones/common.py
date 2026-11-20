@@ -64,7 +64,36 @@ def find_tool(name: str) -> str | None:
 # installed with the Rust helper (the package's or make install's wrapper sets it), so
 # it reaches the server also under systemd. Unset: the Python and C ones.
 HELPER = zonecfg.env("HELPER") or ""
-RUST_HELPERS = ("zone-wayland",)  # done in Rust so far
+RUST_HELPERS = ("zone-wayland", "zone-init")  # done in Rust so far
+
+
+_implements: dict[tuple[str, str], bool] = {}
+
+
+def implements(helper: str, command: str) -> bool:
+    """Whether the Rust helper at HELPER implements COMMAND (`appzones-helper --commands`)."""
+    key = (helper, command)
+    if key not in _implements:
+        try:
+            r = subprocess.run([helper, "--commands"], capture_output=True, text=True, timeout=5)
+            _implements[key] = r.returncode == 0 and command in r.stdout.split()
+        except (OSError, subprocess.TimeoutExpired):
+            _implements[key] = False
+    return _implements[key]
+
+
+def rust_helper(command: str) -> str | None:
+    """The Rust helper for COMMAND: $APPZONES_BIN_APPZONES_HELPER when set, else the one
+    installed with this appzones (next to zone.py), else one on PATH; only one that
+    implements COMMAND (an older helper elsewhere may not). None when there is none."""
+    override = zonecfg.env("BIN_APPZONES_HELPER")
+    if override:
+        candidates = [override]
+    else:
+        own = HERE / "appzones-helper"
+        candidates = [str(own)] if own.is_file() else []
+        candidates.append(shutil.which("appzones-helper") or "")
+    return next((p for p in candidates if p and implements(p, command)), None)
 
 
 def helper_argv(name: str) -> list[str] | None:
@@ -75,7 +104,7 @@ def helper_argv(name: str) -> list[str] | None:
     if override:
         return [override]
     if HELPER == "rust" and name in RUST_HELPERS:
-        p = find_tool("appzones-helper")
+        p = rust_helper(name)
         return [p, name] if p else None
     p = find_tool(name)
     return [p] if p else None
