@@ -897,8 +897,8 @@ fn signal_fds() -> Option<(OwnedFd, OwnedFd)> {
 
 /// Ends the zone at once on SIGTERM or when the server's pidfd fires, in a thread of its
 /// own: a shell client that stops reading, or a log nobody reads, never holds it up.
-fn watch_shutdown(term: OwnedFd, server: RawFd) {
-    let _ = std::thread::Builder::new().name("shutdown".into()).spawn(move || loop {
+fn watch_shutdown(term: OwnedFd, server: RawFd) -> bool {
+    std::thread::Builder::new().name("shutdown".into()).spawn(move || loop {
         let mut fds = [libc::pollfd { fd: term.as_raw_fd(), events: libc::POLLIN, revents: 0 },
                        libc::pollfd { fd: server, events: libc::POLLIN, revents: 0 }];
         // Safety: poll over our array; _exit ends the process without running anything.
@@ -907,7 +907,7 @@ fn watch_shutdown(term: OwnedFd, server: RawFd) {
                 libc::_exit(0);
             }
         }
-    });
+    }).is_ok()
 }
 
 pub fn main(_args: &[String]) -> u8 {
@@ -927,7 +927,10 @@ pub fn main(_args: &[String]) -> u8 {
         log("could not set up signals; refusing to run");
         return 1;
     };
-    watch_shutdown(term, server);
+    if !watch_shutdown(term, server) {
+        log("could not start the shutdown watcher; refusing to run");
+        return 1;
+    }
     let env: HashMap<String, String> = std::env::vars().collect();
     let zone = env.get("ZONE").cloned().unwrap_or_else(|| "?".into());
     // Safety: getuid has no preconditions.
