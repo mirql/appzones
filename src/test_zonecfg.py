@@ -1751,9 +1751,11 @@ os.write(w, b"\\n"); os.close(w)
                 self.assertIsNotNone(e, path)
                 self.assertIn(why, e)
         for name in ("proj", "my.dir_2", "A-b"):
-            self.assertTrue(self.z.MOUNT_NAME_RE.match(name), name)
-        for name in ("..", ".", ".hidden", "a/b", "", "x" * 65, "-x"):
-            self.assertFalse(self.z.MOUNT_NAME_RE.match(name), name)
+            self.assertTrue(self.z.MOUNT_NAME_RE.fullmatch(name), name)
+        for name in ("..", ".", ".hidden", "a/b", "", "x" * 65, "-x", "proj\n"):
+            self.assertFalse(self.z.MOUNT_NAME_RE.fullmatch(name), name)
+        # a trailing newline is not a name (`$` with match() would let it through)
+        self.assertFalse(self.z.NAME_RE.fullmatch("work\n"))
 
     def test_env_never_list(self):
         for name in ["SSH_AUTH_SOCK", "GITHUB_TOKEN", "OPENAI_API_KEY", "HYPRLAND_INSTANCE_SIGNATURE", "LD_PRELOAD"]:

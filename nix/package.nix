@@ -19,6 +19,9 @@
   # the Rust helpers (nix/helper.nix, design/rust.md): when given, appzones runs them
   # instead of the Python and C ones it has replaced so far
   helper ? null,
+  # the Rust root step of `appzones mount` (nix/helper.nix, bin = "appzones-mount-helper"):
+  # when given, it is the mount helper, at the same path, instead of the Python one
+  rustMountHelper ? null,
 }:
 
 let
@@ -76,8 +79,15 @@ runCommand "appzones-${version}"
     # The root helper of `appzones mount` (the module's sudo rule names this
     # file): isolated Python (-I: no PYTHON* variables, no user site, not
     # even its own directory on sys.path; it adds $lib itself).
-    { echo "#!${python3}/bin/python3 -IB"; cat ${src}/zone_mount_helper.py; } > $lib/appzones-mount-helper
-    chmod 555 $lib/appzones-mount-helper
+    ${
+      if rustMountHelper != null then
+        "install -m 555 ${rustMountHelper}/bin/appzones-mount-helper $lib/appzones-mount-helper"
+      else
+        ''
+          { echo "#!${python3}/bin/python3 -IB"; cat ${src}/zone_mount_helper.py; } > $lib/appzones-mount-helper
+          chmod 555 $lib/appzones-mount-helper
+        ''
+    }
 
     # unit tests of the validator (and parts of the appzones modules), against a fake home and sysfs
     work=$(mktemp -d)
@@ -88,7 +98,9 @@ runCommand "appzones-${version}"
     cp ${hyprland}/*.lua $work/contrib/hyprland/
     (cd $work/src && HOME=$work python3 -B -m unittest -q test_zonecfg)
     python3 -B -m py_compile $lib/zone.py $lib/zone_init.py $lib/appzones/*.py
-    python3 -B -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' $lib/appzones-mount-helper
+    ${lib.optionalString (
+      rustMountHelper == null
+    ) "python3 -B -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' $lib/appzones-mount-helper"}
 
     # /run/current-system/sw/bin last: systemctl, journalctl, nix and hyprctl
     # are the running system's.

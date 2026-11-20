@@ -18,7 +18,12 @@
         # the Rust helpers (experiment, design/rust.md): static, with musl
         helper = pkgs.pkgsStatic.callPackage ./nix/helper.nix { };
         # appzones with them
-        appzones-rust = appzones.override { inherit helper; };
+        # the root step of `appzones mount` in Rust: linked against glibc, not static
+        mount-helper = pkgs.callPackage ./nix/helper.nix { bin = "appzones-mount-helper"; };
+        appzones-rust = appzones.override {
+          inherit helper;
+          rustMountHelper = mount-helper;
+        };
       });
 
       overlays.default = final: _prev: {
@@ -39,6 +44,7 @@
           make-install = import ./tests/make-install.nix { inherit pkgs; };
           # the Rust helper builds, statically, and its tests pass (cargo test in the build)
           helper = self.packages.${pkgs.stdenv.hostPlatform.system}.helper;
+          mount-helper = self.packages.${pkgs.stdenv.hostPlatform.system}.mount-helper;
           # the Rust zone-init meets the agent protocol's specification (AgentProtocolTest)
           agent-protocol-rust =
             pkgs.runCommand "appzones-agent-protocol-rust"
@@ -83,14 +89,18 @@
             image = "debian12x86_64";
             makeFlags = "PREFIX=/opt/appzones HELPER=rust HELPER_BIN=${
               self.packages.${pkgs.stdenv.hostPlatform.system}.helper
-            }/bin/appzones-helper";
+            }/bin/appzones-helper MOUNT_HELPER_BIN=${
+              self.packages.${pkgs.stdenv.hostPlatform.system}.mount-helper
+            }/bin/appzones-mount-helper";
           };
           ubuntu2404-rust = import ./tests/distro.nix {
             inherit pkgs;
             image = "ubuntu2404x86_64";
             makeFlags = "PREFIX=/opt/appzones HELPER=rust HELPER_BIN=${
               self.packages.${pkgs.stdenv.hostPlatform.system}.helper
-            }/bin/appzones-helper";
+            }/bin/appzones-helper MOUNT_HELPER_BIN=${
+              self.packages.${pkgs.stdenv.hostPlatform.system}.mount-helper
+            }/bin/appzones-mount-helper";
           };
         }
         // {

@@ -719,6 +719,12 @@ pkgs.testers.runNixOSTest {
         refused("td", "unshare -Urm sh -c 'mount -o remount,bind,rw /mnt/host/ro && touch /mnt/host/ro/x'",
                 "ro stays ro after a remount from a nested user namespace")
         refused("ta", "test -e /mnt/host/proj", "another zone does not see it")
+        machine.succeed("mkdir -p /home/alice/proj/later && mount -t tmpfs later /home/alice/proj/later "
+                        "&& touch /home/alice/proj/later/new && findmnt -no PROPAGATION /home/alice/proj/later")
+        machine.fail("test -e /home/alice/.local/share/appzones/td/mnt/proj/later/new")
+        refused("td", "test -e /mnt/host/proj/later/new",
+                "a mount made under the source afterwards does not reach the zone (the copy is private)")
+        machine.succeed("umount /home/alice/proj/later && rmdir /home/alice/proj/later")
         refused("td", "touch /mnt/host/planted", "/mnt/host itself is read-only in the zone")
         out = u("appzones mounts td")
         print(out)
@@ -792,6 +798,10 @@ pkgs.testers.runNixOSTest {
         # mounts end with the zone run
         u("appzones mount td ~/proj")
         ok("td", "test -f /mnt/host/proj/a.txt", "mounted again")
+        # a mount under a name with a trailing newline, as older versions allowed: detached too
+        machine.succeed("M=/home/alice/.local/share/appzones/td/mnt; mkdir \"$M/old\n\" "
+                        "&& chown alice \"$M/old\n\" && mount --bind /home/alice/rosrc \"$M/old\n\" "
+                        "&& findmnt -rn -o TARGET | grep -q 'td/mnt/old'")
         u("appzones restart td")
         refused("td", "test -e /mnt/host/proj", "appzones restart drops the mount")
         machine.succeed("! findmnt -rn -o TARGET | grep -q 'zones/td/mnt'")

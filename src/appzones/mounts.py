@@ -71,7 +71,7 @@ def mount(name: str, path: str, ro: bool, as_name: str | None) -> int:
         die(f"refused: {err}")
     src = os.path.realpath(zonecfg.expand(path))
     nm = as_name or os.path.basename(src)
-    if not zonecfg.MOUNT_NAME_RE.match(nm):
+    if not zonecfg.MOUNT_NAME_RE.fullmatch(nm):
         die(f"{nm!r} cannot be a mount name (letters, digits, . _ -, not first; at most 64): give one with --as NAME")
     if nm in fs.host_mounts(name):
         die(f"/mnt/host/{nm} is already mounted in zone {name} (appzones mounts {name})")

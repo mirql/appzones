@@ -337,6 +337,7 @@ impl Policy {
     }
 
     /// zonecfg.bind_error.
+    #[allow(dead_code)] // appzones-helper's (check-mount-source), not the mount helper's
     pub fn bind_error(&self, raw_b: &[u8]) -> Option<String> {
         let raw = show(raw_b);
         let p = self.expand(raw_b);
@@ -356,6 +357,7 @@ impl Policy {
     }
 
     /// zonecfg.mount_source_error: why a folder may not be mounted into a zone at run time.
+    #[allow(dead_code)] // appzones-helper's (check-mount-source); the mount helper uses the _resolved one
     pub fn mount_source_error(&self, raw_b: &[u8]) -> Option<String> {
         let raw = show(raw_b);
         let p = self.expand(raw_b);
@@ -380,8 +382,36 @@ impl Policy {
     }
 }
 
+impl Policy {
+    /// mount_source_error for the root step: REAL is the path of a directory it holds
+    /// open (from /proc/self/fd, so absolute and without symlinks), and META that
+    /// directory's own metadata. REAL is not resolved again: a rename after the open
+    /// cannot change what is checked. For such a path the answer is mount_source_error's.
+    #[allow(dead_code)] // the mount helper's
+    pub fn mount_source_error_resolved(&self, real: &[u8], meta: &fs::Metadata) -> Option<String> {
+        let raw = show(real);
+        let Some(home_real) = realpath(self.home()) else {
+            return Some(format!("{raw}: the home's symlinks cannot be resolved"));
+        };
+        if !inside(real, &home_real) {
+            for d in MOUNT_NEVER_INSIDE {
+                if same(real, d.as_bytes()) || inside(real, d.as_bytes()) {
+                    return Some(format!("{raw}: is inside {d}, which is never mounted into a zone"));
+                }
+            }
+        }
+        if let Some(e) = self.policy_error(real, real) {
+            return Some(e);
+        }
+        if let Some(e) = Self::kind_error(meta, &raw) {
+            return Some(e);
+        }
+        if meta.is_dir() { None } else { Some(format!("{raw}: not a directory")) }
+    }
+}
+
 /// A zone name (zonecfg.NAME_RE: ^[a-z][a-z0-9-]{1,20}$, no trailing newline either).
-#[allow(dead_code)] // the mount helper's (next step)
+#[allow(dead_code)] // the mount helper's; not every binary uses all
 pub fn zone_name_ok(s: &str) -> bool {
     let b = s.as_bytes();
     (2..=21).contains(&b.len())
@@ -390,11 +420,11 @@ pub fn zone_name_ok(s: &str) -> bool {
 }
 
 /// Directories under the state directory that are not zones (zonecfg.RESERVED).
-#[allow(dead_code)] // the mount helper's (next step)
+#[allow(dead_code)] // the mount helper's; not every binary uses all
 pub const RESERVED: &[&str] = &["launcher", "share", "bin", "lib", "etc"];
 
 /// A runtime mount's name (zonecfg.MOUNT_NAME_RE: ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$).
-#[allow(dead_code)] // the mount helper's (next step)
+#[allow(dead_code)] // the mount helper's; not every binary uses all
 pub fn mount_name_ok(s: &str) -> bool {
     let b = s.as_bytes();
     (1..=64).contains(&b.len())
@@ -475,6 +505,22 @@ mod tests {
         assert_eq!(rp(format!("{tr}/loop/x")), None);
         let policy = Policy { home: t.0.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None };
         assert!(policy.mount_source_error(format!("{tr}/loop").as_bytes()).unwrap().contains("cannot be resolved"));
+    }
+
+    #[test]
+    fn resolved_is_mount_source_error_for_canonical_paths() {
+        let t = TempDir::new("resolved");
+        let home = t.0.join("home");
+        for d in ["proj/sub", ".ssh/inner", "data"] {
+            fs::create_dir_all(home.join(d)).unwrap();
+        }
+        let policy = Policy { home: home.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None };
+        for p in [home.join("proj"), home.join("proj/sub"), home.join(".ssh"), home.join(".ssh/inner"), home.clone(),
+                  "/etc".into(), "/usr".into(), "/tmp".into()] {
+            let Ok(meta) = fs::metadata(&p) else { continue };
+            let b = p.as_os_str().as_bytes();
+            assert_eq!(policy.mount_source_error_resolved(b, &meta), policy.mount_source_error(b), "{}", p.display());
+        }
     }
 
     #[test]

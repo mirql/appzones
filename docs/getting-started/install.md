@@ -147,18 +147,22 @@ start (systemd does this itself).
 **The Rust helper (experiment).** On the branch `rust-version`, parts of
 appzones are being written in Rust (`design/rust.md`); so far everything that
 runs inside a zone (zone-init, and the part of the `xdg-open` shim that hands
-links out) and zone-wayland. A zone then gets a read-only copy of the helper and
+links out), zone-wayland, and the mount helper (the one step of `appzones
+mount` that runs as root, its own small executable). A zone then gets a read-only copy of the helper and
 no Python of the host's, so appzones can be installed outside `/usr` too
 (`make install HELPER=rust PREFIX=/opt/appzones`; the sudo rule for `appzones
 mount` is written only when that directory and everything above it belong to
 root alone).
 To try it: `make` with cargo and rustc 1.85 or newer, then `sudo make install
-HELPER=rust` (or `HELPER_BIN=PATH` for a helper built elsewhere); on Nix, the
-package `appzones-rust`. The `appzones` command then runs the Rust helper for
-what it replaces.
+HELPER=rust` (or `HELPER_BIN=PATH` and `MOUNT_HELPER_BIN=PATH` for helpers
+built elsewhere; without a Rust mount helper, the Python one is installed); on
+Nix, the package `appzones-rust`. The `appzones` command then runs the Rust
+helper for what it replaces; the mount helper keeps its path, so the sudo rule
+stays the same.
 
 **Update and remove.** In the checkout: `git pull && make && sudo make
-install`, then `appzones restart ZONE` for running zones. `sudo make uninstall`
+install` (with the same options as the first time, such as `HELPER=rust` or
+`PREFIX`), then `appzones restart ZONE` for running zones. `sudo make uninstall`
 removes everything `make install` put there; your zones' homes and settings
 stay in `~/.local/share/appzones` and `~/.config/appzones`.
 
