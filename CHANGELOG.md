@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.9.0
+
+Optional Rust helpers: with them no Python of the host's runs in a zone, the root step of `appzones mount` is a small binary, and appzones may be installed outside `/usr`. Without them nothing changes. Install with `make` (cargo and rustc 1.85+) and `sudo make install HELPER=rust`, or use the Nix package `appzones-rust`.
+
 - **Optional Rust helpers** (#97, `design/rust.md`): everything that runs inside a
   zone (zone-init, the link part of the `xdg-open` shim), zone-wayland, and the
   mount helper (the root step of `appzones mount`) also exist in Rust. Install them

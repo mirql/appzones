@@ -3,14 +3,16 @@
 #
 #   make                  build zone-wayland (needs a C compiler, pkg-config,
 #                         libwayland-dev and wayland-scanner; skipped with a
-#                         note when they are missing: zones then get no Wayland)
+#                         note when they are missing: zones then get no Wayland),
+#                         and the Rust helpers where cargo is present
+#   sudo make install HELPER=rust   the same with the Rust helpers (design/rust.md)
 #   sudo make install     install under PREFIX (/usr/local), the sudo rule for
 #                         `appzones mount`, the AppArmor profile where the kernel
 #                         restricts user namespaces (Ubuntu 23.10+), the systemd
 #                         user units where there is systemd
 #   sudo make uninstall   remove all of it
 #
-# Variables: PREFIX (/usr/local; must be under /usr, which every zone sees),
+# Variables: PREFIX (/usr/local; under /usr, which every zone sees, unless HELPER=rust),
 # DESTDIR (staging for packages), PYTHON (python3, 3.11 or newer),
 # MOUNT_USERS (who may run the mount helper: a user, or %group; default: the
 # user who ran sudo, else %users), SUDOERS=no, APPARMOR=no, SYSTEMD=no.
