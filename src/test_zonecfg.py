@@ -11,10 +11,12 @@ import socket
 import subprocess
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -741,6 +743,24 @@ os.write(w, b"\\n"); os.close(w)
         self.assertNotIn("_netsetup", err.getvalue())
         self.assertEqual(migrated, [])  # a typo migrates no state
 
+    def test_ps_on_a_stopped_zone_is_one_line(self):
+        """`appzones ps` on a zone that is not running says so in one line, no traceback (#130)."""
+        sys.path.insert(0, str(HERE))
+        import zone as entry
+        entry = importlib.reload(entry)
+        real_migrate = entry.upgrade.migrate_state
+        entry.upgrade.migrate_state = lambda *a, **k: None
+        self.addCleanup(setattr, entry.upgrade, "migrate_state", real_migrate)
+        for error in (FileNotFoundError(), ValueError()):
+            with self.subTest(error=type(error).__name__):
+                with mock.patch.object(entry.agent, "zone_procs", side_effect=error) as zone_procs:
+                    with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as ex:
+                        entry.main(["ps", "nosuchzone"])
+                    zone_procs.assert_called_once_with("nosuchzone")
+                self.assertEqual(ex.exception.code, 1)
+                self.assertEqual(err.getvalue(),
+                                 "appzones: zone nosuchzone is not running (start it: appzones up nosuchzone)" + chr(10))
+
     def test_version_flag(self):
         """`appzones --version` and `-V`: the package version (a placeholder in a source checkout) and the config release."""
         sys.path.insert(0, str(HERE))
@@ -943,6 +963,8 @@ os.write(w, b"\\n"); os.close(w)
         import subprocess as sp
         zone = self._zone_mod()
         real = zone.subprocess.run
+        sway = os.environ.pop("SWAYSOCK", None)  # (Hyprland's path)
+        self.addCleanup(lambda: sway is None or os.environ.__setitem__("SWAYSOCK", sway))
         try:
             for tags, text, want in [(["zone:ta"], "[ta]", ("[ta]", "zone-ta")), (["zone:?"], "[?]", ("[?]", "zone-unidentified")),
                                      ([], "", ("", "host")), (["other", "zone:tb*"], "[tb]", ("[tb]", "zone-tb"))]:
@@ -957,6 +979,70 @@ os.write(w, b"\\n"); os.close(w)
                         self.assertEqual(out.getvalue().strip(), text, tags)
         finally:
             zone.subprocess.run = real
+
+    def test_active_sway(self):
+        """appzones active on sway: the zone from the focused window's mark zone:NAME:ID
+        (contrib/sway/appzones-sway); a malformed one is "?", never a name."""
+        import json as js
+        import struct
+        import threading
+        zone = self._zone_mod()
+        t = Path(tempfile.mkdtemp())
+        path = str(t / "sway-ipc.sock")
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(path)
+        srv.listen(4)
+        marks: list = []
+
+        def serve():
+            while True:
+                try:
+                    c, _ = srv.accept()
+                except OSError:
+                    return
+                with c:
+                    head = c.recv(14)
+                    n, kind = struct.unpack("=II", head[6:])
+                    c.recv(n) if n else b""
+                    tree = {"nodes": [{"nodes": [
+                        {"pid": 10, "id": 1, "focused": False, "marks": ["zone:other:1"], "nodes": []},
+                        {"pid": 11, "id": 5, "focused": True, "marks": list(marks), "nodes": []}]}]}
+                    body = js.dumps(tree).encode()
+                    c.sendall(b"i3-ipc" + struct.pack("=II", len(body), kind) + body)
+
+        threading.Thread(target=serve, daemon=True).start()
+        old = {k: os.environ.get(k) for k in ("SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE")}
+        try:
+            os.environ["SWAYSOCK"] = path
+            os.environ.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
+            for m, text, want in [(["zone:work:5"], "[work]", ("[work]", "zone-work")),
+                                  (["zone:?:6"], "[?]", ("[?]", "zone-unidentified")),
+                                  ([], "", ("", "host")), (["mine"], "", ("", "host")),
+                                  (["zone:Bad_Name:3"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work:x"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work:5:6"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work:7"], "[?]", ("[?]", "zone-unidentified")),  # another window's
+                                  (["zone:work:5", "zone:home:5"], "[?]", ("[?]", "zone-unidentified")),
+                                  (["zone:work:5", "mine"], "[work]", ("[work]", "zone-work"))]:
+                marks[:] = m
+                for as_json in (False, True):
+                    with contextlib.redirect_stdout(io.StringIO()) as out:
+                        self.assertEqual(zone.active(False, as_json), 0)
+                    if as_json:
+                        d = js.loads(out.getvalue())
+                        self.assertEqual((d["text"], d["class"]), want, m)
+                    else:
+                        self.assertEqual(out.getvalue().strip(), text, m)
+            os.environ["SWAYSOCK"] = str(t / "gone.sock")  # sway gone: no label, no crash
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(zone.active(False, False), 0)
+            self.assertEqual(out.getvalue().strip(), "")
+        finally:
+            srv.close()
+            for k, v in old.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+            shutil.rmtree(t, ignore_errors=True)
 
     def test_hyprland_zones_lua_is_a_copy(self):
         """contrib/hyprland/zones.lua (pre-0.6 name) is appzones.lua's code, past each file's header comment."""
@@ -1493,6 +1579,115 @@ os.write(w, b"\\n"); os.close(w)
         self.assertRefused(self.cfg(base).errors, "needs force_host")
         self.assertEqual(self.cfg(base + "force_host = true\n").errors, [])
 
+    def test_wayland(self):
+        """wayland: zone (default) | none | host; host is warned, refused in untrusted without
+        force_host, and needs requires = 6."""
+        cfg = self.cfg('version = 1\n[zones.tt]\ncolour = "#112233"\n')
+        self.assertEqual(cfg.zones["tt"].settings["wayland"], "zone")
+        self.assertEqual(self.errs('wayland = "none"'), [])
+        self.assertEqual(self.errs('wayland = "host"'), [])
+        self.assertRefused(self.errs('wayland = "direct"'), "wayland must be one of")
+        cfg = self.cfg(f'version = 1\nrequires = {self.z.RELEASE}\n[zones.tt]\ncolour = "#112233"\nwayland = "host"\n')
+        self.assertTrue(any('wayland = "host"' in w for w in cfg.warnings), cfg.warnings)
+        base = f'version = 1\nrequires = {self.z.RELEASE}\n[zones.untrusted]\ncolour = "#112233"\nwayland = "host"\n'
+        self.assertRefused(self.cfg(base).errors, "needs force_host")
+        self.assertEqual(self.cfg(base + "force_host = true\n").errors, [])
+        self.assertRefused(self.cfg('version = 1\nrequires = 5\n[zones.tt]\ncolour = "#112233"\nwayland = "none"\n')
+                           .errors, "set requires = 6")
+
+    def test_wayland_socket(self):
+        """The zone's Wayland socket: zone-wayland's (zone), the host's (host), none (none)."""
+        zone = self._zone_mod()
+        zone.tool = lambda name: f"/usr/bin/{name}"  # (no bwrap in a build sandbox)
+        t = Path(tempfile.mkdtemp())
+        host = socket.socket(socket.AF_UNIX)
+        host.bind(str(t / "wayland-5"))
+        zrt = t / "zrt"
+        zrt.mkdir()
+        ctx = socket.socket(socket.AF_UNIX)
+        ctx.bind(str(zrt / "wayland-0"))
+        old = {k: os.environ.get(k) for k in ("WAYLAND_DISPLAY", "XDG_RUNTIME_DIR")}
+        try:
+            os.environ.update(WAYLAND_DISPLAY="wayland-5", XDG_RUNTIME_DIR=str(t))
+            zone.HOST_RT = t  # (read once, at import)
+            self.assertEqual(zone.host_wayland_socket(), str(t / "wayland-5"))
+            os.environ["WAYLAND_DISPLAY"] = str(t / "wayland-5")  # a path works too
+            self.assertEqual(zone.host_wayland_socket(), str(t / "wayland-5"))
+            os.environ["WAYLAND_DISPLAY"] = "wayland-404"
+            self.assertIsNone(zone.host_wayland_socket())
+            (t / "plain").write_text("")
+            os.environ["WAYLAND_DISPLAY"] = "plain"  # not a socket
+            self.assertIsNone(zone.host_wayland_socket())
+            os.environ["WAYLAND_DISPLAY"] = "wayland-5"
+            # wayland = "host": the context socket where zone-wayland made one, the host's only when
+            # the server found no security context (host_wayland)
+            for wl, host_wayland, src in [("zone", False, str(zrt / "wayland-0")), ("host", False, str(zrt / "wayland-0")),
+                                          ("host", True, str(t / "wayland-5")), ("zone", True, str(zrt / "wayland-0")),
+                                          ("none", False, None)]:
+                z = self.cfg(f'version = 1\n[zones.tt]\ncolour = "#112233"\nwayland = "{wl}"\n').zones["tt"]
+                a = zone.bwrap_argv(z, t / "zdir", zrt, "none", [], host_wayland=host_wayland)
+                binds = [a[i + 1] for i, x in enumerate(a) if x == "--bind" and a[i + 2].endswith("/wayland-0")]
+                with self.subTest(wayland=wl, host_wayland=host_wayland):
+                    self.assertEqual(binds, [src] if src else [])
+                    self.assertEqual("WAYLAND_DISPLAY" in " ".join(a), src is not None)
+        finally:
+            host.close()
+            ctx.close()
+            for k, v in old.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+            shutil.rmtree(t, ignore_errors=True)
+
+    def test_pasta_selinux_problem(self):
+        """pasta linked to the passt binary (labelled passt_exec_t) under enforcing SELinux is named,
+        with the fix; otherwise nothing."""
+        zone = self._zone_mod()
+        t = Path(tempfile.mkdtemp())
+        try:
+            (t / "selinux").mkdir()
+            (t / "passt").write_text("")
+            os.symlink("passt", t / "pasta")
+            labels = {str(t / "passt"): b"system_u:object_r:passt_exec_t:s0\0"}
+            real = zone.os.getxattr
+            zone.os.getxattr = lambda p, name: labels[p]
+            self.addCleanup(setattr, zone.os, "getxattr", real)
+            for enforce, label, want in [("1", b"system_u:object_r:passt_exec_t:s0\0", True),
+                                         ("0", b"system_u:object_r:passt_exec_t:s0\0", False),
+                                         ("1", b"system_u:object_r:pasta_exec_t:s0\0", False)]:
+                (t / "selinux/enforce").write_text(enforce)
+                labels[str(t / "passt")] = label
+                got = zone.pasta_selinux_problem(str(t / "pasta"), selinux=str(t / "selinux"))
+                with self.subTest(enforce=enforce, label=label):
+                    self.assertEqual(got is not None, want, got)
+                    if want:
+                        self.assertIn("semanage permissive -a passt_t", got)
+            self.assertIsNone(zone.pasta_selinux_problem(str(t / "pasta"), selinux=str(t / "none")))  # no SELinux
+            # a bare name, as APPZONES_BIN_PASTA=pasta: found on PATH, as the launch would
+            (t / "selinux/enforce").write_text("1")
+            labels[str(t / "passt")] = b"system_u:object_r:passt_exec_t:s0\0"
+            os.chmod(t / "passt", 0o755)
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = f"{t}:{old_path}"
+            self.addCleanup(os.environ.__setitem__, "PATH", old_path)
+            self.assertIsNotNone(zone.pasta_selinux_problem("pasta", selinux=str(t / "selinux")))
+        finally:
+            shutil.rmtree(t, ignore_errors=True)
+
+    def test_prepare_mnt_leftovers(self):
+        """A runtime mount that umount-all could not detach: prepare_mnt says so (the server then
+        does not start the zone with it)."""
+        import subprocess as sp
+        zone = self._zone_mod()
+        zdir = Path(tempfile.mkdtemp())
+        try:
+            zone.helper = lambda *a: sp.CompletedProcess(a, 1, "1 mount(s) detached; still mounted: 'x'", "")
+            zone.host_mounts = lambda name: ["x"]
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertFalse(zone.prepare_mnt("tt", zdir))
+            zone.host_mounts = lambda name: []
+            self.assertTrue(zone.prepare_mnt("tt", zdir))
+        finally:
+            shutil.rmtree(zdir, ignore_errors=True)
+
     def test_binds_never_list(self):
         for path, why in [("~/.ssh", "is"), ("~", "never allowed"), ("/", "never allowed"),
                           ("/home", "never allowed"), ("~/.config", "contains"),
@@ -1656,6 +1851,8 @@ os.write(w, b"\\n"); os.close(w)
         base = zone.settings_hash(z())
         self.assertEqual(zone.settings_hash(z(supervisor="spawn", start_timeout="2m", linger="")), base)
         self.assertNotEqual(zone.settings_hash(z(linger="10m")), base)
+        self.assertEqual(zone.settings_hash(z(wayland="zone")), base)  # the default: no zone looks changed
+        self.assertNotEqual(zone.settings_hash(z(wayland="host")), base)
         self.assertNotEqual(zone.settings_hash(z(dns="public")), base)
         # apps_running: bwrap (1), zone-init and its helpers are not apps
         replies = []
@@ -1853,6 +2050,71 @@ os.write(w, b"\\n"); os.close(w)
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SwayHookTest(unittest.TestCase):
+    """contrib/sway/appzones-sway: the zone of a window from what a zone cannot change."""
+
+    def setUp(self):
+        from importlib.machinery import SourceFileLoader
+        import importlib.util
+        path = str(HERE.parent / "contrib/sway/appzones-sway")
+        loader = SourceFileLoader("appzones_sway", path)
+        spec = importlib.util.spec_from_loader("appzones_sway", loader)
+        self.m = importlib.util.module_from_spec(spec)
+        dont, sys.dont_write_bytecode = sys.dont_write_bytecode, True  # no __pycache__ in contrib/
+        try:
+            loader.exec_module(self.m)
+        finally:
+            sys.dont_write_bytecode = dont
+        self.tmp = tempfile.TemporaryDirectory()
+        self.proc = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def pid(self, n, cgroup, nspid="7"):
+        d = self.proc / str(n)
+        d.mkdir()
+        (d / "cgroup").write_text(cgroup + "\n")
+        (d / "status").write_text(f"Name:\tfoot\nNSpid:\t{nspid}\n")
+        return n
+
+    def zone(self, pid, **sandbox):
+        return self.m.zone_of(pid, sandbox, proc=str(self.proc))
+
+    def test_zone_of(self):
+        unit = "0::/user.slice/user-1000.slice/user@1000.service/appzones.slice/appzones@work.service"
+        host = self.pid(10, "0::/user.slice/user-1000.slice/session-2.scope")
+        zone = self.pid(11, unit)
+        below = self.pid(12, unit + "/app.scope")
+        odd = self.pid(13, "0::/user.slice/user@1000.service/appzones.slice/other.service")
+        nested = self.pid(14, "0::/user.slice/session-2.scope", nspid="900 3")
+        ctx = {"sandbox_engine": "dev.mirql.zones", "sandbox_app_id": "dev.mirql.zone.work"}
+        for got, want, why in [
+            (self.zone(host), None, "a host window"),
+            (self.zone(zone), "work", "the cgroup of a zone's unit"),
+            (self.zone(below), "work", "a cgroup below it"),
+            (self.zone(odd), "?", "under appzones.slice but not a zone's unit"),
+            (self.zone(nested), "?", "a nested pid namespace (a zone without systemd, another sandbox)"),
+            (self.zone(99), "?", "a pid that is gone"),
+            (self.zone(nested, **ctx), "work", "the security context names it (sway 1.10+)"),
+            (self.zone(None, **ctx), "work", "the security context without a pid"),
+            (self.zone(zone, **ctx), "work", "both agree"),
+            (self.zone(zone, sandbox_engine="dev.mirql.zones", sandbox_app_id="dev.mirql.zone.home"), "?",
+             "the two disagree"),
+            (self.zone(host, sandbox_engine="org.flatpak", sandbox_app_id="org.mozilla.firefox"), "?",
+             "another sandbox"),
+            (self.zone(host, sandbox_engine="dev.mirql.zones", sandbox_app_id="dev.mirql.zone.Bad_Name"), "?",
+             "not a zone name"),
+            (self.zone(None), None, "no pid, no context"),
+        ]:
+            with self.subTest(why=why):
+                self.assertEqual(got, want)
+
+    def test_command(self):
+        self.assertEqual(self.m.command(42, "work"), '[con_id=42] mark --add "zone:work:42", '
+                                                     'title_format "[work] %title", shortcuts_inhibitor disable')
 
 
 class AgentProtocolTest(unittest.TestCase):

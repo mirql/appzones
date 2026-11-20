@@ -24,7 +24,7 @@
     appzones check [--probe ZONE]          validate zones.toml; --probe also runs isolation probes in ZONE
     appzones --version | -V                the package version and the config release, for bug reports
     appzones apps                          (re)write launcher entries "App (zone)" from [apps]
-    appzones active [--follow] [--json]    "[zone]" for Hyprland's active window (for bars;
+    appzones active [--follow] [--json]    "[zone]" for the focused window on Hyprland or sway (for bars;
                                            --json: Waybar custom-module JSON)
     appzones mount ZONE HOST-DIR [--ro] [--as NAME]
                                            HOST-DIR appears at /mnt/host/NAME in the running
@@ -129,7 +129,12 @@ def main(argv: list[str]) -> int:
     if cmd == "ping":
         r = agent.ping(one()); print(json.dumps(r)); return 0 if r else 1
     if cmd == "ps":
-        for p, c in agent.zone_procs(one()):
+        name = one()
+        try:
+            procs = agent.zone_procs(name)
+        except (OSError, ValueError):  # no socket, or a garbled reply
+            die(f"zone {name} is not running (start it: appzones up {name})")
+        for p, c in procs:
             print(p, c)
         return 0
     if cmd == "logs":

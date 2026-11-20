@@ -121,7 +121,7 @@ Python helper's, and a separate security review of it is written down.
 
 Phase 1 can come back to `main` on its own.
 
-## Phases 2 and 3, if they come (not now: see the result of phase 1)
+## Phases 2 and 3, if they come (not now: see the result of phase 1, and the research below)
 
 - **Phase 2, the configuration**: the rest of `zonecfg` (keys and origins, `[defaults]`,
   `RELEASE`/`SINCE`), with the 80 unit tests as the specification (same results; messages
@@ -201,6 +201,64 @@ default for a release without trouble.
 
 **Next.** The Rust helpers stay optional (`appzones-rust`, `make install HELPER=rust`). After
 a release with them, make them the default where cargo is present, if nothing came up.
+
+## Phases 2 and 3: research (2026-11-20)
+
+Measured on Arch (appzones 0.11, one zone with `network = "internet"`, started without
+systemd; RSS and PSS from `/proc`):
+
+| Per running zone | Python | Rust |
+|---|---|---|
+| the server (`appzones serve`) | 26 MB RSS, about 20 MB PSS | (not ported) |
+| zone-init | 16.8 MB RSS, 11.4 MB PSS | 0.9 MB |
+
+| One CLI call | time |
+|---|---|
+| `python3 -c pass` | 20 ms |
+| `appzones --version`, `list`, `check` | about 180 ms each |
+| of which imports (`python3 -X importtime`): `zonecfg` 43 ms, `appzones.client` 51 ms | about 110 ms |
+| `appzones-helper --commands` (Rust) | 1 ms |
+
+What that means:
+
+- **Memory** is the clear win, and it is per running zone. Phase 1 already takes zone-init
+  from 11 MB to 1 MB with the Rust helpers (#121 makes them the default). What is left is the
+  Python server, about 20 MB per zone: 160 MB for eight zones.
+- **CLI latency**: about 180 ms. About 110 ms of it is imports, which even `--version` pays.
+  `zonecfg` (43 ms) loads for every command, so lazy imports in Python would remove at most
+  the other 67 ms, leaving about 110 ms. Rust would make it a few ms, which a launcher
+  click would feel, but not much more.
+- **Reach**: Python 3.11 rules out Ubuntu 22.04, Debian 11, RHEL 9's default Python and Leap
+  15. But the first two have no passt either, and appzones needs pasta. A static binary
+  alone would not open them.
+- **Not a gain**: speed of a zone's start (bwrap, pasta and the helpers dominate), and
+  security of the host side (it runs as the user, the root step is Rust already).
+
+Three ways on from here:
+
+- **A. Phase 2 first (the configuration)**: two implementations of every key (or `zonecfg`
+  replaced, which `appzones check` and 100 unit tests use without a build), a differential
+  test for all of it. Nothing a user notices until phase 3 comes too.
+- **B. The long-running server only.** `appzones serve` stays a short Python entry point. It
+  loads and checks the configuration as today, works out what a zone needs (bwrap, pasta and
+  proxy command lines, nft rules, binds to pin, the D-Bus names), writes that plan to the
+  zone's runtime directory, and `exec`s a Rust server. The Python process is gone, so its
+  memory is gone too. The Rust server holds the zone: the lock, the helpers and their
+  readiness, the pidfd handoff, the log and DNS relays, link handling, linger, stop and
+  cleanup. No second implementation of the configuration; the plan file is the interface,
+  tested like the agent protocol. About 1,000 lines of Rust (as zone-init was), and what
+  stays Python is the part that needs no memory once it ends.
+- **C. Everything (phases 2 and 3 as first planned)**: one static binary and no Python on the
+  host. About 4,200 lines of Python to port plus their tests, and the most risk:
+  `settings_hash` and `which` byte for byte, the handoff to servers a Python version
+  started, messages and suggestions from other libraries.
+
+**Recommendation**: B, together with lazy imports in the Python CLI (cheap, Python only;
+about 180 ms down to about 110 ms).
+C only if Python itself becomes the problem: a distribution without a usable Python 3.11,
+or a request for a single binary. Before B: a spike that writes the plan for one zone and
+runs it with a minimal Rust server (no DNS, no links), measuring its memory and how much of
+`server.py` moves.
 
 ## When to stop
 

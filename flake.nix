@@ -24,6 +24,11 @@
           inherit helper;
           rustMountHelper = mount-helper;
         };
+        # the .deb for Debian 12 and Ubuntu 24.04 (built in a Debian 12 image)
+        deb = import ./nix/deb.nix {
+          inherit pkgs;
+          epoch = self.lastModified or 1;
+        };
       });
 
       overlays.default = final: _prev: {
@@ -82,6 +87,17 @@
           ubuntu2404 = import ./tests/distro.nix {
             inherit pkgs;
             image = "ubuntu2404x86_64";
+          };
+          # the same with the .deb (nix/deb.nix) instead of `make install`
+          debian12-deb = import ./tests/distro.nix {
+            inherit pkgs;
+            image = "debian12x86_64";
+            deb = self.packages.${pkgs.stdenv.hostPlatform.system}.deb;
+          };
+          ubuntu2404-deb = import ./tests/distro.nix {
+            inherit pkgs;
+            image = "ubuntu2404x86_64";
+            deb = self.packages.${pkgs.stdenv.hostPlatform.system}.deb;
           };
           # the same with the Rust helper (the static build), installed outside /usr
           debian12-rust = import ./tests/distro.nix {

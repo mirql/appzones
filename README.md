@@ -21,7 +21,7 @@
   <a href="https://sonarcloud.io/summary/overall?id=mirql_appzones"><img alt="Security rating" src="https://sonarcloud.io/api/project_badges/measure?project=mirql_appzones&metric=security_rating"></a>
   <a href="CONTRIBUTING.md"><img alt="Python dependencies: 0 (standard library only)" src="https://img.shields.io/badge/Python%20dependencies-0-brightgreen?logo=python&logoColor=white"></a>
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-<a href="#contributors"><img alt="All contributors" src="https://img.shields.io/badge/all_contributors-5-orange"></a>
+<a href="#contributors"><img alt="All contributors" src="https://img.shields.io/badge/all_contributors-6-orange"></a>
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 </p>
 
@@ -54,9 +54,10 @@ appzones list                     # zones, state, network, devices, apps running
 ```
 
 > [!NOTE]
-> appzones is young (0.8). It runs on **x86_64 NixOS**, and as a preview on
-> **Ubuntu 24.04, Debian 12 and Arch** (command-line zones; desktop apps there
-> are not tested yet). Window borders and tags per zone need Hyprland.
+> appzones is young (0.11). It runs on **x86_64 NixOS**, and as a preview on
+> **Ubuntu 24.04, Debian 12, Arch, Fedora and openSUSE**: command-line zones, and desktop apps
+> under sway 1.9+ (tested) or GNOME (`wayland = "host"`, tried by hand).
+> Window borders and tags per zone need Hyprland.
 
 ## Why
 
@@ -220,7 +221,7 @@ its own:
 | Network | internet yes; LAN, host and tailnet no | on or off | on, off or a filter | per-VM firewall | the host's |
 | Which zone is this window? | border colour, the app can't fake it | no | no | border colour | no |
 | Isolation | namespaces, same kernel | namespaces, same kernel | namespaces, same kernel, setuid binary | separate VMs (much stronger) | almost none |
-| Runs on | NixOS; Ubuntu, Debian, Arch (preview) | any distro | any distro | Qubes only | any distro |
+| Runs on | NixOS; Ubuntu, Debian, Arch, Fedora, openSUSE (preview) | any distro | any distro | Qubes only | any distro |
 
 appzones is for when Flatpak is too fine-grained, Qubes is too much, and
 you want your messenger, your work browser, your agents and that PDF in
@@ -250,7 +251,9 @@ Then copy [`examples/minimal.toml`](examples/minimal.toml) to
 `~/.config/appzones/zones.toml` (or run `appzones new daily -y`) and run
 `appzones check`.
 
-Ubuntu 24.04 and Debian 12 (preview, command-line zones):
+Ubuntu 24.04 and Debian 12 (preview): the `.deb` from the
+[latest release](https://github.com/mirql/appzones/releases/latest), with
+`sudo apt install ./appzones_*_amd64.deb`. Or from a checkout:
 
 ```bash
 sudo apt install python3 bubblewrap passt nftables iproute2 git make   # a desktop also: xdg-dbus-proxy dbus gcc pkg-config libwayland-dev
@@ -258,6 +261,7 @@ git clone https://github.com/mirql/appzones && cd appzones && make && sudo make 
 ```
 
 Arch: `paru -S appzones` from the [AUR](https://aur.archlinux.org/packages/appzones) ([details](https://mirql.github.io/appzones/getting-started/install.html#arch-linux-preview)).
+Fedora: the RPM from the [latest release](https://github.com/mirql/appzones/releases/latest), or `make install` ([details](https://mirql.github.io/appzones/getting-started/install.html#fedora-preview)).
 The [install page](https://mirql.github.io/appzones/getting-started/install.html#ubuntu-and-debian-preview)
 says what it installs (an AppArmor profile on Ubuntu, a sudo rule for
 `appzones mount`) and how to start your first zone.
@@ -280,7 +284,7 @@ first: [install](https://raw.githubusercontent.com/mirql/appzones/main/docs/gett
 
 1. **Check first**, and tell me what you find before changing anything:
    - x86_64 NixOS configured with flakes (find my flake and this host's config);
-   - a Wayland compositor with `wp_security_context_v1` (Hyprland, sway, KWin, ...);
+   - a Wayland compositor with `wp_security_context_v1` (Hyprland, sway 1.9+, KDE Plasma 6's KWin, ...);
      window borders and tags per zone need Hyprland;
    - unprivileged user namespaces, `xdg-desktop-portal`, PipeWire;
    - an nftables firewall, or the kernel modules in the install page's "Kernel modules".
@@ -353,10 +357,10 @@ Issues, ideas and PRs are welcome. Good places to start:
 - **[Good first issues](https://github.com/mirql/appzones/labels/good%20first%20issue).** Small, self-contained
   tasks, each saying where to start and what done looks like. Most need no
   NixOS to build and test.
-- **Other compositors.** Only Hyprland gets window tags and border
-  colours. Sway, niri or KWin hooks would help.
-- **Other distributions.** Ubuntu and Debian are in progress
-  ([milestone 0.8.0](https://github.com/mirql/appzones/milestone/2)).
+- **Other compositors.** Hyprland gets window tags and border colours, sway
+  marks and title prefixes. niri or KWin hooks would help ([#20](https://github.com/mirql/appzones/issues/20)).
+- **Other distributions.** A package for openSUSE; others: a package, and a VM
+  test like the Debian and Ubuntu ones ([#22](https://github.com/mirql/appzones/issues/22)).
 - **aarch64.** Nothing has been tried there yet.
 - **Docs.** If something in the [docs](https://mirql.github.io/appzones/) was unclear to you,
   it will be to the next person too.
@@ -379,6 +383,7 @@ Thanks to everyone who made appzones what it is
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/Lil-Clanky"><img src="https://avatars.githubusercontent.com/u/190942173?v=4&size=80" width="80px" height="80px" alt="Marnix de Jong"/><br /><sub><b>Marnix de Jong</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=Lil-Clanky" title="Code">💻</a> <a href="https://github.com/mirql/appzones/commits?author=Lil-Clanky" title="Tests">⚠️</a> <a href="https://github.com/mirql/appzones/commits?author=Lil-Clanky" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/emreocell"><img src="https://avatars.githubusercontent.com/u/73295089?v=4&size=80" width="80px" height="80px" alt="Emre Öcel"/><br /><sub><b>Emre Öcel</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=emreocell" title="Code">💻</a> <a href="https://github.com/mirql/appzones/commits?author=emreocell" title="Tests">⚠️</a> <a href="https://github.com/mirql/appzones/commits?author=emreocell" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/tyza66"><img src="https://avatars.githubusercontent.com/u/83948628?v=4&size=80" width="80px" height="80px" alt="孙达明"/><br /><sub><b>孙达明</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=tyza66" title="Code">💻</a> <a href="https://github.com/mirql/appzones/commits?author=tyza66" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/RiccardoBifulco"><img src="https://avatars.githubusercontent.com/u/154237075?v=4&size=80" width="80px" height="80px" alt="Riccardo Bifulco"/><br /><sub><b>Riccardo Bifulco</b></sub></a><br /><a href="https://github.com/mirql/appzones/commits?author=RiccardoBifulco" title="Code">💻</a> <a href="https://github.com/mirql/appzones/commits?author=RiccardoBifulco" title="Tests">⚠️</a> <a href="https://github.com/mirql/appzones/commits?author=RiccardoBifulco" title="Documentation">📖</a></td>
     </tr>
   </tbody>
 </table>

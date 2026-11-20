@@ -12,6 +12,8 @@
 // It prints "ready" on stdout once the context is committed.
 // With $ZONE_WAYLAND_PARENT (the server's pid) it gets SIGTERM when that
 // process dies (PR_SET_PDEATHSIG), and exits at once if it died already.
+// Exits 3 when the compositor has no security-context protocol (the server
+// then starts the zone without a Wayland socket), 1 on any other error.
 // Same pattern as flatpak's common/flatpak-run-wayland.c.
 #define _GNU_SOURCE
 #include <errno.h>
@@ -59,8 +61,9 @@ int main(int argc, char **argv) {
   if (!dpy) { perror("wl_display_connect"); return 1; }
   struct wl_registry *reg = wl_display_get_registry(dpy);
   wl_registry_add_listener(reg, &reg_listener, NULL);
-  wl_display_roundtrip(dpy);
-  if (!mgr) { fprintf(stderr, "compositor has no wp_security_context_manager_v1\n"); return 1; }
+  // only a complete list of globals may say "no protocol" (3); a broken connection is 1
+  if (wl_display_roundtrip(dpy) < 0) { fprintf(stderr, "the compositor's globals: protocol error %d\n", wl_display_get_error(dpy)); return 1; }
+  if (!mgr) { fprintf(stderr, "compositor has no wp_security_context_manager_v1\n"); return 3; }
 
   int lfd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
   struct sockaddr_un sa = { .sun_family = AF_UNIX };

@@ -11,6 +11,7 @@ import shutil
 import signal
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -771,17 +772,84 @@ def autostart() -> int:
     return 0
 
 
-def active(follow: bool, as_json: bool) -> int:  # NOSONAR: an exit status: 0 is the only one
-    """Print "[zone]" (or an empty line) for Hyprland's active window, from
-    its compositor tags only: never the app-chosen xdgTag, class or title
-    --json: Waybar's custom-module JSON."""
-    def current() -> str:
+# sway's IPC (i3-ipc): a request is MAGIC, the payload's length and the message type
+SWAY_MAGIC, SWAY_SUBSCRIBE, SWAY_GET_TREE = b"i3-ipc", 2, 4
+
+
+def _sway_exact(s: socket.socket, n: int) -> bytes:
+    buf = b""
+    while len(buf) < n:
+        chunk = s.recv(n - len(buf))
+        if not chunk:
+            raise EOFError("sway closed its IPC socket")
+        buf += chunk
+    return buf
+
+
+def _sway_recv(s: socket.socket) -> object:
+    head = _sway_exact(s, 14)
+    if head[:6] != SWAY_MAGIC:
+        raise ValueError("not an i3-ipc message")
+    n, _ = struct.unpack("=II", head[6:])
+    return json.loads(_sway_exact(s, n))
+
+
+def _sway_send(s: socket.socket, kind: int, payload: str = "") -> None:
+    data = payload.encode()
+    s.sendall(SWAY_MAGIC + struct.pack("=II", len(data), kind) + data)
+
+
+def _sway_focused_marks(path: str) -> tuple[int | None, list[str]]:
+    """Sway's focused window: its id and its marks."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.settimeout(5)
+        s.connect(path)
+        _sway_send(s, SWAY_GET_TREE)
+        tree = _sway_recv(s)
+    stack = [tree]
+    while stack:
+        n = stack.pop()
+        if isinstance(n, dict):
+            if n.get("focused") and n.get("pid"):
+                return n.get("id"), [m for m in n.get("marks", []) if isinstance(m, str)]
+            stack += n.get("nodes", []) + n.get("floating_nodes", [])
+    return None, []
+
+
+def _focused_zone() -> str:
+    """The focused window's zone: NAME, "?" (a sandbox appzones cannot name), or "" (the
+    host's, or no answer). Only from what the hooks set (contrib/hyprland/appzones.lua:
+    the tag zone:NAME; contrib/sway/appzones-sway: the mark zone:NAME:ID), never from
+    the window's class, title or app id, which the app chooses."""
+    sway = os.environ.get("SWAYSOCK")
+    if sway and not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         try:
-            r = subprocess.run(["hyprctl", "-j", "activewindow"], capture_output=True, text=True, timeout=5)
-            tags = json.loads(r.stdout or "{}").get("tags", [])
-        except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError):
-            tags = []  # no Hyprland (or no hyprctl): no label, never a crash in the bar
-        z = next((t[5:].rstrip("*") for t in tags if t.startswith("zone:")), "")
+            con, marks = _sway_focused_marks(sway)
+        except (OSError, EOFError, ValueError, TypeError):
+            return ""  # sway gone: no label, never a crash in the bar
+        zones = []
+        for m in marks:
+            if m.startswith("zone:"):
+                # exactly the hook's form, zone:NAME:ID (or zone:?:ID) for this very window;
+                # anything else is "?"
+                parts = m.split(":")
+                ok = (len(parts) == 3 and parts[2] == str(con)
+                      and (parts[1] == "?" or zonecfg.NAME_RE.fullmatch(parts[1])))
+                zones.append(parts[1] if ok else "?")
+        return zones[0] if len(set(zones)) == 1 else "?" if zones else ""
+    try:
+        r = subprocess.run(["hyprctl", "-j", "activewindow"], capture_output=True, text=True, timeout=5)
+        tags = json.loads(r.stdout or "{}").get("tags", [])
+    except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError):
+        tags = []  # no Hyprland (or no hyprctl): no label, never a crash in the bar
+    return next((t[5:].rstrip("*") for t in tags if t.startswith("zone:")), "")
+
+
+def active(follow: bool, as_json: bool) -> int:  # NOSONAR: an exit status: 0 is the only one
+    """Print "[zone]" (or an empty line) for the focused window, on Hyprland or sway (from
+    the appzones hook's tag or mark only). --json: Waybar's custom-module JSON."""
+    def current() -> str:
+        z = _focused_zone()
         if as_json:
             if z == "?":  # a zone (or another sandbox) that appzones cannot name
                 return json.dumps({"text": "[?]", "class": "zone-unidentified",
@@ -789,15 +857,38 @@ def active(follow: bool, as_json: bool) -> int:  # NOSONAR: an exit status: 0 is
             return json.dumps({"text": f"[{z}]" if z else "", "class": f"zone-{z}" if z else "host",
                                "tooltip": f"active window runs in app zone {z}" if z else ""})
         return f"[{z}]" if z else ""
-    print(current(), flush=True)
     if not follow:
+        print(current(), flush=True)
         return 0
+    # subscribed first, then the first label: no change in between is missed
+    sway = os.environ.get("SWAYSOCK")
+    if sway and not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(sway)
+        # window events (focus, title, mark, close), and workspace ones: focus can move
+        # to an empty workspace, which has no window to send an event for
+        _sway_send(s, SWAY_SUBSCRIBE, '["window", "workspace"]')
+        _sway_recv(s)  # {"success": true}
+        last = current()
+        print(last, flush=True)
+        while True:
+            try:
+                _sway_recv(s)
+            except EOFError:
+                return 0
+            cur = current()
+            if cur != last:
+                print(cur, flush=True)
+                last = cur
     sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
     if not sig:
-        die("no HYPRLAND_INSTANCE_SIGNATURE")
+        print(current(), flush=True)
+        die("no HYPRLAND_INSTANCE_SIGNATURE or SWAYSOCK")
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.connect(str(common.HOST_RT / "hypr" / sig / ".socket2.sock"))
-    last, buf = None, b""
+    last = current()
+    print(last, flush=True)
+    buf = b""
     while True:
         data = s.recv(4096)
         if not data:

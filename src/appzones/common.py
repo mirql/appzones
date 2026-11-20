@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -161,11 +162,27 @@ SERVER_ONLY = ("supervisor", "start_timeout")
 
 def settings_hash(z: zonecfg.Zone) -> str:
     """What a running zone was built from: `stale` compares it with the config."""
-    s = {k: v for k, v in z.settings.items() if k not in SERVER_ONLY and not (k == "linger" and v == "")}
+    # (a key at the default it had before it existed is left out: no zone looks changed after an upgrade)
+    s = {k: v for k, v in z.settings.items() if k not in SERVER_ONLY and not (k == "linger" and v == "")
+         and not (k == "wayland" and v == "zone")}
     return hashlib.sha256(json.dumps(s, sort_keys=True).encode()).hexdigest()
 
 
 SUPERVISORS = ("auto", "systemd", "spawn")
+
+
+def host_wayland_socket() -> str | None:
+    """The host compositor's socket ($WAYLAND_DISPLAY: a name in $XDG_RUNTIME_DIR, or a
+    path), resolved, when it is a socket; else None."""
+    d = os.environ.get("WAYLAND_DISPLAY", "")
+    if not d:
+        return None
+    p = d if d.startswith("/") else str(HOST_RT / d)
+    p = os.path.realpath(p)
+    try:
+        return p if stat.S_ISSOCK(os.stat(p).st_mode) else None
+    except OSError:
+        return None
 
 
 def supervisor(z: zonecfg.Zone | None = None) -> str:

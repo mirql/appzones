@@ -27,7 +27,7 @@
 let
   # the package version; the config schema has its own release number
   # (zonecfg.RELEASE, what a zones.toml can require)
-  version = "0.8.3";
+  version = "0.11.3";
   zone-wayland = callPackage ../src/zone-wayland { };
   runtimePath = lib.makeBinPath [
     bubblewrap
@@ -74,7 +74,7 @@ runCommand "appzones-${version}"
     cp ${examples}/zones.toml $out/share/appzones/zones.example.toml
     cp ${examples}/minimal.toml $out/share/appzones/zones.minimal.toml
     cp -r --no-preserve=mode ${contrib} $out/share/appzones/contrib
-    chmod 755 $out/share/appzones/contrib/{runit,s6}/appzones-ZONE/{run,finish}
+    chmod 755 $out/share/appzones/contrib/{runit,s6}/appzones-ZONE/{run,finish} $out/share/appzones/contrib/sway/appzones-sway
 
     # The root helper of `appzones mount` (the module's sudo rule names this
     # file): isolated Python (-I: no PYTHON* variables, no user site, not
@@ -91,11 +91,12 @@ runCommand "appzones-${version}"
 
     # unit tests of the validator (and parts of the appzones modules), against a fake home and sysfs
     work=$(mktemp -d)
-    mkdir -p $work/src $work/examples $work/contrib/hyprland
+    mkdir -p $work/src $work/examples $work/contrib/hyprland $work/contrib/sway
     cp ${src}/zonecfg.py ${src}/zone.py ${src}/zone_init.py ${src}/zone_mount_helper.py ${src}/test_zonecfg.py $work/src/
     cp -r --no-preserve=mode ${src}/appzones $work/src/appzones
     cp ${examples}/*.toml $work/examples/
     cp ${hyprland}/*.lua $work/contrib/hyprland/
+    cp ${contrib}/sway/appzones-sway $work/contrib/sway/
     (cd $work/src && HOME=$work python3 -B -m unittest -q test_zonecfg)
     python3 -B -m py_compile $lib/zone.py $lib/zone_init.py $lib/appzones/*.py
     ${lib.optionalString (

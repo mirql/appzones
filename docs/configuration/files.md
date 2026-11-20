@@ -16,7 +16,8 @@ appzones mounts ZONE
 A host folder appears at `/mnt/host/NAME` in a **running** zone without a
 restart, and `appzones umount` takes it away again. A mount lasts until
 `umount` or until the zone stops or restarts: the zone removes every mount
-left at its start and stop. To keep a folder for good, add it to `binds`.
+left at its start and stop (its log says how many; one that could not be detached is
+named there). To keep a folder for good, add it to `binds`.
 
 - **Same never-list as `binds`**, on the resolved path, so a symlink cannot
   get around it: a folder that is, contains or is inside a denied path is
