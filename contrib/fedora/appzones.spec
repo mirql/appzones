@@ -2,7 +2,7 @@
 # it; `just release-rpm VERSION` attaches it to a release). Python and the C zone-wayland
 # only, like the .deb: the optional Rust helpers are not packaged (yet, #121).
 Name:           appzones
-Version:        0.11.2
+Version:        0.11.3
 Release:        1%{?dist}
 Summary:        Long-lived sandboxes for desktop apps, dev tools and AI agents
 License:        MIT

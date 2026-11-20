@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.11.3
+
+`wayland = "host"` now gives the host's Wayland socket only where the compositor has no security context (GNOME, Weston), as intended; on Hyprland, sway or KDE the zone gets its own context. If you set it, restart those zones. Also: a zone no longer starts with last run's mounts, and `make install` and the .deb never install `contrib/` writable by others.
+
 - **`wayland = "host"` only where the compositor has no security context.** Before, it
   gave a zone the host's raw Wayland socket everywhere: on Hyprland, sway or KWin that
   also meant screencopy, virtual input, the lock screen, and the security-context
