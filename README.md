@@ -55,8 +55,9 @@ appzones list                     # zones, state, network, devices, apps running
 
 > [!NOTE]
 > appzones is young (0.10). It runs on **x86_64 NixOS**, and as a preview on
-> **Ubuntu 24.04, Debian 12 and Arch** (command-line zones; desktop apps there
-> are not tested yet). Window borders and tags per zone need Hyprland.
+> **Ubuntu 24.04, Debian 12 and Arch**: command-line zones, and desktop apps
+> under sway 1.9+ (tested) or GNOME (`wayland = "host"`, tried by hand).
+> Window borders and tags per zone need Hyprland.
 
 ## Why
 
@@ -250,7 +251,7 @@ Then copy [`examples/minimal.toml`](examples/minimal.toml) to
 `~/.config/appzones/zones.toml` (or run `appzones new daily -y`) and run
 `appzones check`.
 
-Ubuntu 24.04 and Debian 12 (preview, command-line zones): the `.deb` from the
+Ubuntu 24.04 and Debian 12 (preview): the `.deb` from the
 [latest release](https://github.com/mirql/appzones/releases/latest), with
 `sudo apt install ./appzones_*_amd64.deb`. Or from a checkout:
 

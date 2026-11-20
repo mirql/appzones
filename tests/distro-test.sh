@@ -120,7 +120,8 @@ fi
 (sleep 2; printf 'echo in-shell-$ZONE\r'; sleep 1; printf 'exit\r') \
   | timeout 60 su alice -s /bin/sh -c "$U script -qfc 'appzones shell off' /dev/null" >/tmp/shell.out \
   || fail "appzones shell did not end: $(tr -d '\r' </tmp/shell.out)"
-out=$(tr -d '\r' </tmp/shell.out)
+# (without the terminal's escapes: readline's bracketed paste where a terminfo is installed)
+out=$(tr -d '\r' </tmp/shell.out | sed 's/\x1b\[[?0-9;]*[a-zA-Z]//g')
 echo "$out" | grep -q "^in-shell-off" || fail "appzones shell: $out"
 pass "appzones shell (a pty in the zone)"
 
@@ -178,6 +179,42 @@ grep -q 'wayland = "host": the host' /home/alice/.local/state/appzones/gui.log |
 as_alice 'appzones stop gui'
 pkill -u alice weston || true
 pass "wayland = \"host\": the zone's apps reach the host's compositor (Weston) through wayland-0"
+
+# a desktop: headless sway, a Wayland app from a zone. Where sway has the security-context
+# protocol (Ubuntu 24.04: 1.9) the zone's client gets fewer globals than the host's
+# (no screencopy) and its window opens; Debian 12's sway 1.7 has none (checked above, Weston)
+cat >/tmp/desktop.sh <<'SH'
+set -eu
+export WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
+printf 'output HEADLESS-1 resolution 1280x800\n' >/tmp/sway-alice.conf
+sway -c /tmp/sway-alice.conf >/tmp/sway-alice.log 2>&1 &
+sway=$!
+for _ in $(seq 50); do W=$(ls /run/user/1000 | grep -x 'wayland-[0-8]' | head -1) && [ -n "$W" ] && break; sleep 0.2; done
+[ -n "${W:-}" ] || { echo "sway did not start: $(tail -3 /tmp/sway-alice.log)"; exit 1; }
+export WAYLAND_DISPLAY=$W SWAYSOCK=$(ls /run/user/1000/sway-ipc.*.sock | head -1)
+WAYLAND_DISPLAY=$W wayland-info >/tmp/wl-host.txt 2>&1
+if ! grep -q wp_security_context_manager_v1 /tmp/wl-host.txt; then echo "$(sway --version)"; exit 3; fi
+appzones run --wait off -- wayland-info </dev/null >/tmp/wl-zone.txt 2>&1 || { cat /tmp/wl-zone.txt; exit 1; }
+h=$(grep -c "interface:" /tmp/wl-host.txt); z=$(grep -c "interface:" /tmp/wl-zone.txt)
+echo "globals: host $h, zone $z"
+grep -q zwlr_screencopy_manager_v1 /tmp/wl-host.txt || { echo "the host has no screencopy?"; exit 1; }
+if grep -q -e zwlr_screencopy_manager_v1 -e zwlr_data_control_manager_v1 /tmp/wl-zone.txt; then
+  echo "the zone's client sees screencopy or data-control"; exit 1
+fi
+appzones run off -- foot </dev/null >/dev/null 2>&1
+for _ in $(seq 50); do swaymsg -t get_tree | grep -q '"app_id": "foot"' && break; sleep 0.2; done
+swaymsg -t get_tree | grep -q '"app_id": "foot"' || { echo "no foot window: $(appzones logs off 2>&1 | tail -5)"; exit 1; }
+appzones stop off
+kill $sway
+SH
+rc=0; out=$(timeout 120 su alice -s /bin/sh -c "$U sh /tmp/desktop.sh" 2>&1) || rc=$?
+echo "$out"
+case $rc in
+  0) pass "a desktop (headless sway): the zone's client in a security context (no screencopy, no data-control), its window opens";;
+  3) pkill -u alice sway || true
+     pass "a desktop (headless sway): this sway has no security-context protocol ($out), as Weston above";;
+  *) fail "a desktop (headless sway): $out";;
+esac
 
 # a server without the desktop's parts: a session bus is set (as over SSH with systemd),
 # but xdg-dbus-proxy and dbus-daemon are not there; and with the C zone-wayland also

@@ -60,6 +60,9 @@ let
       # a compositor without the security-context protocol, and a client to ask it
       "weston"
       "wayland-utils"
+      # a compositor with it (sway 1.9+; Debian 12's 1.7 has none), and a Wayland app
+      "sway"
+      "foot"
     ];
   };
 in

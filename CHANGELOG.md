@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **The distro tests open a desktop app from a zone**: under headless sway on Ubuntu
+  24.04 the zone's client gets its own security context (no screencopy, no
+  data-control) and a foot window opens; Debian 12's sway 1.7 has no security
+  context, which the test notes. The docs no longer call desktop apps outside NixOS
+  untested.
+
 ## 0.10.0
 
 Desktop apps under GNOME: `wayland = "host"` gives a zone's apps the host's Wayland socket where the compositor has no security-context protocol (GNOME's Mutter, Ubuntu's default). Zones release 6: files that use `wayland` set `requires = 6`.

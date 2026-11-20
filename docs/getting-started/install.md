@@ -3,7 +3,7 @@
 | Where | What works | How |
 |---|---|---|
 | **NixOS** | everything: desktop apps, window borders on Hyprland, `packages`, `nix_ld` | [the flake's module](#nixos) |
-| **Ubuntu 24.04, Debian 12** (preview) | command-line zones: dev tools and AI agents, also over SSH; desktop apps are not tested yet | [`make install`](#ubuntu-and-debian-preview) |
+| **Ubuntu 24.04, Debian 12** (preview) | command-line zones: dev tools and AI agents, also over SSH; desktop apps under sway 1.9+ (tested on Ubuntu 24.04) or GNOME (with `wayland = "host"`, tried by hand); no window borders | [the .deb, or `make install`](#ubuntu-and-debian-preview) |
 | **Arch Linux** (preview) | the same as Ubuntu and Debian | [a PKGBUILD](#arch-linux-preview), or `make install` |
 
 Other distributions with systemd or another init, Python 3.11 and the same
@@ -35,7 +35,9 @@ Run `appzones check`.
 ## Ubuntu and Debian (preview)
 
 Tested on Ubuntu 24.04 and Debian 12, in VMs, for every change
-(`just test-distros`). Ubuntu 22.04 is too old (Python 3.10).
+(`just test-distros`): command-line zones, and on Ubuntu a Wayland app from a
+zone under headless sway (its own security context: no screencopy, no
+clipboard snooping). Ubuntu 22.04 is too old (Python 3.10).
 
 **The package.** Each [release](https://github.com/mirql/appzones/releases/latest)
 has a `.deb` for amd64 (built on Debian 12; tested on Debian 12 and Ubuntu 24.04).
