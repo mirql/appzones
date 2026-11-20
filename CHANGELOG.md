@@ -16,6 +16,9 @@ Desktop apps under GNOME: `wayland = "host"` gives a zone's apps the host's Wayl
   virtual input anyway, so desktop apps in zones work there with `wayland = "host"`.
   Their windows are not marked as the zone's. Warned by `appzones check`; refused in
   a zone named `untrusted` without `force_host`.
+- **`appzones ps` on a zone that is not running** prints one line
+  (`appzones: zone web is not running (start it: appzones up web)`) and exits 1,
+  instead of a Python traceback (#130).
 
 ## 0.9.1
 

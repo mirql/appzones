@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -741,6 +742,24 @@ os.write(w, b"\\n"); os.close(w)
             entry.main(["netsetup"])
         self.assertNotIn("_netsetup", err.getvalue())
         self.assertEqual(migrated, [])  # a typo migrates no state
+
+    def test_ps_on_a_stopped_zone_is_one_line(self):
+        """`appzones ps` on a zone that is not running says so in one line, no traceback (#130)."""
+        sys.path.insert(0, str(HERE))
+        import zone as entry
+        entry = importlib.reload(entry)
+        real_migrate = entry.upgrade.migrate_state
+        entry.upgrade.migrate_state = lambda *a, **k: None
+        self.addCleanup(setattr, entry.upgrade, "migrate_state", real_migrate)
+        for error in (FileNotFoundError(), ValueError()):
+            with self.subTest(error=type(error).__name__):
+                with mock.patch.object(entry.agent, "zone_procs", side_effect=error) as zone_procs:
+                    with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as ex:
+                        entry.main(["ps", "nosuchzone"])
+                    zone_procs.assert_called_once_with("nosuchzone")
+                self.assertEqual(ex.exception.code, 1)
+                self.assertEqual(err.getvalue(),
+                                 "appzones: zone nosuchzone is not running (start it: appzones up nosuchzone)" + chr(10))
 
     def test_version_flag(self):
         """`appzones --version` and `-V`: the package version (a placeholder in a source checkout) and the config release."""
