@@ -224,9 +224,10 @@ What that means:
 - **Memory** is the clear win, and it is per running zone. Phase 1 already takes zone-init
   from 11 MB to 1 MB with the Rust helpers (#121 makes them the default). What is left is the
   Python server, about 20 MB per zone: 160 MB for eight zones.
-- **CLI latency**: about 180 ms. Half of it is imports that even `--version` pays. Lazy
-  imports in Python would cut it to about 70 ms. Rust would make it a few ms, which a
-  launcher click would feel, but not much more.
+- **CLI latency**: about 180 ms. About 110 ms of it is imports, which even `--version` pays.
+  `zonecfg` (43 ms) loads for every command, so lazy imports in Python would remove at most
+  the other 67 ms, leaving about 110 ms. Rust would make it a few ms, which a launcher
+  click would feel, but not much more.
 - **Reach**: Python 3.11 rules out Ubuntu 22.04, Debian 11, RHEL 9's default Python and Leap
   15. But the first two have no passt either, and appzones needs pasta. A static binary
   alone would not open them.
@@ -252,7 +253,8 @@ Three ways on from here:
   `settings_hash` and `which` byte for byte, the handoff to servers a Python version
   started, messages and suggestions from other libraries.
 
-**Recommendation**: B, together with lazy imports in the Python CLI (cheap, Python only).
+**Recommendation**: B, together with lazy imports in the Python CLI (cheap, Python only;
+about 180 ms down to about 110 ms).
 C only if Python itself becomes the problem: a distribution without a usable Python 3.11,
 or a request for a single binary. Before B: a spike that writes the plan for one zone and
 runs it with a minimal Rust server (no DNS, no links), measuring its memory and how much of
