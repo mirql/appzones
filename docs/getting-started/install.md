@@ -5,7 +5,7 @@
 | **NixOS** | everything: desktop apps, window borders on Hyprland, `packages`, `nix_ld` | [the flake's module](#nixos) |
 | **Ubuntu 24.04, Debian 12** (preview) | command-line zones: dev tools and AI agents, also over SSH; desktop apps under sway 1.9+ (tested on Ubuntu 24.04) or GNOME (with `wayland = "host"`, tried by hand); no window borders | [the .deb, or `make install`](#ubuntu-and-debian-preview) |
 | **Arch Linux** (preview) | the same as Ubuntu and Debian; sway names zones started without systemd too | [a PKGBUILD](#arch-linux-preview), or `make install` |
-| **Fedora 45** (preview) | the same, with SELinux enforcing | [`make install`](#fedora-preview) |
+| **Fedora 45** (preview) | the same, with SELinux enforcing | [the RPM, or `make install`](#fedora-preview) |
 
 Other distributions with systemd or another init, Python 3.11 and the same
 tools should work like these; they are not tested yet.
@@ -219,10 +219,21 @@ it all. Then [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3)
 
 ## Fedora (preview)
 
-Tested on Fedora 45 with `just test-fedora` (`make install` from the
+Tested on Fedora 45 with `just test-fedora` (the RPM built from the
 checkout, then the same test as Ubuntu and Debian, in a VM), with SELinux
-enforcing: no policy change and no AppArmor profile is needed. There is no
-package yet.
+enforcing: no policy change and no AppArmor profile is needed. Releases from
+0.11.1 on have the RPM (`appzones-VERSION-1.fc45.x86_64.rpm`, from
+`contrib/fedora/appzones.spec`); download it from the
+[latest release](https://github.com/mirql/appzones/releases/latest), then:
+
+```bash
+sudo dnf install ./appzones-*.fc45.x86_64.rpm   # also fetches bubblewrap, passt, nftables, ...
+sudo usermod -aG appzones "$USER"              # for appzones mount; log in again after it
+```
+
+It installs into `/usr` like the .deb, with the systemd user units and a
+sudo rule for exactly the mount helper for the group `appzones`. `sudo dnf
+remove appzones` removes it. Or from a checkout:
 
 ```bash
 sudo dnf install python3 bubblewrap passt nftables iproute git make   # enough for a server

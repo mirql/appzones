@@ -33,7 +33,7 @@ deb:
 test-arch:
     nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh arch
 
-# appzones on Fedora (SELinux enforcing): make install from this checkout, the distro test (needs the network and /dev/kvm, ~15 min)
+# appzones on Fedora (SELinux enforcing): the RPM built from this checkout, the distro test (needs the network and /dev/kvm, ~15 min)
 test-fedora:
     nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh fedora
 
@@ -76,6 +76,18 @@ release version:
     gh release create "v{{version}}" --target "$sha" --title "appzones {{version}}" --notes "$notes"
     gh release upload --clobber "v{{version}}" "$deb"/appzones_{{version}}-1_amd64.deb \
         || echo "the .deb was not attached: just release-deb {{version}}"
+
+# Build the RPM from the commit tag vVERSION points to, test it on Fedora, attach it to the release (network, /dev/kvm)
+release-rpm version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git fetch -q --tags origin
+    tree=$(mktemp -d) out=$(mktemp -d)
+    trap 'git worktree remove --force "$tree"; rm -rf "$out"' EXIT
+    git worktree add -q --detach "$tree" "v{{version}}"
+    APPZONES_RPM_OUT="$out" nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl \
+        -c nice -n 19 "$tree/tests/cloud-test.sh" fedora
+    gh release upload --clobber "v{{version}}" "$out"/appzones-{{version}}-1.fc*.x86_64.rpm
 
 # Attach (again) the .deb to release VERSION, built from the commit its tag points to
 release-deb version:

@@ -8,7 +8,7 @@ set -eu
 src=$1
 mflags=${2:-}  # extra make arguments (tests/distro.nix makeFlags)
 deb=${3:-}     # a .deb to install instead of `make install` (tests/distro.nix deb), or
-               # "pacman": the Arch package, installed already (tests/arch-test.sh)
+               # "pacman" or "rpm": the Arch or Fedora package, installed already (tests/cloud-test.sh)
 # where it installs (make's PREFIX, /usr for the .deb), and whether with the Rust helper
 prefix=/usr/local
 for f in $mflags; do case $f in PREFIX=*) prefix=${f#PREFIX=};; esac; done
@@ -49,12 +49,13 @@ if os.fork(): os._exit(0)
 while True: s.accept()[0].close()' </dev/null >/dev/null 2>&1  # background: no pipe of ours held open
 
 # install as root: the .deb, or from a copy of the checkout (the Arch package: installed already)
-if [ "$deb" = pacman ]; then
-  pacman -Q appzones >/dev/null || fail "the Arch package is not installed"
+if [ "$deb" = pacman ] || [ "$deb" = rpm ]; then
+  if [ "$deb" = pacman ]; then v=$(pacman -Q appzones); else v=$(rpm -q appzones); fi || fail "the package is not installed"
   getent group appzones >/dev/null || fail "no group appzones (sysusers)"
   usermod -aG appzones alice
   [ -x /usr/lib/appzones/zone-wayland ] || fail "no zone-wayland in the package"
-  pass "the Arch package ($(pacman -Q appzones)): group appzones, zone-wayland"
+  [ "$(stat -c %a /etc/sudoers.d/appzones)" = 440 ] || fail "the sudo rule is not 0440"
+  pass "the package ($v): group appzones, zone-wayland, the sudo rule"
 elif [ -n "$deb" ]; then
   dpkg -i "$deb" >/tmp/install.log 2>&1 || { cat /tmp/install.log; fail "dpkg -i"; }
   getent group appzones >/dev/null || fail "no group appzones"
@@ -309,6 +310,8 @@ pass "a server without zone-wayland, xdg-dbus-proxy, dbus-daemon: the zone start
 
 if [ "$deb" = pacman ]; then
   pacman -Rn --noconfirm appzones >/dev/null 2>&1 || fail "pacman -Rn"
+elif [ "$deb" = rpm ]; then
+  dnf -y -q remove appzones >/dev/null 2>&1 || fail "dnf remove"
 elif [ -n "$deb" ]; then
   dpkg --purge appzones >/dev/null 2>&1 || fail "dpkg --purge"
 else

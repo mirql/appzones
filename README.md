@@ -261,7 +261,7 @@ git clone https://github.com/mirql/appzones && cd appzones && make && sudo make 
 ```
 
 Arch: `paru -S appzones` from the [AUR](https://aur.archlinux.org/packages/appzones) ([details](https://mirql.github.io/appzones/getting-started/install.html#arch-linux-preview)).
-Fedora: `make install` from a checkout ([details](https://mirql.github.io/appzones/getting-started/install.html#fedora-preview)).
+Fedora: the RPM from the [latest release](https://github.com/mirql/appzones/releases/latest), or `make install` ([details](https://mirql.github.io/appzones/getting-started/install.html#fedora-preview)).
 The [install page](https://mirql.github.io/appzones/getting-started/install.html#ubuntu-and-debian-preview)
 says what it installs (an AppArmor profile on Ubuntu, a sudo rule for
 `appzones mount`) and how to start your first zone.
@@ -359,7 +359,7 @@ Issues, ideas and PRs are welcome. Good places to start:
   NixOS to build and test.
 - **Other compositors.** Hyprland gets window tags and border colours, sway
   marks and title prefixes. niri or KWin hooks would help ([#20](https://github.com/mirql/appzones/issues/20)).
-- **Other distributions.** An RPM for Fedora; openSUSE and others: a package, and a VM
+- **Other distributions.** openSUSE and others: a package, and a VM
   test like the Debian and Ubuntu ones ([#22](https://github.com/mirql/appzones/issues/22)).
 - **aarch64.** Nothing has been tried there yet.
 - **Docs.** If something in the [docs](https://mirql.github.io/appzones/) was unclear to you,

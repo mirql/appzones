@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **An RPM for Fedora** (#22): `contrib/fedora/appzones.spec`, the same layout as the
+  .deb (Python and the C zone-wayland; the sudo rule for the group `appzones`, made
+  through sysusers). `just test-fedora` builds it with rpmbuild from the checkout,
+  installs it with dnf and runs the distro test (SELinux enforcing);
+  `just release-rpm VERSION` attaches it to a release.
+
 - **Fedora 45 tested** (`just test-fedora`, #22): `make install` from the checkout in a
   Fedora Cloud VM with SELinux enforcing, then the same distro test, desktop under
   sway included. It passes without any change to appzones; the install page has a

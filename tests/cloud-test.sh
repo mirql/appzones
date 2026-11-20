@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # appzones on another distribution, in its cloud image (`just test-arch`, `just test-fedora`):
 #   arch    the AUR package (contrib/arch/PKGBUILD), built with makepkg from this checkout
-#   fedora  `make install` from this checkout (SELinux enforcing)
+#   fedora  the RPM (contrib/fedora/appzones.spec), built with rpmbuild from this checkout
+#           (SELinux enforcing); APPZONES_RPM_OUT=DIR copies it there
 # then tests/distro-test.sh against it: zones as an ordinary user, and a desktop under sway
 # (1.11+ names a zone from its security context). Unlike the Debian and Ubuntu checks this
 # needs the network, since nixpkgs has no images of these: a pinned cloud image (its
@@ -87,7 +88,7 @@ if [[ $distro == arch ]]; then
 else
   # (script, for the shell check, is its own package on Fedora)
   vm "echo keepcache=True | sudo tee -a /etc/dnf/dnf.conf >/dev/null && \
-    sudo dnf -y -q --disablerepo='*' --enablerepo=fedora install gcc make pkgconf-pkg-config wayland-devel \
+    sudo dnf -y -q --disablerepo='*' --enablerepo=fedora install rpm-build systemd-rpm-macros gcc make pkgconf-pkg-config wayland-devel \
     python3 bubblewrap passt nftables iproute xdg-dbus-proxy dbus-daemon sudo dnsmasq procps-ng psmisc \
     util-linux util-linux-script weston wayland-utils sway foot >/tmp/pkgs.log 2>&1 || { tail -20 /tmp/pkgs.log; exit 1; }"
 fi
@@ -109,10 +110,22 @@ if [[ $distro == arch ]]; then
   echo "built and installed appzones $version with makepkg"
   mode=pacman src=/nonexistent
 else
-  # the checkout's tracked files; the test runs make and make install itself
-  (cd "$here" && git ls-files -z | tar --null -T - -czf "$work/src.tar.gz")
-  vm "mkdir -p /tmp/src && tar xz -C /tmp/src" <"$work/src.tar.gz"
-  mode="" src=/tmp/src
+  # the RPM from this checkout: a tarball of the tracked files, as GitHub's would be
+  (cd "$here" && git ls-files -z | tar --null -T - --transform "s,^,appzones-$version/," -czf "$work/src.tar.gz")
+  vm "mkdir -p ~/rpmbuild/SOURCES ~/rpmbuild/SPECS"
+  vm "cat >~/rpmbuild/SOURCES/appzones-$version.tar.gz" <"$work/src.tar.gz"
+  vm "cat >~/rpmbuild/SPECS/appzones.spec" <"$here/contrib/fedora/appzones.spec"
+  vm "cd ~/rpmbuild && sed -i 's/^Version: .*/Version:        $version/' SPECS/appzones.spec && \
+    rpmbuild -bb SPECS/appzones.spec >/tmp/rpmbuild.log 2>&1 || { tail -30 /tmp/rpmbuild.log; exit 1; }; \
+    sudo dnf -y -q --disablerepo='*' --enablerepo=fedora install ~/rpmbuild/RPMS/x86_64/appzones-$version-*.rpm >/dev/null"
+  echo "built and installed appzones $version with rpmbuild"
+  if [[ -n "${APPZONES_RPM_OUT:-}" ]]; then
+    mkdir -p "$APPZONES_RPM_OUT"
+    rpm=$(vm "ls ~/rpmbuild/RPMS/x86_64/appzones-$version-*.rpm")
+    vm "cat $rpm" >"$APPZONES_RPM_OUT/$(basename "$rpm")"
+    echo "the RPM: $APPZONES_RPM_OUT/$(basename "$rpm")"
+  fi
+  mode=rpm src=/nonexistent
 fi
 
 # the shared test, against the installed package
