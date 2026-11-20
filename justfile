@@ -29,6 +29,10 @@ test-distros:
 deb:
     nice -n 19 nix build -L -o result-deb .#deb
 
+# appzones on Arch: the AUR package built from this checkout, installed, the distro test (needs the network and /dev/kvm, ~10 min)
+test-arch:
+    nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/arch-test.sh
+
 # NixOS VM test: Hyprland, zone units, isolation probes, window tags (~6 min, needs /dev/kvm)
 test-vm:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.vm

@@ -5,6 +5,13 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`just test-arch`**: the AUR package built with makepkg from the checkout, installed
+  in an Arch VM (a pinned cloud image, the Arch Linux Archive of one date), then the
+  same distro test as Debian and Ubuntu. It needs the network, so it is a `just`
+  recipe, not a flake check. On Arch's sway 1.12 it checks that a zone started
+  without systemd is named from its security context. The distro test runs on a
+  networked systemd host too.
+
 - **KDE Plasma 6 named as a compositor with the security-context protocol**: tried
   with KWin 6.8, which hides clipboard snooping, fake input, the window list and
   screencast from a zone's apps, but still offers them display configuration, DPMS

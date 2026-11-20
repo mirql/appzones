@@ -7,7 +7,8 @@
 set -eu
 src=$1
 mflags=${2:-}  # extra make arguments (tests/distro.nix makeFlags)
-deb=${3:-}     # a .deb to install instead of `make install` (tests/distro.nix deb)
+deb=${3:-}     # a .deb to install instead of `make install` (tests/distro.nix deb), or
+               # "pacman": the Arch package, installed already (tests/arch-test.sh)
 # where it installs (make's PREFIX, /usr for the .deb), and whether with the Rust helper
 prefix=/usr/local
 for f in $mflags; do case $f in PREFIX=*) prefix=${f#PREFIX=};; esac; done
@@ -36,17 +37,25 @@ ip link set lo up
 # 0666 is the mode udev gives /dev/net/tun; this is the throw-away test VM
 chmod 666 /dev/net/tun  # NOSONAR
 ip link add az0 type dummy && ip link set az0 up
-ip addr add 192.0.2.1/24 dev az0 && ip route add default via 192.0.2.254 dev az0
+ip addr add 192.0.2.1/24 dev az0
+# a route for pasta where there is none (the offline images); a networked VM keeps its own
+ip route show default | grep -q . || ip route add default via 192.0.2.254 dev az0
 dnsmasq --no-resolv --listen-address=127.0.0.1 --bind-interfaces --address=/zone-test.example/192.0.2.99 \
   --pid-file=/run/dnsmasq.pid </dev/null >/dev/null 2>&1
-echo "nameserver 127.0.0.1" > /etc/resolv.conf
+rm -f /etc/resolv.conf && echo "nameserver 127.0.0.1" > /etc/resolv.conf  # (not through a resolved symlink)
 python3 -c 'import socket,os
 s=socket.socket(); s.bind(("192.0.2.1",8080)); s.listen(4)
 if os.fork(): os._exit(0)
 while True: s.accept()[0].close()' </dev/null >/dev/null 2>&1  # background: no pipe of ours held open
 
-# install as root: the .deb, or from a copy of the checkout
-if [ -n "$deb" ]; then
+# install as root: the .deb, or from a copy of the checkout (the Arch package: installed already)
+if [ "$deb" = pacman ]; then
+  pacman -Q appzones >/dev/null || fail "the Arch package is not installed"
+  getent group appzones >/dev/null || fail "no group appzones (sysusers)"
+  usermod -aG appzones alice
+  [ -x /usr/lib/appzones/zone-wayland ] || fail "no zone-wayland in the package"
+  pass "the Arch package ($(pacman -Q appzones)): group appzones, zone-wayland"
+elif [ -n "$deb" ]; then
   dpkg -i "$deb" >/tmp/install.log 2>&1 || { cat /tmp/install.log; fail "dpkg -i"; }
   getent group appzones >/dev/null || fail "no group appzones"
   usermod -aG appzones alice
@@ -126,11 +135,13 @@ echo "$out" | grep -q "^in-shell-off" || fail "appzones shell: $out"
 pass "appzones shell (a pty in the zone)"
 
 # without systemd the host's mounts are private: a new mount does not reach the zone, and appzones says why
-out=$(as_alice 'appzones mount off ~/data --ro' 2>&1) || fail "appzones mount: $out"
-echo "$out" | grep -q "mount --make-rshared /" || fail "no hint for a private host mount: $out"
-as_alice 'appzones umount off data' >/dev/null
-pass "appzones mount on a host without systemd: names the fix (mount --make-rshared /)"
-mount --make-rshared /  # what systemd does at boot
+if [ "$(findmnt -no PROPAGATION /)" = private ]; then
+  out=$(as_alice 'appzones mount off ~/data --ro' 2>&1) || fail "appzones mount: $out"
+  echo "$out" | grep -q "mount --make-rshared /" || fail "no hint for a private host mount: $out"
+  as_alice 'appzones umount off data' >/dev/null
+  pass "appzones mount on a host without systemd: names the fix (mount --make-rshared /)"
+  mount --make-rshared /  # what systemd does at boot
+fi
 as_alice 'appzones restart off'
 as_alice 'appzones mount off ~/data --ro' >/dev/null || fail "appzones mount"
 got=$(as_alice 'appzones run --wait off -- cat /mnt/host/data/x </dev/null' 2>&1) || true
@@ -185,6 +196,7 @@ pass "wayland = \"host\": the zone's apps reach the host's compositor (Weston) t
 # (no screencopy) and its window opens; Debian 12's sway 1.7 has none (checked above, Weston)
 cat >/tmp/desktop.sh <<'SH'
 set -eu
+cd "$HOME"  # (a shell in foot starts here; su keeps the caller's directory, maybe not alice's to enter)
 export WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
 printf 'output HEADLESS-1 resolution 1280x800\n' >/tmp/sway-alice.conf
 sway -c /tmp/sway-alice.conf >/tmp/sway-alice.log 2>&1 &
@@ -212,7 +224,7 @@ fi
 "$HOOK" >/tmp/hook.log 2>&1 &
 hook=$!
 sleep 1
-foot </dev/null >/dev/null 2>&1 &
+foot </dev/null >/tmp/hostfoot.log 2>&1 &
 hostfoot=$!
 appzones run off -- foot </dev/null >/dev/null 2>&1
 # until both windows are there and the hook has marked the zone's (it works on events)
@@ -220,7 +232,7 @@ for _ in $(seq 50); do
   [ "$(swaymsg -t get_tree | grep -c '"app_id": "foot"')" = 2 ] && swaymsg -t get_tree | grep -q '"zone:' && break
   sleep 0.2
 done
-python3 - "$hostfoot" <<'PY' || { echo "hook: $(cat /tmp/hook.log)"; exit 1; }
+python3 - "$hostfoot" <<'PY' || { echo "hook: $(cat /tmp/hook.log); host foot: $(tail -5 /tmp/hostfoot.log)"; exit 1; }
 import json, subprocess, sys
 def wins(n):
     if n.get("pid"): yield n
@@ -230,9 +242,16 @@ host = [w for w in ws if w["pid"] == int(sys.argv[1])]
 zone = [w for w in ws if w["pid"] != int(sys.argv[1])]
 assert len(host) == 1 and len(zone) == 1, ws
 assert host[0]["marks"] == [], host[0]["marks"]
-assert zone[0]["marks"] == [f"zone:?:{zone[0]['id']}"], zone[0]["marks"]
+# sway 1.11+ names the zone from its security context; older sway cannot (this zone has no unit)
+want = "?"
+if zone[0].get("sandbox_engine"):
+    assert (zone[0]["sandbox_engine"], zone[0].get("sandbox_app_id")) == ("dev.mirql.zones", "dev.mirql.zone.off"), zone[0]
+    want = "off"
+assert zone[0]["marks"] == [f"zone:{want}:{zone[0]['id']}"], zone[0]["marks"]
+open("/tmp/zone-want", "w").write(want)
 print("marks: host", host[0]["marks"], "zone", zone[0]["marks"])
 PY
+want=$(cat /tmp/zone-want)
 # appzones active (a bar's label) from the mark: the zone's window "[?]", the host's ""
 appzones active --follow >/tmp/follow.txt 2>&1 &
 follow=$!
@@ -240,7 +259,7 @@ sleep 0.5
 swaymsg "[pid=$hostfoot] focus" >/dev/null; sleep 0.5
 host=$(appzones active)
 # (by con_id: con_mark is a regex, and "?" is a quantifier there)
-zid=$(swaymsg -t get_tree | grep -o '"zone:?:[0-9]*"' | head -1 | tr -d '"' | cut -d: -f3)
+zid=$(swaymsg -t get_tree | grep -o '"zone:[^"]*:[0-9]*"' | head -1 | tr -d '"' | cut -d: -f3)
 swaymsg "[con_id=$zid] focus" >/dev/null; sleep 0.5
 zone=$(appzones active --json)
 swaymsg workspace 9 >/dev/null; sleep 0.5  # an empty workspace: no window, no label
@@ -250,9 +269,9 @@ followed=$(tail -1 /tmp/follow.txt)
 swaymsg workspace 1 >/dev/null; sleep 0.5
 kill $follow
 echo "active: host '$host', zone $zone, follow: $(tr '\n' '|' </tmp/follow.txt)"
-[ "$host" = "" ] && [ "$empty" = "" ] && echo "$zone" | grep -q '"text": "\[?\]"' || { echo "appzones active on sway"; exit 1; }
+[ "$host" = "" ] && [ "$empty" = "" ] && echo "$zone" | grep -qF "\"text\": \"[$want]\"" || { echo "appzones active on sway"; exit 1; }
 [ "$followed" = "" ] || { echo "--follow kept a label on the empty workspace: $followed"; exit 1; }
-grep -qx '\[?\]' /tmp/follow.txt && grep -qx '' /tmp/follow.txt || { echo "appzones active --follow on sway"; exit 1; }
+grep -qxF "[$want]" /tmp/follow.txt && grep -qx '' /tmp/follow.txt || { echo "appzones active --follow on sway"; exit 1; }
 kill $hostfoot $hook
 appzones stop off
 kill $sway
@@ -288,7 +307,9 @@ as_alice 'appzones stop off'
 mv /tmp/hidden/xdg-dbus-proxy /tmp/hidden/dbus-daemon /usr/bin/
 pass "a server without zone-wayland, xdg-dbus-proxy, dbus-daemon: the zone starts, says why, bus = zone says what is missing"
 
-if [ -n "$deb" ]; then
+if [ "$deb" = pacman ]; then
+  pacman -Rn --noconfirm appzones >/dev/null 2>&1 || fail "pacman -Rn"
+elif [ -n "$deb" ]; then
   dpkg --purge appzones >/dev/null 2>&1 || fail "dpkg --purge"
 else
   make uninstall $mflags >/dev/null 2>&1 || fail "make uninstall"
