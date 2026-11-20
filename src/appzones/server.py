@@ -262,8 +262,18 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         return stop_code()
     # the desktop's parts are optional: without their helper (a server, a package
     # without them) the zone starts without them, and says so
-    wayland_helper = common.helper_argv("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") else None
-    if os.environ.get("WAYLAND_DISPLAY") and not wayland_helper:
+    wl = z.settings["wayland"]
+    wayland_helper = common.helper_argv("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") and wl == "zone" else None
+    if wl == "none":
+        print(f"[zone] {name}: wayland = \"none\": no Wayland socket", flush=True)
+    elif wl == "host":
+        if common.host_wayland_socket():
+            print(f"[zone] {name}: wayland = \"host\": the host's Wayland socket, without a security context",
+                  flush=True)
+        else:
+            print(f"[zone] {name}: wayland = \"host\", but no host Wayland socket ($WAYLAND_DISPLAY): "
+                  "the zone starts without one", flush=True)
+    elif os.environ.get("WAYLAND_DISPLAY") and not wayland_helper:
         print(f"[zone] {name}: zone-wayland not found: the zone starts without a Wayland socket "
               "(desktop apps will not open windows; install appzones with zone-wayland)", flush=True)
     elif wayland_helper:
@@ -280,7 +290,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             helpers.remove(h)
             print(f"[zone] {name}: the compositor has no security-context protocol (wp_security_context_v1), "
                   "so the zone starts without a Wayland socket (desktop apps will not open windows). "
-                  "Compositors with it: Hyprland, sway 1.9 and later, others built on wlroots 0.17 or later",
+                  "Compositors with it: Hyprland, sway 1.9 and later, others built on wlroots 0.17 or later. "
+                  "To give this zone's apps the host's socket instead (GNOME): wayland = \"host\"",
                   flush=True)
     else:
         print(f"[zone] no WAYLAND_DISPLAY: zone {name} starts without a Wayland socket", flush=True)

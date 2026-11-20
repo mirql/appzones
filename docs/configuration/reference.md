@@ -12,7 +12,7 @@ this `appzones` is release M: update appzones (and rebuild)" and lists what it d
 failing on an unknown key. A file that uses a newer setting without raising
 `requires` is an error, so the field stays true. Release 2 added `bus` and
 `requires`; release 3 `nix_ld`, `tmp` and `appzones mount`; release 4 the `usb`
-device and key; release 5 `supervisor`, `start_timeout` and `linger`; `appzones check` prints
+device and key; release 5 `supervisor`, `start_timeout` and `linger`; release 6 `wayland`; `appzones check` prints
 the tool's own release. (A `zone` (the old name) from
 before release 2 does not know `requires` either: it still says "unknown
 key" until it is updated once.) A real typo stays an error, with the nearest
@@ -29,6 +29,7 @@ known key suggested.
 | `devices` | list of `gpu` `audio` `mic` `camera` `screencast` `usb` (built-in `["gpu", "audio"]`) | `gpu`: the render node only (not the KMS node) and its sysfs. `audio`: the PipeWire and PulseAudio sockets. `mic` is the same as `audio` for now. `camera`: the Camera portal, or `/dev/video*` with `camera = "device"`. `screencast`: the ScreenCast and Screenshot portals (each use asks you). `usb`: the USB devices named in `usb`, see [Devices and USB](devices.md) |
 | `camera` | `"portal"` · `"device"` | how `camera` is given |
 | `usb` | `[]` | with `usb` in `devices`: `["vvvv"]` (a vendor) or `["vvvv:pppp"]` (vendor and product), lowercase hex as `lsusb` prints them. Required (non-empty) with the device; set in a zone without the device it is an error |
+| `wayland` | `"zone"` · `"none"` · `"host"` | `zone`: the zone's own Wayland socket, a security context (`wp_security_context_v1`): the compositor hides screencopy, clipboard snooping, virtual input and the like from its apps, and marks their windows as the zone's. Under a compositor without the protocol (GNOME's Mutter 46, Weston, sway before 1.9) the zone gets no socket. `none`: no Wayland. `host`: the host's own socket, for such a compositor: no security context, so the apps get whatever the compositor offers any app (under GNOME no screencopy or clipboard snooping; under Hyprland or sway those too) and their windows are not marked (warned; refused for a zone named `untrusted` without `force_host`) |
 | `x11` | `"none"` · `"own"` | `own` (xwayland-satellite) is not built yet. The host's Xwayland is never shared |
 | `clipboard` | `"both"` | copy and paste both ways, through the focused window |
 | `autostart` | `false` · `true` | start the zone at login |
@@ -44,7 +45,7 @@ known key suggested.
 | `nix_ld` | `false` · `true` | generic Linux binaries run: `/lib64/ld-linux-x86-64.so.2` in the zone is the host's nix-ld shim, and `NIX_LD`, `NIX_LD_LIBRARY_PATH` are set as on the host. Refused on a host without nix-ld (`programs.nix-ld.enable`), and outside NixOS, where generic binaries run without it. See [Generic binaries](nix-ld.md) |
 | `tmp` | `"ram"` · `"disk"` | `ram`: `/tmp` is a fresh tmpfs at every start. `disk`: `/tmp` and `/var/tmp` are `~/.local/share/appzones/NAME/tmp` and `.../var-tmp` (0700): kept across restarts, readable from the host. Cleaned at each start, see [/tmp on disk](files.md#tmp-on-disk-tmp--disk) |
 | `home` | `""` | the zone's home; empty: `~/.local/share/appzones/NAME/home` |
-| `force_host` | `false` · `true` | allow `network = "host"` in `untrusted` |
+| `force_host` | `false` · `true` | allow `network = "host"` and `wayland = "host"` in `untrusted` |
 | `supervisor` | `"auto"` · `"systemd"` · `"spawn"` | who starts the zone when it is not running. `auto`: `$APPZONES_SUPERVISOR` if set, else systemd when `appzones@.service` is installed, else appzones itself. `systemd`: always its unit. `spawn`: always appzones itself (logs in `~/.local/state/appzones/`). The zone's own value beats `$APPZONES_SUPERVISOR`. See [Zones without systemd](../without-systemd.md) |
 | `start_timeout` | `"30s"` | the limit for each step of the start (Wayland helper, D-Bus proxy, network setup, zone-init's answer): `"45s"`, `"2m"` or a number of seconds, up to 1 h. Building `packages` has no limit |
 | `linger` | `""` | `""`: the zone stays until you stop it or the session ends. A duration (`"10m"`, `"1h"`, at least 10 s): the zone ends after that long with no app running in it (its own D-Bus daemon does not count). Under systemd it ends as a success, so it is not restarted |

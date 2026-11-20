@@ -5,6 +5,13 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`wayland`** (zones release 6): `"zone"` (the default, the zone's own security
+  context, as before), `"none"` (no Wayland), or `"host"`: the host's Wayland
+  socket, for compositors without `wp_security_context_v1`. GNOME's Mutter 46,
+  Ubuntu's default, has none, and offers apps no screencopy, clipboard snooping or
+  virtual input anyway, so desktop apps in zones work there with `wayland = "host"`.
+  Their windows are not marked as the zone's. Warned by `appzones check`; refused in
+  a zone named `untrusted` without `force_host`.
 - **`appzones ps` on a zone that is not running** prints one line
   (`appzones: zone web is not running (start it: appzones up web)`) and exits 1,
   instead of a Python traceback (#130).

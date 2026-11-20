@@ -57,8 +57,9 @@ let
       "login"
       "dnsmasq-base"
       "apparmor"
-      # a compositor without the security-context protocol
+      # a compositor without the security-context protocol, and a client to ask it
       "weston"
+      "wayland-utils"
     ];
   };
 in

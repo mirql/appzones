@@ -11,6 +11,7 @@ import socket
 import subprocess
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -1512,6 +1513,59 @@ os.write(w, b"\\n"); os.close(w)
         self.assertRefused(self.cfg(base).errors, "needs force_host")
         self.assertEqual(self.cfg(base + "force_host = true\n").errors, [])
 
+    def test_wayland(self):
+        """wayland: zone (default) | none | host; host is warned, refused in untrusted without
+        force_host, and needs requires = 6."""
+        cfg = self.cfg('version = 1\n[zones.tt]\ncolour = "#112233"\n')
+        self.assertEqual(cfg.zones["tt"].settings["wayland"], "zone")
+        self.assertEqual(self.errs('wayland = "none"'), [])
+        self.assertEqual(self.errs('wayland = "host"'), [])
+        self.assertRefused(self.errs('wayland = "direct"'), "wayland must be one of")
+        cfg = self.cfg(f'version = 1\nrequires = {self.z.RELEASE}\n[zones.tt]\ncolour = "#112233"\nwayland = "host"\n')
+        self.assertTrue(any('wayland = "host"' in w for w in cfg.warnings), cfg.warnings)
+        base = f'version = 1\nrequires = {self.z.RELEASE}\n[zones.untrusted]\ncolour = "#112233"\nwayland = "host"\n'
+        self.assertRefused(self.cfg(base).errors, "needs force_host")
+        self.assertEqual(self.cfg(base + "force_host = true\n").errors, [])
+        self.assertRefused(self.cfg('version = 1\nrequires = 5\n[zones.tt]\ncolour = "#112233"\nwayland = "none"\n')
+                           .errors, "set requires = 6")
+
+    def test_wayland_socket(self):
+        """The zone's Wayland socket: zone-wayland's (zone), the host's (host), none (none)."""
+        zone = self._zone_mod()
+        zone.tool = lambda name: f"/usr/bin/{name}"  # (no bwrap in a build sandbox)
+        t = Path(tempfile.mkdtemp())
+        host = socket.socket(socket.AF_UNIX)
+        host.bind(str(t / "wayland-5"))
+        zrt = t / "zrt"
+        zrt.mkdir()
+        ctx = socket.socket(socket.AF_UNIX)
+        ctx.bind(str(zrt / "wayland-0"))
+        old = {k: os.environ.get(k) for k in ("WAYLAND_DISPLAY", "XDG_RUNTIME_DIR")}
+        try:
+            os.environ.update(WAYLAND_DISPLAY="wayland-5", XDG_RUNTIME_DIR=str(t))
+            self.assertEqual(zone.host_wayland_socket(), str(t / "wayland-5"))
+            os.environ["WAYLAND_DISPLAY"] = str(t / "wayland-5")  # a path works too
+            self.assertEqual(zone.host_wayland_socket(), str(t / "wayland-5"))
+            os.environ["WAYLAND_DISPLAY"] = "wayland-404"
+            self.assertIsNone(zone.host_wayland_socket())
+            (t / "plain").write_text("")
+            os.environ["WAYLAND_DISPLAY"] = "plain"  # not a socket
+            self.assertIsNone(zone.host_wayland_socket())
+            os.environ["WAYLAND_DISPLAY"] = "wayland-5"
+            for wl, src in [("zone", str(zrt / "wayland-0")), ("host", str(t / "wayland-5")), ("none", None)]:
+                z = self.cfg(f'version = 1\n[zones.tt]\ncolour = "#112233"\nwayland = "{wl}"\n').zones["tt"]
+                a = zone.bwrap_argv(z, t / "zdir", zrt, "none", [])
+                binds = [a[i + 1] for i, x in enumerate(a) if x == "--bind" and a[i + 2].endswith("/wayland-0")]
+                with self.subTest(wayland=wl):
+                    self.assertEqual(binds, [src] if src else [])
+                    self.assertEqual("WAYLAND_DISPLAY" in " ".join(a), src is not None)
+        finally:
+            host.close()
+            ctx.close()
+            for k, v in old.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+            shutil.rmtree(t, ignore_errors=True)
+
     def test_binds_never_list(self):
         for path, why in [("~/.ssh", "is"), ("~", "never allowed"), ("/", "never allowed"),
                           ("/home", "never allowed"), ("~/.config", "contains"),
@@ -1675,6 +1729,8 @@ os.write(w, b"\\n"); os.close(w)
         base = zone.settings_hash(z())
         self.assertEqual(zone.settings_hash(z(supervisor="spawn", start_timeout="2m", linger="")), base)
         self.assertNotEqual(zone.settings_hash(z(linger="10m")), base)
+        self.assertEqual(zone.settings_hash(z(wayland="zone")), base)  # the default: no zone looks changed
+        self.assertNotEqual(zone.settings_hash(z(wayland="host")), base)
         self.assertNotEqual(zone.settings_hash(z(dns="public")), base)
         # apps_running: bwrap (1), zone-init and its helpers are not apps
         replies = []
