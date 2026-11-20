@@ -21,7 +21,9 @@ const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-way
 const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link"];
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // never a panic on an argument that is not UTF-8 (std::env::args would): lossy here,
+    // and the commands that take paths say so
+    let args: Vec<String> = std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
     match args.first().map(String::as_str) {
         Some("--version") | Some("-V") => {
             println!("appzones-helper {}", env!("CARGO_PKG_VERSION"));
@@ -47,23 +49,40 @@ fn main() -> ExitCode {
     }
 }
 
-/// `check-mount-source --home H --code-dir C [--denied-file F] PATH...`: for each PATH, a
-/// JSON line: null (allowed) or the refusal, as zonecfg.mount_source_error says it.
+/// `check-mount-source --home H --code-dir C [--denied-file F] [--list-denied] PATH...`:
+/// for each PATH, a JSON line: null (allowed) or the refusal, as zonecfg.mount_source_error
+/// says it; with --list-denied first the never-list itself, as one JSON list.
 fn check_mount_source(args: &[String]) -> u8 {
-    let mut policy = policy::Policy { home: String::new(), code_dir: String::new(), denied_file: None };
-    let mut paths = Vec::new();
+    const USAGE: &str = "usage: appzones-helper check-mount-source --home H --code-dir C [--denied-file F] \
+                         [--list-denied] PATH...";
+    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None };
+    let (mut paths, mut list) = (Vec::new(), false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
+        let value = matches!(a.as_str(), "--home" | "--code-dir" | "--denied-file");
+        let v = if value { it.next() } else { None };
+        if value && v.is_none() {
+            eprintln!("{USAGE}");
+            return 2;
+        }
         match a.as_str() {
-            "--home" => policy.home = it.next().cloned().unwrap_or_default(),
-            "--code-dir" => policy.code_dir = it.next().cloned().unwrap_or_default(),
-            "--denied-file" => policy.denied_file = it.next().cloned(),
+            "--home" => policy.home = v.cloned().unwrap_or_default().into(),
+            "--code-dir" => policy.code_dir = v.cloned().unwrap_or_default().into(),
+            "--denied-file" => policy.denied_file = v.cloned().map(Into::into),
+            "--list-denied" => list = true,
             _ => paths.push(a.clone()),
         }
     }
     if policy.home.is_empty() || policy.code_dir.is_empty() {
-        eprintln!("usage: appzones-helper check-mount-source --home H --code-dir C [--denied-file F] PATH...");
+        eprintln!("{USAGE}");
         return 2;
+    }
+    if list {
+        let denied: Vec<String> = match policy.denied_paths() {
+            Ok(d) => d.iter().map(|p| String::from_utf8_lossy(p).into_owned()).collect(),
+            Err(e) => vec![format!("error: {e}")],
+        };
+        println!("{}", serde_json::to_string(&denied).unwrap_or_else(|_| "[]".into()));
     }
     for p in paths {
         println!("{}", serde_json::to_string(&policy.mount_source_error(&p)).unwrap_or_else(|_| "null".into()));

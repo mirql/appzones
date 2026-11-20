@@ -101,8 +101,10 @@ outside `/usr` works with the Rust helper.
   `mount_source_error`, `kind_error`, the name rules (`helper/src/policy.rs`). Changed while
   building it: the Python `zonecfg` keeps its own copy for binds and `appzones check` (they
   should not need the helper), and a differential test (`DifferentialPolicyTest`, the
-  flake check `policy-rust`) runs both on the same paths, every never-list entry included,
-  and wants the same answer and message for each: a path added on one side only fails it.
+  flake check `policy-rust`) compares both never-lists entry by entry (an entry added on
+  one side only fails it) and both answers, with their messages, for the same paths. Where
+  it cannot be sure (a symlink loop, a directory it cannot list, a NUL byte in the host's
+  file) the Rust one refuses; Python would fail with an error there too.
   The root step uses only the Rust one. Parity: Python's `os.path.realpath` is non-strict (a home that does not exist yet);
   `fnmatch`'s `*` matches `/` and `.`, unlike Rust glob crates.
 - **The mount helper as its own executable**, `appzones-mount-helper`, not a command of

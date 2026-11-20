@@ -2070,11 +2070,11 @@ class AgentProtocolTest(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("APPZONES_TEST_HELPER"), "needs $APPZONES_TEST_HELPER (the Rust helper)")
 class DifferentialPolicyTest(unittest.TestCase):
-    """The never-list for runtime mounts in Rust (the root step's) gives the same answer, with
-    the same message, as zonecfg.mount_source_error, for every path here: every entry of
-    zonecfg.denied_paths() (so a new one on the Python side alone fails this test), what
-    contains it and what is inside it, symlinks to them, the system trees, the host's own
-    additions, appzones' code directory, files, a missing path."""
+    """The never-list for runtime mounts in Rust (the root step's) is zonecfg's: both lists
+    are the same, entry by entry and in order (so an entry added on one side only fails
+    this test), and both give the same answer, with the same message, for every path here:
+    every entry, what contains it and what is inside it, symlinks to them, the system
+    trees, the host's own additions, appzones' code directory, files, a missing path."""
 
     def test_same_answers(self):
         tmp = tempfile.TemporaryDirectory()
@@ -2112,6 +2112,7 @@ class DifferentialPolicyTest(unittest.TestCase):
                     (d / "inner").mkdir(parents=True, exist_ok=True)
                 paths += [str(d), str(d.parent), str(d / "inner")]
             want = [z.mount_source_error(p) for p in paths]
+            want_list = [str(d) for d in z.denied_paths()]
         finally:
             sys.path.remove(str(HERE))
             for k, v in saved.items():
@@ -2120,9 +2121,10 @@ class DifferentialPolicyTest(unittest.TestCase):
                 else:
                     os.environ[k] = v
         out = subprocess.run([os.environ["APPZONES_TEST_HELPER"], "check-mount-source", "--home", str(home),
-                              "--code-dir", str(z.CODE_DIR), "--denied-file", str(denied), *paths],
+                              "--code-dir", str(z.CODE_DIR), "--denied-file", str(denied), "--list-denied", *paths],
                              capture_output=True, text=True, check=True).stdout.splitlines()
-        got = [json.loads(line) for line in out]
+        self.assertEqual(json.loads(out[0]), want_list)
+        got = [json.loads(line) for line in out[1:]]
         self.assertEqual(len(got), len(paths))
         diffs = [(p, w, g) for p, w, g in zip(paths, want, got) if w != g]
         self.assertEqual(diffs, [], "\n".join(f"{p}:\n  python: {w}\n  rust:   {g}" for p, w, g in diffs))
