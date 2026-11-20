@@ -122,19 +122,16 @@ def link_ok(url: str) -> bool:
     return url.startswith(("http://", "https://")) and len(url) < 8000 and not any(c in url for c in "\n\r\0")
 
 
-def open_in_zone(target: str, url: str) -> int:
-    """`appzones _link TARGET URL`: open URL in zone TARGET's browser (its first browser
-    in [apps]); 0 when started, 1 when there is none (or URL is not a link)."""
-    if not link_ok(url):
-        return 1
+def link_browser(target: str, url: str) -> str | None:
+    """For `appzones _link TARGET URL`: zone TARGET's browser (its first in [apps]) when
+    URL is a link and TARGET a zone with one, else None (and says why)."""
+    if not link_ok(url) or not zonecfg.NAME_RE.fullmatch(target):
+        return None
     cfg = zonecfg.load(common.CONFIG)
     app = browser_for(cfg, target) if not cfg.errors else None
     if not app:
         print(f"[zone] links: no browser declared for zone {target}", flush=True)
-        return 1
-    subprocess.Popen([sys.executable, str(common.HERE / "zone.py"), "run", target, app, url],
-                     stdin=subprocess.DEVNULL, start_new_session=True)
-    return 0
+    return app
 
 
 def handle_link(srv: socket.socket, command: list[str]) -> None:

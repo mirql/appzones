@@ -400,6 +400,8 @@ def run_plan(plan: dict, notify_fd: int | None, stopped: list[int]) -> int:
 
     signal.signal(signal.SIGTERM, stop_asked)
     signal.signal(signal.SIGINT, stop_asked)
+    if stopped:  # asked to stop between the two parts: no helper starts
+        return abort("")
     links_srv = None
     if plan["links"]:
         links_srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
