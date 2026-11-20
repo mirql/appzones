@@ -591,6 +591,29 @@ os.write(w, b"\\n"); os.close(w)
                 if v is not None:
                     os.environ[k] = v
 
+    def test_zone_init_argv(self):
+        """zone-init: the host's Python and zone_init.py, or with the Rust helper the binary
+        bound read-only at /run/appzones-helper and run from there."""
+        zone = self._zone_mod()
+        t = Path(self.tmp.name)
+        (t / "appzones-helper").write_text("#!/bin/sh\n")
+        (t / "appzones-helper").chmod(0o755)
+        zone.HERE = t
+        zone.HELPER = ""
+        a = zone.zone_init_argv()
+        self.assertEqual(a[0], "--")
+        self.assertTrue(a[-1].endswith("zone_init.py"))
+        zone.HELPER = "rust"
+        saved = {k: os.environ.pop(k, None) for k in ("APPZONES_BIN_APPZONES_HELPER", "ZONES_BIN_APPZONES_HELPER")}
+        try:
+            self.assertEqual(zone.zone_init_argv(), ["--ro-bind", str((t / "appzones-helper").resolve()),
+                                                     "/run/appzones-helper", "--", "/run/appzones-helper",
+                                                     "zone-init"])
+        finally:
+            for k, v in saved.items():
+                if v is not None:
+                    os.environ[k] = v
+
     def test_server_by_lock(self):
         """A server is found by the zone's lock it holds, whatever its program is called (a
         Rust one too); a process that does not hold that lock is not a server."""

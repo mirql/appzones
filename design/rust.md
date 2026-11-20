@@ -161,6 +161,7 @@ dependencies. aarch64 is not solved by Rust (x86_64 in nix-ld paths, `flatpak_in
 |---|---|---|---|
 | Skeleton (no code yet, one dependency) | about 45 s with the first toolchain download | 393 KiB, static-pie (musl), stripped; no runtime dependencies | `cargo test` runs in the Nix build; `make` builds it where cargo is present |
 | zone-wayland (about 120 lines, replacing 89 lines of C) | about 25 s for the crate (cargo, release, LTO) | 513 KiB static; no libwayland at build or run time | new crates: wayland-client, -protocols, rustix, libc (and, through them, wayland-backend, bitflags, smallvec, downcast-rs, linux-raw-sys; at build time only: wayland-scanner, quick-xml, proc-macro2, quote); `vm-rust`: the 159 checks pass, as `vm` |
+| zone-init (about 1,000 lines with DNS and tests, replacing 770 lines of Python) | about 40 s for the crate | 785 KiB static | new crate: serde_json; `AgentProtocolTest` (7) passes against it (flake check `agent-protocol-rust`); `vm-rust`: the 159 checks pass with zone-init in Rust in every zone (shell, zone bus, `bus = "none"`, DNS with TCP fallback, crash containment, linger, busy umount); no Python of appzones' runs in a zone, except the `xdg-open` shim for `links = "zone"` |
 
 ## When to stop
 
