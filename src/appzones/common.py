@@ -96,6 +96,17 @@ def rust_helper(command: str) -> str | None:
     return next((p for p in candidates if p and implements(p, command)), None)
 
 
+def zone_helper() -> str | None:
+    """The Rust helper bound into zones (it runs zone-init there), or None."""
+    return rust_helper("zone-init") if HELPER == "rust" and "zone-init" in RUST_HELPERS else None
+
+
+def zone_helper_has(command: str) -> bool:
+    """The helper bound into zones implements COMMAND too (an older one may not)."""
+    h = zone_helper()
+    return bool(h) and command in RUST_HELPERS and implements(h, command)
+
+
 def helper_argv(name: str) -> list[str] | None:
     """The command that runs helper NAME: $APPZONES_BIN_<NAME> when set (an explicit
     choice wins), else `appzones-helper NAME` with the Rust helper, else the program NAME

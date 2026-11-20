@@ -244,6 +244,9 @@ def unknown_key(where: str, k: str, known) -> str:
     return f"{where}unknown key {k!r}" + (f" (did you mean {near[0]!r}?)" if near else "")
 
 # ── never-lists ────────────────────────────────────────────────────────────
+CODE_DIR = Path(__file__).resolve().parent  # zonecfg.py sits next to zone.py, also when installed
+
+
 def denied_paths() -> list[Path]:
     h = HOME
     rel = [".ssh", ".gnupg", ".config/sops", ".password-store", ".local/share/keyrings",
@@ -258,6 +261,9 @@ def denied_paths() -> list[Path]:
            ".config/nix", ".config/git", ".gitconfig", ".config/kwalletrc"]
     out = [Path(p) for p in ("/run/secrets", "/run/user", "/var/lib/sops-nix", "/etc/ssh", "/nix/var")]
     out += [h / r for r in rel]
+    # appzones' own code, which the host runs (also from a checkout): a zone that could
+    # write it would run its code on the host
+    out.append(CODE_DIR)
     state = os.environ.get("XDG_STATE_HOME")
     if state and os.path.isabs(state):
         out.append(Path(state) / "appzones")  # the logs, at a custom state location

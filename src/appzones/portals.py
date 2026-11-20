@@ -91,7 +91,7 @@ PY_OPEN_LINK = ("{python} -c 'import socket,sys; s=socket.socket(socket.AF_UNIX)
 def open_link_command(python: str) -> str:
     """What the xdg-open shim runs for an http(s) link: with the Rust helper, its open-link
     from the read-only copy in the zone (fs.ZONE_HELPER); else PYTHON with a one-liner."""
-    if common.HELPER == "rust" and "open-link" in common.RUST_HELPERS:
+    if common.zone_helper_has("open-link"):  # checked on the very helper bound into the zone
         return f"{fs.ZONE_HELPER} open-link"
     return PY_OPEN_LINK.format(python=python)
 

@@ -83,6 +83,7 @@ preflight: $(if $(filter rust,$(HELPER)),helper)
 		     echo "  cargo for \`make\`, or HELPER_BIN=PATH"; exit 1; }
 	@[ -n "$(PYTHON)" ] && "$(PYTHON)" -c 'import sys; sys.exit(sys.version_info < (3, 11))' \
 		|| { echo "appzones needs Python 3.11 or newer (PYTHON=$(PYTHON))"; exit 1; }
+	@case "$(PREFIX)" in /*) ;; *) echo "PREFIX must be an absolute path (not $(PREFIX))"; exit 1;; esac
 	@case "$(PREFIX)" in /usr|/usr/*) ;; *) [ "$(HELPER)" = rust ] \
 		|| { echo "PREFIX must be under /usr (a zone sees /usr, not $(PREFIX)), or HELPER=rust (the zone then needs"; \
 		     echo "  only the helper, which appzones binds into it)"; exit 1; };; esac

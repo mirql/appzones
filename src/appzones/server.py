@@ -133,8 +133,8 @@ def install_error(here: Path, layout: str) -> str | None:
     xdg-open shim's link part) run inside the zone, which sees only the host's /nix/store
     (NixOS) or /usr. With the Rust helper they are a read-only copy of it bound into the
     zone, and HERE does not matter."""
-    if common.HELPER == "rust" and all(c in common.RUST_HELPERS for c in IN_ZONE):
-        return None
+    if all(common.zone_helper_has(c) for c in IN_ZONE):
+        return None  # (appzones' code directory is on the never-list: no zone can write it)
     seen = "/nix/store" if layout == "nixos" else "/usr"
     if here.resolve().is_relative_to(seen):
         return None
