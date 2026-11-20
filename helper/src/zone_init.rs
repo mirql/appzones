@@ -165,7 +165,7 @@ fn child_setup(ctty: bool) -> std::io::Result<()> {
         }
         // a child never gets zone-init's descriptors: if this fails (a kernel before 5.11),
         // the spawn fails
-        if libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, libc::CLOSE_RANGE_CLOEXEC as u32) < 0 {
+        if libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, libc::CLOSE_RANGE_CLOEXEC) < 0 {
             return Err(std::io::Error::last_os_error());
         }
     }
@@ -711,7 +711,7 @@ impl Init {
                 let src = sd.join(&n);
                 let Ok(text) = std::fs::read(&src) else { continue };
                 let text = String::from_utf8_lossy(&text);
-                let name = text.lines().filter_map(|l| l.strip_prefix("Name=")).last().map(str::trim).unwrap_or("");
+                let name = text.lines().filter_map(|l| l.strip_prefix("Name=")).next_back().map(str::trim).unwrap_or("");
                 if !n.ends_with(".service") || name.is_empty() || ZBUS_SKIP.iter().any(|s| name.starts_with(s)) {
                     continue;
                 }

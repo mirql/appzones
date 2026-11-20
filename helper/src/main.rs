@@ -3,22 +3,27 @@
 //!   appzones-helper zone-init          the agent inside a zone (pid 2, after bwrap)
 //!   appzones-helper open-link URL      in a zone: hand an http(s) link to the host
 //!   appzones-helper zone-wayland SOCKET APP_ID INSTANCE
+//!   appzones-helper serve --plan FILE --lock-fd L [--notify-fd N]
+//!                                      the part of `appzones serve` that holds a zone
 //!
 //! Optional (design/rust.md): installed with `make install HELPER=rust` or the Nix package
 //! appzones-rust. Each command keeps the interface of the Python or C part it replaces.
 
 use std::process::ExitCode;
 
+mod host_dns;
 mod open_link;
 mod policy;
+mod serve;
 mod zone_dns;
 mod zone_init;
 mod zone_wayland;
 
-const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-wayland SOCKET APP_ID INSTANCE | --version | --commands";
+const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-wayland SOCKET APP_ID INSTANCE | \
+                     serve --plan FILE --lock-fd L [--notify-fd N] | --version | --commands";
 
 /// The commands this build implements (`--commands`).
-const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link"];
+const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve"];
 
 fn main() -> ExitCode {
     // never a panic on an argument that is not UTF-8 (std::env::args would): lossy here,
@@ -44,6 +49,7 @@ fn main() -> ExitCode {
         Some("zone-wayland") => ExitCode::from(zone_wayland::main(&args[1..])),
         Some("zone-init") => ExitCode::from(zone_init::main(&args[1..])),
         Some("open-link") => ExitCode::from(open_link::main(&args[1..])),
+        Some("serve") => ExitCode::from(serve::main(&args[1..])),
         _ => {
             eprintln!("{USAGE}");
             ExitCode::from(2)
