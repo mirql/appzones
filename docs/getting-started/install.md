@@ -39,7 +39,9 @@ Tested on Ubuntu 24.04 and Debian 12, in VMs, for every change
 
 **The package.** Each [release](https://github.com/mirql/appzones/releases/latest)
 has a `.deb` for amd64 (built on Debian 12; tested on Debian 12 and Ubuntu 24.04).
-Download `appzones_VERSION-1_amd64.deb` from there, then:
+Installed from a checkout before? Remove that first (`sudo make uninstall` in the
+checkout, with the options you installed with), or its `/usr/local/bin/appzones`
+comes first on `PATH`. Download `appzones_VERSION-1_amd64.deb` from there, then:
 
 ```bash
 sudo apt install ./appzones_*_amd64.deb   # also fetches bubblewrap, passt, nftables, ...

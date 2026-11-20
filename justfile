@@ -63,10 +63,20 @@ release version:
     echo "$notes"
     read -rp "Publish v{{version}} on ${sha:0:7} with these notes? [y/N] " ok
     [ "$ok" = y ] || exit 1
-    gh release create "v{{version}}" --target "$sha" --title "appzones {{version}}" --notes "$notes"
-    # the .deb, built from exactly that commit
+    # the .deb, built from exactly that commit, before anything is published
     deb=$(nice -n 19 nix build --no-link --print-out-paths "github:mirql/appzones/$sha#deb")
-    gh release upload "v{{version}}" "$deb"/appzones_{{version}}-1_amd64.deb
+    gh release create "v{{version}}" --target "$sha" --title "appzones {{version}}" --notes "$notes"
+    gh release upload --clobber "v{{version}}" "$deb"/appzones_{{version}}-1_amd64.deb \
+        || echo "the .deb was not attached: just release-deb {{version}}"
+
+# Attach (again) the .deb to release VERSION, built from the commit its tag points to
+release-deb version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git fetch -q --tags origin
+    sha=$(git rev-list -n 1 "v{{version}}")
+    deb=$(nice -n 19 nix build --no-link --print-out-paths "github:mirql/appzones/$sha#deb")
+    gh release upload --clobber "v{{version}}" "$deb"/appzones_{{version}}-1_amd64.deb
 
 # Format the Nix files
 fmt:
