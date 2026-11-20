@@ -83,7 +83,9 @@ preflight: $(if $(filter rust,$(HELPER)),helper)
 		     echo "  cargo for \`make\`, or HELPER_BIN=PATH"; exit 1; }
 	@[ -n "$(PYTHON)" ] && "$(PYTHON)" -c 'import sys; sys.exit(sys.version_info < (3, 11))' \
 		|| { echo "appzones needs Python 3.11 or newer (PYTHON=$(PYTHON))"; exit 1; }
+	@# absolute and canonical (no . or .. or //), so the /usr checks below see where it really is
 	@case "$(PREFIX)" in /*) ;; *) echo "PREFIX must be an absolute path (not $(PREFIX))"; exit 1;; esac
+	@[ "$(PREFIX)" = "$(abspath $(PREFIX))" ] || { echo "PREFIX must be a plain path, without . or .. ($(PREFIX))"; exit 1; }
 	@case "$(PREFIX)" in /usr|/usr/*) ;; *) [ "$(HELPER)" != rust ] || \
 		{ "$(realpath $(HELPER_BIN))" --commands | grep -qx zone-init && "$(realpath $(HELPER_BIN))" --commands \
 		  | grep -qx open-link; } || { echo "PREFIX outside /usr needs a Rust helper with zone-init and open-link"; \
