@@ -5,6 +5,14 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`wayland`** (zones release 6): `"zone"` (the default, the zone's own security
+  context, as before), `"none"` (no Wayland), or `"host"`: the host's Wayland
+  socket, for compositors without `wp_security_context_v1`. GNOME's Mutter 46,
+  Ubuntu's default, has none, and offers apps no screencopy, clipboard snooping or
+  virtual input anyway, so desktop apps in zones work there with `wayland = "host"`.
+  Their windows are not marked as the zone's. Warned by `appzones check`; refused in
+  a zone named `untrusted` without `force_host`.
+
 ## 0.9.1
 
 Zones start under GNOME (Ubuntu's default desktop), Weston and sway before 1.9: without a Wayland socket there, since those compositors have no security-context protocol. Before, a zone did not start at all under them. And a .deb for Debian 12 and Ubuntu 24.04, attached to the release.

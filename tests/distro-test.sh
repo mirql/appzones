@@ -81,7 +81,7 @@ pass "$v"
 as_alice 'mkdir -p ~/.config/appzones ~/proj ~/data ~/.ssh && echo hello >~/proj/f && echo data >~/data/x && echo secret >~/.ssh/id_test'
 as_alice 'cat >~/.config/appzones/zones.toml <<EOF
 version = 1
-requires = 5
+requires = 6
 [defaults]
 devices = []
 [zones.off]
@@ -90,6 +90,10 @@ network = "none"
 binds = [{ path = "~/proj", mode = "rw" }]
 [zones.web]
 colour = "#89b4fa"
+[zones.gui]
+colour = "#f38ba8"
+network = "none"
+wayland = "host"
 EOF'
 as_alice "appzones check" | grep -q "^ok:" || fail "appzones check"
 pass "appzones check"
@@ -163,6 +167,17 @@ grep -q "no security-context protocol" /home/alice/.local/state/appzones/off.log
 as_alice 'appzones stop off'
 pkill -u alice weston || true
 pass "a compositor without the security-context protocol (Weston): the zone starts without Wayland, says why"
+# wayland = "host" for such a compositor: the host's socket as the zone's wayland-0
+as_alice '(weston --backend=headless-backend.so --socket=wayland-9 --idle-time=0 >/tmp/weston-alice.log 2>&1 &); sleep 3; test -S /run/user/1000/wayland-9' \
+  || fail "weston did not start again"
+out=$(timeout 120 su alice -s /bin/sh -c "$UW sh -c 'appzones run --wait gui -- sh -c \"echo wl=\\\$WAYLAND_DISPLAY; wayland-info | grep -c wl_compositor\" </dev/null'" 2>&1) \
+  || fail "wayland = host: $out"
+echo "$out"
+echo "$out" | grep -qx "wl=wayland-0" && echo "$out" | grep -qx 1 || fail "wayland = host: $out"
+grep -q 'wayland = "host": the host' /home/alice/.local/state/appzones/gui.log || fail "wayland = host not logged"
+as_alice 'appzones stop gui'
+pkill -u alice weston || true
+pass "wayland = \"host\": the zone's apps reach the host's compositor (Weston) through wayland-0"
 
 # a server without the desktop's parts: a session bus is set (as over SSH with systemd),
 # but xdg-dbus-proxy and dbus-daemon are not there; and with the C zone-wayland also

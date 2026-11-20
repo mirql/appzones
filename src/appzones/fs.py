@@ -477,7 +477,12 @@ def bwrap_argv(z: zonecfg.Zone, zdir: Path, zrt: Path, network: str, extra_path:
               "XCURSOR_SIZE", "QT_QPA_PLATFORMTHEME", "GTK_THEME", "GDK_SCALE", "QT_SCALE_FACTOR"):
         if os.environ.get(k):
             env[k] = os.environ[k]
-    if (zrt / "wayland-0").exists():
+    host_wl = common.host_wayland_socket() if s["wayland"] == "host" else None
+    if host_wl:
+        # wayland = "host": the compositor's own socket, no security context (warned by check)
+        a += ["--bind", host_wl, f"{common.ZRT}/wayland-0"]
+        env["WAYLAND_DISPLAY"] = "wayland-0"
+    elif s["wayland"] == "zone" and (zrt / "wayland-0").exists():
         a += ["--bind", str(zrt / "wayland-0"), f"{common.ZRT}/wayland-0"]
         env["WAYLAND_DISPLAY"] = "wayland-0"
     if (zrt / "bus").exists():
