@@ -606,7 +606,7 @@ version = 1
 
 
 def new(name: str, write: bool) -> int:
-    if not zonecfg.NAME_RE.match(name) or name in zonecfg.RESERVED:
+    if not zonecfg.NAME_RE.fullmatch(name) or name in zonecfg.RESERVED:
         die(f"zone name {name!r} must match {zonecfg.NAME_RE.pattern} and not be one of {sorted(zonecfg.RESERVED)}")
     if not write:
         cfg = load_cfg(quiet=True) if os.path.lexists(common.CONFIG) else zonecfg.Config({}, {}, [])

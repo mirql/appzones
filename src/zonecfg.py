@@ -109,7 +109,7 @@ def _usb(v):
 def _links(v):
     if v in ("portal", "zone"):
         return None
-    if isinstance(v, str) and v.startswith("zone:") and NAME_RE.match(v[5:]):
+    if isinstance(v, str) and v.startswith("zone:") and NAME_RE.fullmatch(v[5:]):
         return None
     return "must be 'portal' (host default browser), 'zone' (this zone's browser) or 'zone:NAME'"
 
@@ -570,7 +570,7 @@ def load_text(text: str, path: str | Path = "zones.toml") -> Config:
             errors.append(unknown_key("[defaults] ", k, KEYS))
     zones: dict[str, Zone] = {}
     for zname, zraw in raw.get("zones", {}).items():
-        if not NAME_RE.match(zname):
+        if not NAME_RE.fullmatch(zname):
             errors.append(f"zone name {zname!r} must match {NAME_RE.pattern}")
         elif zname in RESERVED:
             errors.append(f"zone name {zname!r} is reserved ({', '.join(sorted(RESERVED))})")
@@ -738,7 +738,7 @@ def validate(zones: dict[str, Zone], apps: dict[str, dict]) -> list[str]:
         if not isinstance(a, dict) or not isinstance(a.get("zones", []), list) or not isinstance(a.get("args", {}), dict):
             errs.append(f"{p} must be a table with command = [...], zones = [...], args = {{ ZONE = [...] }}")
             continue
-        if not NAME_RE.match(aname):
+        if not NAME_RE.fullmatch(aname):
             errs.append(f"{p} app id must match {NAME_RE.pattern}")
         for k in a:
             if k not in APP_KEYS:

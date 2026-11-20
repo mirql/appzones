@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- `appzones mount`: the zone's copy of the folder is private. Before, a mount made
+  under the source afterwards (a USB stick, a FUSE mount) also showed up in the zone.
+- Zone and mount names with a trailing newline are refused (`fullmatch`, not `match`);
+  `appzones restart` still detaches a mount under such a name.
 - **zone-init refuses an argv that is not a list**: `run` took a string as a
   program name, and `shell` did not check its `argv` at all. Found by a new test
   of the agent protocol (the requests and answers between the CLI and zone-init),
