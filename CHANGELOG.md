@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.11.2
+
+On Fedora, internet zones log again: what runs inside them (zone-init, the apps) was lost, because SELinux gave pasta and everything it starts `/dev/null` as output. Restart running zones after the update.
+
 - **Logs from inside internet zones on Fedora**: with Fedora's SELinux policy for pasta
   (passt-selinux), pasta may not use the server's stdout (its log file, or the journal),
   so the kernel gave pasta, and everything it starts, `/dev/null`: zone-init's lines
