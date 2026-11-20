@@ -13,7 +13,8 @@ The config schema has its own release number (`requires = N` in
   HELPER=rust` install it at the same path, so the sudo rule does not change.
 - `appzones mount`: the zone's copy of the folder is private. Before, a mount made
   under the source afterwards (a USB stick, a FUSE mount) also showed up in the zone.
-- Zone and mount names with a trailing newline are refused (`fullmatch`, not `match`).
+- Zone and mount names with a trailing newline are refused (`fullmatch`, not `match`);
+  `appzones restart` still detaches a mount under such a name.
 
 - **The never-list for runtime mounts in Rust** (the experiment, #97), for the
   Rust mount helper that follows: `helper/src/policy.rs`, the port of
