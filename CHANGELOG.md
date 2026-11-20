@@ -5,47 +5,28 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
-- **The mount helper in Rust** (the experiment, #97): `appzones-mount-helper`, the
-  root step of `appzones mount`, as its own small executable (glibc, for NSS; only
-  `libc` as a dependency; every syscall in one module, the only unsafe code; no
-  environment read but `SUDO_UID`). Same checks and messages as the Python one, with
-  the never-list from `policy.rs`. The `appzones-rust` package and `make install
-  HELPER=rust` install it at the same path, so the sudo rule does not change.
-
-- **The never-list for runtime mounts in Rust** (the experiment, #97), for the
-  Rust mount helper that follows: `helper/src/policy.rs`, the port of
-  `zonecfg.mount_source_error` with the same messages. A differential test runs
-  both on the same paths and wants the same answer for each.
-
-- **No Python in a zone with the Rust helper** (the experiment, #97): the
-  `xdg-open` shim of `links = "zone"` zones runs `appzones-helper open-link`
-  instead of the host's Python, so nothing of appzones but the bound helper runs
-  in a zone. appzones with the Rust helper may then be installed outside `/usr`
-  (`make install HELPER=rust PREFIX=/opt/appzones`); outside `/usr` the sudo rule
-  for `appzones mount` is written only when the mount helper and every directory
-  above it belong to root and nobody else can write them. appzones' own code
-  directory is now on the never-list (no bind or mount is it, contains it or is
-  inside it): the host runs that code, also from a checkout, so no zone may
-  write it.
-
-- **zone-init in Rust** (the experiment, #97): with the Rust helper, the server binds
-  `appzones-helper` read-only at `/run/appzones-helper` in the zone and runs its
-  `zone-init` there, instead of the host's Python with `zone_init.py`. The same
-  protocol (it passes `AgentProtocolTest`), DNS, zone bus, pty shell, reaping and
-  crash containment; the VM test passes with it.
-
-- **zone-wayland in Rust** (the experiment, #97): `appzones-helper zone-wayland`
-  replaces the C helper when appzones is installed with the Rust helper (the Nix
-  package `appzones-rust`, or `make install HELPER=rust`, which set
-  `APPZONES_HELPER=rust` in the `appzones` wrapper). Same arguments, readiness line
-  and lifetime; a pure-Rust Wayland client, so no libwayland. `APPZONES_BIN_ZONE_WAYLAND`
-  still wins over both. The NixOS VM test runs as `vm` and as `vm-rust`.
-
-- **The Rust helper, a skeleton** (the experiment on the branch `rust-version`,
-  `design/rust.md`, #97): `helper/` builds one static binary, `appzones-helper`
-  (`nix build .#helper`; `make` builds it where cargo and rustc 1.85+ are
-  present, else a note with the reason in `build/helper.log`, and `make install`
-  installs it). Its commands are not implemented yet, and nothing uses it.
+- **Optional Rust helpers** (#97, `design/rust.md`): everything that runs inside a
+  zone (zone-init, the link part of the `xdg-open` shim), zone-wayland, and the
+  mount helper (the root step of `appzones mount`) also exist in Rust. Install them
+  with `make` (needs cargo and rustc 1.85+), then `sudo make install HELPER=rust`, or
+  the Nix package `appzones-rust`; Python and C stay the default.
+  - No Python of the host's runs in a zone: the server binds the static
+    `appzones-helper` read-only at `/run/appzones-helper` and runs its `zone-init`.
+    appzones may then be installed outside `/usr` (`PREFIX=/opt/appzones`); there
+    the sudo rule is written only when the mount helper and every directory above
+    it belong to root alone.
+  - The mount helper is its own executable (glibc, for NSS; only `libc`; every
+    syscall in one module; no environment read but `SUDO_UID`), with the same checks
+    and messages, at the same path, so the sudo rule does not change.
+  - zone-wayland is a pure-Rust Wayland client (no libwayland).
+  - The never-list exists twice (`helper/src/policy.rs` for the root step,
+    `zonecfg` for binds and `appzones check`); a differential test keeps them equal.
+  - `just test-rust` runs `cargo test`, the protocol and never-list tests, and the
+    NixOS VM and distro tests with the Rust helpers; `just audit` checks their
+    dependencies (`cargo deny`).
+- **appzones' own code directory is on the never-list**: no bind or mount is it,
+  contains it or is inside it. The host runs that code, also from a checkout, so no
+  zone may write it.
 
 ## 0.8.3
 

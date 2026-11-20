@@ -1,9 +1,9 @@
 # Design: appzones in Rust (experiment)
 
-Status: proposal, on the branch `rust-version`. Nothing here reaches `main` until a step's
-exit criteria hold. PRs for this go into `rust-version`; `main` is merged into it regularly
-(merge commits), so it never drifts far. Reviewed by two other models before work started;
-their points are in this version.
+Status: phase 1 done and back on `main`, as an option chosen at install time (Python stays
+the default); phases 2 and 3 not started (see "Phase 1: the result"). Work went on the
+branch `rust-version`, with `main` merged into it regularly (merge commits). Reviewed by two
+other models before work started; their points are in this version.
 
 ## What and why
 
@@ -121,7 +121,7 @@ Python helper's, and a separate security review of it is written down.
 
 Phase 1 can come back to `main` on its own.
 
-## Phases 2 and 3, if they come
+## Phases 2 and 3, if they come (not now: see the result of phase 1)
 
 - **Phase 2, the configuration**: the rest of `zonecfg` (keys and origins, `[defaults]`,
   `RELEASE`/`SINCE`), with the 80 unit tests as the specification (same results; messages
@@ -167,8 +167,40 @@ dependencies. aarch64 is not solved by Rust (x86_64 in nix-ld paths, `flatpak_in
 | Skeleton (no code yet, one dependency) | about 45 s with the first toolchain download | 393 KiB, static-pie (musl), stripped; no runtime dependencies | `cargo test` runs in the Nix build; `make` builds it where cargo is present |
 | zone-wayland (about 120 lines, replacing 89 lines of C) | about 25 s for the crate (cargo, release, LTO) | 513 KiB static; no libwayland at build or run time | new crates: wayland-client, -protocols, rustix, libc (and, through them, wayland-backend, bitflags, smallvec, downcast-rs, linux-raw-sys; at build time only: wayland-scanner, quick-xml, proc-macro2, quote); `vm-rust`: the 159 checks pass, as `vm` |
 | zone-init (about 1,000 lines with DNS and tests, replacing 770 lines of Python) | about 40 s for the crate | 785 KiB static | new crate: serde_json; `AgentProtocolTest` (7) passes against it (flake check `agent-protocol-rust`); `vm-rust`: the 159 checks pass with zone-init in Rust in every zone (shell, zone bus, `bus = "none"`, DNS with TCP fallback, crash containment, linger, busy umount); no Python of appzones' runs in a zone, except the `xdg-open` shim for `links = "zone"` and `"zone:NAME"` |
-| the mount helper (its own executable) | about 10 s | 341 KiB, glibc (NSS), only `libc` as a dependency | `vm-rust` 163 with every runtime-mount check (refusals through symlinks, as the caller, bad names, without sudo; read-only also from a nested user namespace); `debian12-rust`, `ubuntu2404-rust` mount through the sudo rule with it |
 | open-link (the shim's link part), and the install outside `/usr` | seconds | 785 KiB static (all three commands) | `vm-rust` 162 (the link round trip, no Python in the shim); `debian12-rust`, `ubuntu2404-rust`: installed under `/opt/appzones`, no Python in any zone, `appzones mount` through a sudo rule (written because `/opt/appzones` is root's alone). Phase 1a done |
+| the mount helper (its own executable) | about 10 s | 341 KiB, glibc (NSS), only `libc` as a dependency | `vm-rust` 163 with every runtime-mount check (refusals through symlinks, as the caller, bad names, without sudo; read-only also from a nested user namespace); `debian12-rust`, `ubuntu2404-rust` mount through the sudo rule with it |
+
+## Phase 1: the result
+
+**What it cost.** About 2,650 lines of Rust (tests included) for 1,040 lines of Python and
+89 of C; two binaries, `appzones-helper` (785 KiB, static) and `appzones-mount-helper`
+(341 KiB, glibc); about a minute of build in Nix; a Rust toolchain only for those who choose
+it; six direct dependencies, all pinned (`just audit`: no advisories, permissive licenses
+only). More test time: the VM and distro tests run twice (`just test-rust`, about 15 min).
+Two implementations of the never-list, kept equal by a differential test.
+
+**What it gave.**
+
+- No Python of the host's in any zone: a zone runs only the helper, bound read-only.
+  appzones with it can be installed outside `/usr`.
+- The root step is a small binary: no interpreter, no import path, no environment but
+  `SUDO_UID`, every syscall in one module.
+- zone-wayland without libwayland or C.
+- Tests that hold for any implementation (`AgentProtocolTest`, the differential never-list
+  test, VM checks that name no Python file), and three bugs found and fixed on `main`: an
+  argv given as a string (#102), a mounted folder's copy that was not private (#112),
+  names with a trailing newline (#112).
+
+**Phases 2 and 3: not now.** Phase 2 would put every config key in two languages (or
+replace `zonecfg`, which `appzones check` and the unit tests use without a build); phase 3
+is the largest and riskiest part (`settings_hash`, the handoff to running servers), and
+speed was never the reason. Neither removes Python from the host, which is what would make
+them worth it. Look again when one of these holds: Python itself becomes the obstacle on a
+distribution, a single static binary is asked for, or the Rust helpers have been the
+default for a release without trouble.
+
+**Next.** The Rust helpers stay optional (`appzones-rust`, `make install HELPER=rust`). After
+a release with them, make them the default where cargo is present, if nothing came up.
 
 ## When to stop
 
