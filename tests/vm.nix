@@ -104,6 +104,10 @@ let
   # looks like another appzones installation's zone server (upgrade test)
   oldServer = pkgs.writeTextDir "libexec/appzones/zone.py" "import time; time.sleep(600)\n";
 
+  # a "browser" for tz's links (links = "zone"): the server picks a declared app whose
+  # command names firefox; this one writes the link it gets into the zone's home
+  linkCatcher = pkgs.writeShellScriptBin "firefox-link-catcher" "printf '%s\\n' \"$1\" > \"$HOME/opened-link\"";
+
   fhsHello = pkgs.buildFHSEnv {
     name = "fhs-hello";
     runScript = pkgs.writeShellScript "fhs-hello" "echo fhs-ok";
@@ -163,6 +167,9 @@ let
     zones = ["ta", "tb"]
     [apps.sleeper]
     command = ["sleep", "3600"]
+    zones = ["tz"]
+    [apps.linkcatcher]
+    command = ["${linkCatcher}/bin/firefox-link-catcher"]
     zones = ["tz"]
     [apps.thunar]
     command = ["thunar"]
@@ -583,6 +590,14 @@ pkgs.testers.runNixOSTest {
         # the xdg-open shim (links = "zone") is first on PATH: never writable from inside
         ok("tz", "test -x /run/zone/bin/xdg-open", "xdg-open shim present (links = zone)")
         refused("tz", "touch /run/zone/bin/firefox", "xdg-open shim directory read-only")
+        # a link clicked in tz: the shim, the zone's links.sock, the server, its browser
+        u("rm -f ~/.local/share/appzones/tz/home/opened-link")
+        u("appzones run --wait tz -- xdg-open https://example.com/clicked-in-tz </dev/null 2>&1")
+        machine.wait_until_succeeds(
+            "grep -qx https://example.com/clicked-in-tz /home/alice/.local/share/appzones/tz/home/opened-link", timeout=60)
+        print("PASS  a link clicked in a links = zone zone opens in that zone's browser")
+        rc, out = u("appzones run --wait tz -- xdg-open 'https://example.com/x y' </dev/null 2>&1; echo rc=$?", check=False)
+        assert "rc=0" in out, out  # a space is fine; only http(s) URLs leave the zone this way
         # zones have no /sys/class/net; /proc/net/dev is the zone's own netns
         ok("tb", "[ \"$(tail -n +3 /proc/net/dev | cut -d: -f1 | tr -d ' ')\" = lo ]", "network = none: only lo")
 
