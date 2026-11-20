@@ -59,7 +59,9 @@ What the helper accepts:
   and read. A root-only directory, or one inside a 0700 directory, is
   refused. The never-list is checked on the path of that open directory,
   and the mount is made from the same descriptor (`open_tree`), so nothing
-  can be swapped in between. Mounts below the source do not come along.
+  can be swapped in between. Mounts below the source do not come along,
+  and the zone's copy is private: a mount made under the source later (a USB
+  stick, a FUSE mount) does not show up in the zone.
 - **Where.** Only `<caller's home>/.local/share/appzones/ZONE/mnt/NAME`. ZONE
   and NAME are plain names (no `/`, no `..`). The target is opened with
   `openat2(RESOLVE_NO_SYMLINKS)`, so a symlink anywhere on the path is

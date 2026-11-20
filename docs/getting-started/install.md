@@ -161,7 +161,8 @@ helper for what it replaces; the mount helper keeps its path, so the sudo rule
 stays the same.
 
 **Update and remove.** In the checkout: `git pull && make && sudo make
-install`, then `appzones restart ZONE` for running zones. `sudo make uninstall`
+install` (with the same options as the first time, such as `HELPER=rust` or
+`PREFIX`), then `appzones restart ZONE` for running zones. `sudo make uninstall`
 removes everything `make install` put there; your zones' homes and settings
 stay in `~/.local/share/appzones` and `~/.config/appzones`.
 
