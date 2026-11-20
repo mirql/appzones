@@ -238,12 +238,12 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         return stop_code()
     # the desktop's parts are optional: without their helper (a server, a package
     # without them) the zone starts without them, and says so
-    wayland_helper = common.find_tool("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") else None
+    wayland_helper = common.helper_argv("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") else None
     if os.environ.get("WAYLAND_DISPLAY") and not wayland_helper:
         print(f"[zone] {name}: zone-wayland not found: the zone starts without a Wayland socket "
               "(desktop apps will not open windows; install appzones with zone-wayland)", flush=True)
     elif wayland_helper:
-        h = subprocess.Popen([wayland_helper, str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
+        h = subprocess.Popen([*wayland_helper, str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
                              stdout=subprocess.PIPE,
                              env=dict(os.environ, ZONE_WAYLAND_PARENT=str(os.getpid())))
         helpers.append(h)

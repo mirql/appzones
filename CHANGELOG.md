@@ -5,6 +5,13 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **zone-wayland in Rust** (the experiment, #97): `appzones-helper zone-wayland`
+  replaces the C helper when appzones is installed with the Rust helper (the Nix
+  package `appzones-rust`, or `make install HELPER=rust`, which set
+  `APPZONES_HELPER=rust` in the `appzones` wrapper). Same arguments, readiness line
+  and lifetime; a pure-Rust Wayland client, so no libwayland. `APPZONES_BIN_ZONE_WAYLAND`
+  still wins over both. The NixOS VM test runs as `vm` and as `vm-rust`.
+
 - **The Rust helper, a skeleton** (the experiment on the branch `rust-version`,
   `design/rust.md`, #97): `helper/` builds one static binary, `appzones-helper`
   (`nix build .#helper`; `make` builds it where cargo and rustc 1.85+ are

@@ -559,6 +559,38 @@ os.write(w, b"\\n"); os.close(w)
                 p.kill()
                 p.wait()
 
+    def test_helper_argv(self):
+        """Which zone-wayland runs: an explicit $APPZONES_BIN_ZONE_WAYLAND, else the Rust helper's
+        command when appzones was installed with it, else the program."""
+        zone = self._zone_mod()
+        t = Path(self.tmp.name)
+        for name in ("zone-wayland", "appzones-helper"):
+            (t / name).write_text("#!/bin/sh\n")
+            (t / name).chmod(0o755)
+        zone.HERE = t
+        saved = {k: os.environ.pop(k, None) for k in ("APPZONES_BIN_ZONE_WAYLAND", "ZONES_BIN_ZONE_WAYLAND",
+                                                       "APPZONES_BIN_APPZONES_HELPER", "ZONES_BIN_APPZONES_HELPER",
+                                                       "PATH")}
+        (t / "empty").mkdir()
+        os.environ["PATH"] = str(t / "empty")  # nothing installed on this machine counts
+        zone.SBIN_DIRS = ()
+        try:
+            zone.HELPER = ""
+            self.assertEqual(zone.helper_argv("zone-wayland"), [str(t / "zone-wayland")])
+            zone.HELPER = "rust"
+            self.assertEqual(zone.helper_argv("zone-wayland"), [str(t / "appzones-helper"), "zone-wayland"])
+            os.environ["APPZONES_BIN_ZONE_WAYLAND"] = "/tmp/slow-zw"
+            self.assertEqual(zone.helper_argv("zone-wayland"), ["/tmp/slow-zw"])
+            (t / "appzones-helper").unlink()
+            os.environ.pop("APPZONES_BIN_ZONE_WAYLAND")
+            self.assertIsNone(zone.helper_argv("zone-wayland"))  # the Rust helper missing: not the C one
+        finally:
+            os.environ.pop("APPZONES_BIN_ZONE_WAYLAND", None)
+            os.environ.pop("PATH", None)
+            for k, v in saved.items():
+                if v is not None:
+                    os.environ[k] = v
+
     def test_server_by_lock(self):
         """A server is found by the zone's lock it holds, whatever its program is called (a
         Rust one too); a process that does not hold that lock is not a server."""

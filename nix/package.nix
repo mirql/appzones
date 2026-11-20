@@ -16,6 +16,9 @@
   dbus,
   iproute2,
   procps,
+  # the Rust helpers (nix/helper.nix, design/rust.md): when given, appzones runs them
+  # instead of the Python and C ones it has replaced so far
+  helper ? null,
 }:
 
 let
@@ -89,8 +92,11 @@ runCommand "appzones-${version}"
 
     # /run/current-system/sw/bin last: systemctl, journalctl, nix and hyprctl
     # are the running system's.
+    ${lib.optionalString (
+      helper != null
+    ) "install -m 555 ${helper}/bin/appzones-helper $lib/appzones-helper"}
     makeWrapper ${python3}/bin/python3 $out/bin/appzones \
-      --add-flags "-B $lib/zone.py" \
+      --add-flags "-B $lib/zone.py" ${lib.optionalString (helper != null) "--set APPZONES_HELPER rust"} \
       --prefix PATH : ${runtimePath} \
       --suffix PATH : /run/current-system/sw/bin
   ''

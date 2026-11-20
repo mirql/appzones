@@ -29,6 +29,10 @@ MOUNT_USERS ?= $(if $(SUDO_USER),$(SUDO_USER),%users)
 SUDOERS ?= yes
 APPARMOR ?= auto
 SYSTEMD ?= auto
+# rust: appzones runs the Rust helper (build/appzones-helper, or HELPER_BIN=FILE, a path) for
+# what it has replaced so far (design/rust.md); empty: the Python and C ones
+HELPER ?=
+HELPER_BIN ?= build/appzones-helper
 VERSION = $(shell sed -n 's/^  version = "\(.*\)";/\1/p' nix/package.nix)
 CC ?= cc
 # a distribution's own flags (hardening) when it sets them; -Werror only in our default
@@ -50,9 +54,10 @@ helper:
 	@if command -v cargo >/dev/null && cargo build --release --locked --quiet --manifest-path helper/Cargo.toml \
 		--target-dir build/cargo 2>build/helper.log; then \
 		cp build/cargo/release/appzones-helper build/appzones-helper && echo "built build/appzones-helper"; \
+	elif [ -f build/appzones-helper ]; then \
+		echo "using build/appzones-helper, built before (cargo is missing or failed here, as under sudo)"; \
 	else \
 		command -v cargo >/dev/null || echo "cargo: not found" >build/helper.log; \
-		rm -f build/appzones-helper; \
 		echo "note: appzones-helper not built (needs cargo and rustc 1.85 or newer; see build/helper.log)"; \
 	fi
 
@@ -72,7 +77,10 @@ zone-wayland:
 	fi
 
 # before anything is copied
-preflight:
+preflight: $(if $(filter rust,$(HELPER)),helper)
+	@[ "$(HELPER)" != rust ] || { [ -f "$(HELPER_BIN)" ] && "$(realpath $(HELPER_BIN))" --commands 2>/dev/null | grep -qx zone-wayland; } \
+		|| { echo "HELPER=rust needs a Rust helper that implements zone-wayland (appzones-helper --commands):"; \
+		     echo "  cargo for \`make\`, or HELPER_BIN=PATH"; exit 1; }
 	@[ -n "$(PYTHON)" ] && "$(PYTHON)" -c 'import sys; sys.exit(sys.version_info < (3, 11))' \
 		|| { echo "appzones needs Python 3.11 or newer (PYTHON=$(PYTHON))"; exit 1; }
 	@case "$(PREFIX)" in /usr|/usr/*) ;; *) echo "PREFIX must be under /usr (a zone sees /usr, not $(PREFIX))"; exit 1;; esac
@@ -89,8 +97,8 @@ install: all preflight
 	{ echo "#!$(PYTHON) -IB"; cat src/zone_mount_helper.py; } > build/appzones-mount-helper
 	install -m 555 build/appzones-mount-helper $(DESTDIR)$(LIBDIR)/appzones-mount-helper
 	[ ! -f build/zone-wayland ] || install -m 755 build/zone-wayland $(DESTDIR)$(LIBDIR)/zone-wayland
-	[ ! -f build/appzones-helper ] || install -m 755 build/appzones-helper $(DESTDIR)$(LIBDIR)/appzones-helper
-	printf '#!/bin/sh\nexec %s -B %s/zone.py "$$@"\n' "$(PYTHON)" "$(LIBDIR)" > build/appzones
+	[ ! -f $(HELPER_BIN) ] || install -m 755 $(HELPER_BIN) $(DESTDIR)$(LIBDIR)/appzones-helper
+	printf '#!/bin/sh\n%sexec %s -B %s/zone.py "$$@"\n' "$(if $(filter rust,$(HELPER)),APPZONES_HELPER=rust export APPZONES_HELPER; ,)" "$(PYTHON)" "$(LIBDIR)" > build/appzones
 	install -m 755 build/appzones $(DESTDIR)$(BINDIR)/appzones
 	install -m 644 examples/zones.toml $(DESTDIR)$(DATADIR)/zones.example.toml
 	install -m 644 examples/minimal.toml $(DESTDIR)$(DATADIR)/zones.minimal.toml
