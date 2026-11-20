@@ -15,23 +15,27 @@ ARCHIVE=https://archive.archlinux.org/repos/2026/11/19
 here=$(cd "$(dirname "$0")/.." && pwd)
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/appzones-test-arch
 mkdir -p "$cache"
-if ! echo "$IMAGE_SHA256  $cache/$IMAGE" | sha256sum -c --status 2>/dev/null; then
-  echo "downloading $IMAGE"
-  part=$(mktemp "$cache/$IMAGE.XXXXXX")  # (each run its own: two runs never share a file)
-  curl -fL --retry 3 --proto '=https' --proto-redir '=https' -o "$part" "$IMAGE_URL"
-  echo "$IMAGE_SHA256  $part" | sha256sum -c --status || { rm -f "$part"; echo "sha256 mismatch: $IMAGE_URL"; exit 1; }
-  mv "$part" "$cache/$IMAGE"
-fi
-
-work=$(mktemp -d)
+parts=() work=""
 # APPZONES_TEST_KEEP=1: on a failure the VM stays up, for a look (the command is printed)
 cleanup() {
+  rm -f "${parts[@]}"  # staging files a failure left in the cache (completed ones were renamed)
+  [[ -n "$work" ]] || return 0
   if [[ "${APPZONES_TEST_KEEP:-}" == 1 && "${ok:-}" != yes ]]; then
     echo "kept: ssh -i $work/key -p $port tester@127.0.0.1 (then: kill \$(cat $work/qemu.pid))"; return
   fi
   [[ -f "$work/qemu.pid" ]] && kill "$(cat "$work/qemu.pid")" 2>/dev/null || true; rm -rf "$work"
 }
 trap cleanup EXIT
+if ! echo "$IMAGE_SHA256  $cache/$IMAGE" | sha256sum -c --status 2>/dev/null; then
+  echo "downloading $IMAGE"
+  part=$(mktemp "$cache/$IMAGE.XXXXXX")  # (each run its own: two runs never share a file)
+  parts+=("$part")
+  curl -fL --retry 3 --proto '=https' --proto-redir '=https' -o "$part" "$IMAGE_URL"
+  echo "$IMAGE_SHA256  $part" | sha256sum -c --status || { rm -f "$part"; echo "sha256 mismatch: $IMAGE_URL"; exit 1; }
+  mv "$part" "$cache/$IMAGE"
+fi
+
+work=$(mktemp -d)
 qemu-img create -q -f qcow2 -b "$cache/$IMAGE" -F qcow2 "$work/disk.qcow2" 20G
 ssh-keygen -q -t ed25519 -N "" -f "$work/key"
 # uid 2000: the test's own user is uid 1000
@@ -68,6 +72,7 @@ vm "echo 'Server = $ARCHIVE/\$repo/os/\$arch' | sudo tee /etc/pacman.d/mirrorlis
   pkgconf xdg-dbus-proxy dbus sudo dnsmasq procps-ng psmisc util-linux weston wayland-utils sway foot \
   >/tmp/pacman.log 2>&1 || { tail -20 /tmp/pacman.log; exit 1; }"
 part=$(mktemp "$cache/pacman-pkg.tar.XXXXXX")
+parts+=("$part")
 vm "sudo tar c -C /var/cache/pacman/pkg ." >"$part" && mv "$part" "$cache/pacman-pkg.tar"
 
 # the package from this checkout: a tarball of the tracked files, as GitHub's would be
