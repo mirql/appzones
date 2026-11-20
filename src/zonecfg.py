@@ -174,6 +174,10 @@ KEYS: dict[str, tuple[object, object, str]] = {
     "camera": ("portal", _enum("portal", "device"), "portal | device"),
     "usb": ([], _usb, "with \"usb\" in devices: USB devices by \"vvvv\" or \"vvvv:pppp\" (their /dev/bus/usb node, "
                       "hidraw nodes and sysfs; bound at zone start)"),
+    "wayland": ("zone", _enum("zone", "none", "host"), "zone (its own security context: the compositor hides "
+                                                         "screencopy, clipboard snooping and the like) | none | host "
+                                                         "(as zone, but the host's Wayland socket where the compositor "
+                                                         "has no wp_security_context_v1, such as GNOME)"),
     "x11": ("none", _enum("none", "own"), "none | own (xwayland-satellite in the zone)"),
     "clipboard": ("both", _enum("both"), "both (the only value for now)"),
     "autostart": (False, _bool, "start the zone at login"),
@@ -192,7 +196,7 @@ KEYS: dict[str, tuple[object, object, str]] = {
                                          "kept; files unused for 14 days removed at start)"),
     "home": ("", _str, "zone home; default ~/.local/share/appzones/<zone>/home"),
     "colour": ("", _str, "#rrggbb, required, unique"),
-    "force_host": (False, _bool, "allow network=host in a zone named untrusted"),
+    "force_host": (False, _bool, "allow network=host and wayland=host in a zone named untrusted"),
     "supervisor": ("auto", _enum("auto", "systemd", "spawn"), "who starts the zone: auto ($APPZONES_SUPERVISOR, "
                                                               "else systemd when its unit is installed, else appzones) "
                                                               "| systemd | spawn (appzones itself)"),
@@ -206,11 +210,12 @@ APP_KEYS = {"command", "desktop", "zones", "args", "bus"}
 # repo moves faster than a system rebuild). A file names the release it
 # needs (`requires = N`); an older tool then says "update appzones" instead
 # of "unknown key". Bump RELEASE when a key or value is added, and record it here.
-RELEASE = 5
+RELEASE = 6
 SINCE = {"requires": 2, "bus": 2, "apps.bus": 2, "bus = \"zone\"": 2, "bus = \"none\"": 2,
          "nix_ld": 3, "tmp": 3,  # release 3 also added zone mount/umount/mounts (no key)
          "usb": 4,  # release 4: the "usb" device and its usb key
-         "supervisor": 5, "start_timeout": 5, "linger": 5}
+         "supervisor": 5, "start_timeout": 5, "linger": 5,
+         "wayland": 6}
 
 LAYOUTS = ("nixos", "fhs")
 
@@ -622,6 +627,10 @@ def load_text(text: str, path: str | Path = "zones.toml") -> Config:
         if s["network"] == "host":
             warnings.append(f"[zones.{z.name}] network = \"host\": the zone reaches everything the host reaches, "
                             f"localhost and the tailnet included")
+        if s["wayland"] == "host":
+            warnings.append(f"[zones.{z.name}] wayland = \"host\": where the compositor has no security context "
+                            f"(GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, "
+                            f"and windows not marked as the zone's (elsewhere the zone gets its own context)")
         if s["machine_id"] == "host":
             warnings.append(f"[zones.{z.name}] machine_id = \"host\": apps can link this zone to the host and to "
                             f"other zones by it")
@@ -701,6 +710,8 @@ def validate(zones: dict[str, Zone], apps: dict[str, dict]) -> list[str]:
             errs.append(f"{p} netbird = true needs network = \"internet\"")
         if s["network"] == "host" and z.name == "untrusted" and not s["force_host"]:
             errs.append(f"{p} network = \"host\" in untrusted needs force_host = true")
+        if s["wayland"] == "host" and z.name == "untrusted" and not s["force_host"]:
+            errs.append(f"{p} wayland = \"host\" in untrusted needs force_host = true")
         if isinstance(s["links"], str) and s["links"].startswith("zone:") and s["links"][5:] not in zones:
             errs.append(f"{p} links names unknown zone {s['links'][5:]!r}")
         if s["nix_ld"] is True and host_layout() == "fhs":

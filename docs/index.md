@@ -49,9 +49,9 @@ programs.appzones.enable = true;
 
 Then `appzones new daily -y` and `appzones check`.
 
-Ubuntu 24.04 and Debian 12 (preview, command-line zones): `sudo apt install python3
-bubblewrap passt nftables iproute2 git make` (on a desktop also `xdg-dbus-proxy dbus gcc pkg-config libwayland-dev`), then `make && sudo make install` in a
-checkout. The [install page](getting-started/install.html) has the details for both;
+Ubuntu 24.04 and Debian 12 (preview): `sudo apt install ./appzones_*_amd64.deb` with
+the `.deb` from the [latest release](https://github.com/mirql/appzones/releases/latest),
+or `make && sudo make install` in a checkout. The [install page](getting-started/install.html) has the details for both;
 [recipes](recipes.html) show what zones are good for.
 
 ## More

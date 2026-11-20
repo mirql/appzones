@@ -13,6 +13,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -146,6 +147,48 @@ def install_error(here: Path, layout: str) -> str | None:
             "(`sudo make install`, PREFIX=/usr/local by default; or the Nix package)")
 
 
+# zone-wayland's exit status for a compositor without wp_security_context_v1
+WAYLAND_NO_PROTOCOL = 3
+
+
+def _exit_status(p: subprocess.Popen) -> int | None:
+    """P's exit status once it has exited (a moment's wait: it closed its stdout), else None."""
+    try:
+        return p.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def _relay_output(listener: socket.socket) -> None:
+    """Copy what the zone writes to its log socket (zone-init, the apps) to the server's
+    own stdout: its log file or the journal. Until the zone closes it."""
+    listener.settimeout(START_TIMEOUT)
+    try:
+        conn, _ = listener.accept()
+    except OSError:
+        return  # no zone came (it failed to start: the server says why)
+    finally:
+        listener.close()
+    with conn:
+        conn.settimeout(None)
+        while data := conn.recv(65536):
+            while data:
+                data = data[os.write(1, data):]
+
+
+def _output_to(path: str) -> None:
+    """_netsetup: stdout and stderr to the server's log socket at PATH (see supervise)."""
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.connect(path)
+    except OSError:
+        s.close()
+        return  # keep what pasta gave (a log line less, never a failed start)
+    os.dup2(s.fileno(), 1)
+    os.dup2(s.fileno(), 2)
+    s.close()
+
+
 class _Stopped(Exception):
     """A stop (SIGTERM, SIGINT) while the zone is being prepared."""
 
@@ -162,6 +205,13 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         os.set_inheritable(notify_fd, False)  # never into the zone or a helper
     lock = take_lock(name, lock_fd)  # noqa: F841  (held until this process exits)
     helpers: list[subprocess.Popen] = []
+    relay: list[threading.Thread] = []  # copies an internet zone's output to ours (_relay_output)
+
+    def relay_done() -> None:
+        """The zone's last lines in our log: the relay ends when the zone's writers have,
+        or after a moment (a helper that still holds the socket)."""
+        for t in relay:
+            t.join(timeout=2)
     child: subprocess.Popen | None = None
 
     stopped: list[int] = []  # a stop asked for by SIGTERM or SIGINT
@@ -177,6 +227,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         stop_all()
         if child:
             wait_or_kill(child)
+        relay_done()
         if fp:
             shutil.rmtree(fp, ignore_errors=True)
         if stopped:
@@ -231,7 +282,9 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         write_colours(cfg)
         if s["tmp"] == "disk":
             fs.prepare_tmp(zdir)
-        fs.prepare_mnt(name, zdir)
+        if not fs.prepare_mnt(name, zdir):
+            die(f"mounts from the last run of {name} are still there (see above); not starting the zone with them: "
+                f"`appzones umount {name} NAME` or end what holds them")
         extra_path = fs.package_paths(z, zdir) if s["packages"] else []
         target = portals.link_target(z)
         links_srv = None
@@ -250,17 +303,45 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         return stop_code()
     # the desktop's parts are optional: without their helper (a server, a package
     # without them) the zone starts without them, and says so
-    wayland_helper = common.helper_argv("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") else None
-    if os.environ.get("WAYLAND_DISPLAY") and not wayland_helper:
+    # wayland = "host" is a fallback: the zone's own security context wherever the
+    # compositor has the protocol (with the raw socket a zone's client would also get
+    # the context manager, screencopy, virtual input...), the host's socket only where
+    # it has none (GNOME's Mutter, Weston)
+    wl = z.settings["wayland"]
+    host_wayland = False
+    wayland_helper = common.helper_argv("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") and wl != "none" else None
+    if wl == "none":
+        print(f"[zone] {name}: wayland = \"none\": no Wayland socket", flush=True)
+    elif os.environ.get("WAYLAND_DISPLAY") and not wayland_helper:
         print(f"[zone] {name}: zone-wayland not found: the zone starts without a Wayland socket "
               "(desktop apps will not open windows; install appzones with zone-wayland)", flush=True)
     elif wayland_helper:
         h = subprocess.Popen([*wayland_helper, str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
                              stdout=subprocess.PIPE,
                              env=dict(os.environ, ZONE_WAYLAND_PARENT=str(os.getpid())))
-        helpers.append(h)
-        if read_line(h.stdout.fileno(), START_TIMEOUT) != b"ready":
-            return abort(f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
+        helpers.append(h)  # (a stop while it starts ends it too)
+        ready = read_line(h.stdout.fileno(), START_TIMEOUT) == b"ready"
+        if ready and wl == "host":
+            print(f"[zone] {name}: wayland = \"host\", but the compositor has a security context: the zone "
+                  "gets its own (the host's socket is only for compositors without one)", flush=True)
+        if not ready:
+            rc = _exit_status(h)
+            if rc != WAYLAND_NO_PROTOCOL:
+                return abort(f"zone-wayland exited with status {rc} (its message is above)" if rc is not None
+                             else f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
+            helpers.remove(h)
+        if not ready and wl == "host" and common.host_wayland_socket():
+            host_wayland = True
+            print(f"[zone] {name}: wayland = \"host\": the compositor has no security context, so the zone's apps "
+                  "get the host's Wayland socket", flush=True)
+        elif not ready:
+            # less, never more: no Wayland socket in the zone, and never the host's
+            print(f"[zone] {name}: the compositor has no security-context protocol (wp_security_context_v1), "
+                  "so the zone starts without a Wayland socket (desktop apps will not open windows). "
+                  "Compositors with it: Hyprland, sway 1.9 and later, others built on wlroots 0.17 or later, "
+                  "KDE Plasma 6. "
+                  "To give this zone's apps the host's socket instead (GNOME): wayland = \"host\"",
+                  flush=True)
     else:
         print(f"[zone] no WAYLAND_DISPLAY: zone {name} starts without a Wayland socket", flush=True)
     if os.environ.get("DBUS_SESSION_BUS_ADDRESS") and not common.find_tool("xdg-dbus-proxy"):
@@ -280,13 +361,28 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     # $XDG_RUNTIME_DIR/.flatpak/<instance>/bwrapinfo.json
     fp = common.HOST_RT / ".flatpak" / instance
     fp.mkdir(parents=True, exist_ok=True)
-    inner = fs.bwrap_argv(z, zdir, zrt, network, extra_path)
+    inner = fs.bwrap_argv(z, zdir, zrt, network, extra_path, host_wayland=host_wayland)
     # pasta closes inherited fds, so the info fd is opened by _netsetup, in
     # pasta's namespace, right before it execs bwrap.
     argv = [sys.executable, str(common.HERE / "zone.py"), "_netsetup", str(zrt / "nft.rules") if network == "internet" else "-",
             str(fp / "bwrapinfo.json"), name, "--"] + inner
+    log_sock = None
     if network == "internet":
         argv = net.pasta_argv(z) + argv
+        problem = net.pasta_selinux_problem(argv[0])
+        if problem:
+            print(f"[zone] {name}: {problem}", flush=True)
+        # the zone's output through a socket, not through pasta: where pasta is confined
+        # (Fedora's passt-selinux) it may not use the server's stdout, and the kernel
+        # gives it, and so everything it starts, /dev/null instead. _netsetup, after
+        # pasta, connects here and puts the socket on its stdout and stderr.
+        log_path = zrt / "log.sock"
+        log_path.unlink(missing_ok=True)
+        log_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        log_sock.bind(str(log_path))
+        os.chmod(log_path, 0o600)
+        log_sock.listen(1)
+        os.environ["ZONE_LOG_SOCK"] = str(log_path)  # for _netsetup, through pasta (before any thread)
     if stopped:  # asked to stop before the zone itself was started
         return abort("")
     # _netsetup's own deadline (bwrap clears the environment: it goes no further)
@@ -294,6 +390,9 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     # preexec_fn (die_with), which is not safe once a process has threads
     dns_srv = dns.serve(zrt / "ctl" / "dns.sock", dns.upstreams(z)) if network == "internet" else None  # noqa: F841
     child = subprocess.Popen(argv, env=dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT)))  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
+    if log_sock:  # a thread, like the DNS: after the last launch with a preexec_fn
+        relay.append(threading.Thread(target=_relay_output, args=(log_sock,), daemon=True))
+        relay[0].start()
     if not offer_pidfd(name, child):
         return abort("_netsetup did not take the server's pidfd")
     # ready: zone-init answers; then the autostart apps
@@ -351,6 +450,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         if r and links_srv:
             portals.handle_link(links_srv, target)
     stop_all()
+    relay_done()
     shutil.rmtree(fp, ignore_errors=True)
     fs.prepare_mnt(name, zdir)  # runtime mounts end with the zone
     # a stop that was asked for is not a failure: a process manager restarts only failures
@@ -522,6 +622,9 @@ def receive_pidfd(name: str) -> int:
 
 def netsetup(rules: str, info: str, name: str, argv: list[str]) -> None:
     global START_TIMEOUT
+    log = os.environ.pop("ZONE_LOG_SOCK", "")
+    if log:
+        _output_to(log)
     try:
         START_TIMEOUT = float(os.environ.pop("ZONE_START_TIMEOUT", START_TIMEOUT))
     except ValueError:

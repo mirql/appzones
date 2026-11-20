@@ -5,6 +5,128 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **openSUSE Leap 16 tested** (`just test-opensuse`, #22): `make install` and the whole
+  distro test pass with SELinux enforcing, once pasta may run: on Leap 16
+  `/usr/bin/pasta` links to the passt binary, so SELinux runs it in passt's domain,
+  which may not build a network namespace. An internet zone's log now says so when
+  this applies, with the fix (`semanage permissive -a passt_t`); the install page has
+  an openSUSE section.
+
+## 0.11.3
+
+`wayland = "host"` now gives the host's Wayland socket only where the compositor has no security context (GNOME, Weston), as intended; on Hyprland, sway or KDE the zone gets its own context. If you set it, restart those zones. Also: a zone no longer starts with last run's mounts, and `make install` and the .deb never install `contrib/` writable by others.
+
+- **`wayland = "host"` only where the compositor has no security context.** Before, it
+  gave a zone the host's raw Wayland socket everywhere: on Hyprland, sway or KWin that
+  also meant screencopy, virtual input, the lock screen, and the security-context
+  manager itself (so a zone could claim another zone's name in the sway hook). Now the
+  zone gets its own context wherever the compositor offers one, and the host's socket
+  only where it does not (GNOME's Mutter, Weston), as intended.
+- **A zone does not start with last run's mounts**: when `umount-all` cannot detach
+  them, the server says so and does not start the zone.
+- `make install` (and so the .deb) never installs `contrib/` writable by others,
+  whatever the checkout's umask; `appzones active` on sway takes only a mark for the
+  focused window itself; smaller fixes from the same review.
+
+## 0.11.2
+
+On Fedora, internet zones log again: what runs inside them (zone-init, the apps) was lost, because SELinux gave pasta and everything it starts `/dev/null` as output. Restart running zones after the update.
+
+- **Logs from inside internet zones on Fedora**: with Fedora's SELinux policy for pasta
+  (passt-selinux), pasta may not use the server's stdout (its log file, or the journal),
+  so the kernel gave pasta, and everything it starts, `/dev/null`: zone-init's lines
+  and the apps' output of `network = "internet"` zones were lost, without a message.
+  Now the process after pasta connects to a socket of the server (in the zone's runtime
+  directory on the host, never in the zone) and logs through it. Found by the Fedora
+  test, which now checks it on every distribution.
+
+## 0.11.1
+
+An RPM for Fedora, attached to the release like the .deb. Fedora 45 (SELinux enforcing) and Arch are now tested in VMs (`just test-fedora`, `just test-arch`), and KDE Plasma 6 is documented. One small fix in the mount helper.
+
+- **An RPM for Fedora** (#22): `contrib/fedora/appzones.spec`, the same layout as the
+  .deb (Python and the C zone-wayland; the sudo rule for the group `appzones`, made
+  through sysusers). `just test-fedora` builds it with rpmbuild from the checkout,
+  installs it with dnf and runs the distro test (SELinux enforcing);
+  `just release-rpm VERSION` attaches it to a release.
+
+- **Fedora 45 tested** (`just test-fedora`, #22): `make install` from the checkout in a
+  Fedora Cloud VM with SELinux enforcing, then the same distro test, desktop under
+  sway included. It passes without any change to appzones; the install page has a
+  Fedora section. `tests/arch-test.sh` became `tests/cloud-test.sh arch|fedora`.
+
+- **`just test-arch`**: the AUR package built with makepkg from the checkout, installed
+  in an Arch VM (a pinned cloud image, the Arch Linux Archive of one date), then the
+  same distro test as Debian and Ubuntu. It needs the network, so it is a `just`
+  recipe, not a flake check. On Arch's sway 1.12 it checks that a zone started
+  without systemd is named from its security context. The distro test runs on a
+  networked systemd host too.
+
+- **KDE Plasma 6 named as a compositor with the security-context protocol**: tried
+  with KWin 6.8, which hides clipboard snooping, fake input, the window list and
+  screencast from a zone's apps, but still offers them display configuration, DPMS
+  and the Plasma shell protocol. The install page says so.
+
+- **The mount helper's `umount-all` says when mounts are left** (both helpers): it exits
+  1 and names them if any are still mounted after it is done, instead of always 0.
+
+## 0.11.0
+
+Sway: zone windows are marked (`contrib/sway/appzones-sway`), and `appzones active` gives a bar the focused window's zone there too. The distro tests now open a desktop app from a zone under sway.
+
+- **`appzones active` on sway**: the focused window's zone from the mark that
+  `contrib/sway/appzones-sway` sets (never from its title or app id), also with
+  `--follow` (sway's window events) for a Waybar module.
+
+- **Zone markers on sway** (#20): `contrib/sway/appzones-sway` marks every window from a
+  zone (`zone:NAME:ID`, the title prefix `[NAME]`, its shortcuts inhibitor off), with
+  the zone taken from the window's security context (sway 1.11+) or its cgroup, never
+  from its title or app id; `zone:?` where it cannot be named. Tested under headless
+  sway in the Ubuntu 24.04 distro test.
+
+- **The distro tests open a desktop app from a zone**: under headless sway on Ubuntu
+  24.04 the zone's client gets its own security context (no screencopy, no
+  data-control) and a foot window opens; Debian 12's sway 1.7 has no security
+  context, which the test notes. The docs no longer call desktop apps outside NixOS
+  untested.
+
+## 0.10.0
+
+Desktop apps under GNOME: `wayland = "host"` gives a zone's apps the host's Wayland socket where the compositor has no security-context protocol (GNOME's Mutter, Ubuntu's default). Zones release 6: files that use `wayland` set `requires = 6`.
+
+- **`wayland`** (zones release 6): `"zone"` (the default, the zone's own security
+  context, as before), `"none"` (no Wayland), or `"host"`: the host's Wayland
+  socket, for compositors without `wp_security_context_v1`. GNOME's Mutter 46,
+  Ubuntu's default, has none, and offers apps no screencopy, clipboard snooping or
+  virtual input anyway, so desktop apps in zones work there with `wayland = "host"`.
+  Their windows are not marked as the zone's. Warned by `appzones check`; refused in
+  a zone named `untrusted` without `force_host`.
+- **`appzones ps` on a zone that is not running** prints one line
+  (`appzones: zone web is not running (start it: appzones up web)`) and exits 1,
+  instead of a Python traceback (#130).
+
+## 0.9.1
+
+Zones start under GNOME (Ubuntu's default desktop), Weston and sway before 1.9: without a Wayland socket there, since those compositors have no security-context protocol. Before, a zone did not start at all under them. And a .deb for Debian 12 and Ubuntu 24.04, attached to the release.
+
+- **A compositor without the security-context protocol no longer stops a zone.**
+  Under Weston or sway before 1.9 (no `wp_security_context_v1`) a zone failed to
+  start at all, also for command-line work. Now it starts without a Wayland socket
+  (never with the host's), and its log says why. zone-wayland exits with status 3
+  for this. Found by trying desktop apps on Ubuntu 24.04; the distro tests run zones
+  under Weston on Debian 12 and Ubuntu 24.04.
+
+- **A .deb for Debian 12 and Ubuntu 24.04** (#22): each release has
+  `appzones_VERSION-1_amd64.deb` (`sudo apt install ./appzones_*_amd64.deb`). Built
+  in a Debian 12 image (`nix build .#deb`, `contrib/debian/build-deb.sh`); the sudo
+  rule is for the group `appzones`, created on install; the AppArmor profile is
+  installed and loaded only where the kernel restricts user namespaces (Ubuntu 23.10
+  and later). `just test-distros` installs it on both, runs zones and purges it.
+
+## 0.9.0
+
+Optional Rust helpers: with them no Python of the host's runs in a zone, the root step of `appzones mount` is a small binary, and appzones may be installed outside `/usr`. Without them nothing changes. Install with `make` (cargo and rustc 1.85+) and `sudo make install HELPER=rust`, or use the Nix package `appzones-rust`.
+
 - **Optional Rust helpers** (#97, `design/rust.md`): everything that runs inside a
   zone (zone-init, the link part of the `xdg-open` shim), zone-wayland, and the
   mount helper (the root step of `appzones mount`) also exist in Rust. Install them

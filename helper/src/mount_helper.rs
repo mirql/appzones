@@ -410,17 +410,20 @@ fn do_umount_all(c: &Caller, zone: &str) -> u8 {
     }
     let pfd = c.open_owned(&mnt);
     let prefix = [mnt.as_slice(), b"/"].concat();
-    let mut n = 0;
-    for _ in 0..256 {
-        // a stacked mount shows up again under the same name; a name with one trailing
-        // newline is one older versions allowed: detached too
-        let names: Vec<Vec<u8>> = mount_points().into_iter()
+    // a name with one trailing newline is one older versions allowed: detached too
+    let mounted = || -> Vec<Vec<u8>> {
+        mount_points().into_iter()
             .filter_map(|m| m.strip_prefix(prefix.as_slice()).map(<[u8]>::to_vec))
             .filter(|x| {
                 let base = x.strip_suffix(b"\n").unwrap_or(x);
                 std::str::from_utf8(base).map(policy::mount_name_ok).unwrap_or(false)
             })
-            .collect();
+            .collect()
+    };
+    let mut n = 0;
+    for _ in 0..256 {
+        // a stacked mount shows up again under the same name
+        let names = mounted();
         if names.is_empty() {
             break;
         }
@@ -429,8 +432,10 @@ fn do_umount_all(c: &Caller, zone: &str) -> u8 {
             n += 1;
         }
     }
-    println!("{n} mount(s) under {} detached", show(&mnt));
-    0
+    let left: Vec<String> = mounted().iter().map(|x| show(x)).collect();
+    let still = if left.is_empty() { String::new() } else { format!("; still mounted: {}", left.join(", ")) };
+    let _ = writeln!(std::io::stdout(), "{n} mount(s) under {} detached{still}", show(&mnt));
+    u8::from(!left.is_empty())
 }
 
 fn main() -> ExitCode {

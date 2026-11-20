@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -82,6 +84,29 @@ def pasta_argv(z: zonecfg.Zone) -> list[str]:
     # the zone answers its own DNS (dns.py), so any pasta version works (2023 on)
     return [tool("pasta"), "--config-net", "--no-map-gw", "-t", "none", "-u", "none", "-T", "none", "-U", "none",
             "--dns", "none", "-q", "-f", "--"]
+
+
+def pasta_selinux_problem(pasta: str, selinux: str = "/sys/fs/selinux") -> str | None:
+    """Why pasta may fail to build a zone's network under SELinux, or None. Where
+    `pasta` is a link to the passt binary (openSUSE Leap 16), the kernel takes the
+    label of the file it runs, passt_exec_t, and pasta runs in passt's domain, which
+    may not mount /proc or read namespace files there."""
+    try:
+        with open(f"{selinux}/enforce") as f:
+            if f.read().strip() != "1":
+                return None
+        if "/" not in pasta:  # a bare name (an APPZONES_BIN_PASTA override): as the launch finds it
+            pasta = shutil.which(pasta) or pasta
+        label = os.getxattr(os.path.realpath(pasta), "security.selinux").decode(errors="replace")
+    except OSError:
+        return None
+    if ":passt_exec_t:" not in label:
+        return None
+    return (f"pasta here is {os.path.realpath(pasta)} ({label.rstrip(chr(0))}): SELinux runs it in passt's "
+            "domain, which on this distribution may not build a network namespace, so an internet zone may "
+            "not start. Fix: `sudo semanage permissive -a passt_t` (passt and pasta then run without SELinux "
+            "confinement, denials only logged), or a passt with its own pasta binary; zones with "
+            "network = \"none\" or \"host\" are not affected")
 
 
 def resolv_conf(s: dict) -> str:

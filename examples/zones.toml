@@ -6,7 +6,7 @@
 # Each zone starts with a fresh home in ~/.local/share/appzones/<zone>/home: no
 # app data moves in from the host, host apps stay as they are.
 version = 1
-requires = 5                   # the zones release this file needs (`appzones check` prints its own); an older
+requires = 6                   # the zones release this file needs (`appzones check` prints its own); an older
                                # `appzones` then says "update appzones" instead of "unknown key"
 
 [defaults]                     # every zone starts from these; a zone overrides any key
@@ -18,6 +18,7 @@ keyring     = "basic"          # basic (browsers' fixed-key store) | zone (own k
 devices     = ["gpu"]          # any of: gpu audio mic camera screencast usb   (mic = audio for now)
 camera      = "portal"         # portal | device   (only with "camera" in devices)
 usb         = []               # with "usb" in devices: ["vvvv"] or ["vvvv:pppp"]; matching devices bound at zone start
+wayland     = "zone"           # zone (own security context) | none | host (the host's socket, for GNOME: no security context)
 x11         = "none"           # none | own (xwayland-satellite inside the zone; not built yet)
 clipboard   = "both"           # the only value for now
 autostart   = false            # start the zone at login
@@ -33,7 +34,7 @@ bus         = "host"           # bus for commands not in [apps]: host (proxy: po
 nix_ld      = false            # true: generic Linux binaries (downloaded CLIs) run, through the host's nix-ld
 tmp         = "ram"            # ram (fresh tmpfs each start) | disk (~/.local/share/appzones/<zone>/tmp, kept; unused 14 days: removed)
 home        = ""               # default ~/.local/share/appzones/<zone>/home
-force_host  = false            # allow network = "host" in the zone named untrusted
+force_host  = false            # allow network = "host" and wayland = "host" in the zone named untrusted
 supervisor  = "auto"           # who starts the zone: auto ($APPZONES_SUPERVISOR, else systemd when its unit is installed, else appzones) | systemd | spawn
 start_timeout = "30s"          # the limit for each step of the start (building packages has none)
 linger      = ""               # "" (the zone stays until stopped) | e.g. "10m": end the zone after that long with no app running

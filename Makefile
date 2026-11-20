@@ -3,14 +3,16 @@
 #
 #   make                  build zone-wayland (needs a C compiler, pkg-config,
 #                         libwayland-dev and wayland-scanner; skipped with a
-#                         note when they are missing: zones then get no Wayland)
+#                         note when they are missing: zones then get no Wayland),
+#                         and the Rust helpers where cargo is present
+#   sudo make install HELPER=rust   the same with the Rust helpers (design/rust.md)
 #   sudo make install     install under PREFIX (/usr/local), the sudo rule for
 #                         `appzones mount`, the AppArmor profile where the kernel
 #                         restricts user namespaces (Ubuntu 23.10+), the systemd
 #                         user units where there is systemd
 #   sudo make uninstall   remove all of it
 #
-# Variables: PREFIX (/usr/local; must be under /usr, which every zone sees),
+# Variables: PREFIX (/usr/local; under /usr, which every zone sees, unless HELPER=rust),
 # DESTDIR (staging for packages), PYTHON (python3, 3.11 or newer),
 # MOUNT_USERS (who may run the mount helper: a user, or %group; default: the
 # user who ran sudo, else %users), SUDOERS=no, APPARMOR=no, SYSTEMD=no.
@@ -118,7 +120,13 @@ install: all preflight
 	install -m 755 build/appzones $(DESTDIR)$(BINDIR)/appzones
 	install -m 644 examples/zones.toml $(DESTDIR)$(DATADIR)/zones.example.toml
 	install -m 644 examples/minimal.toml $(DESTDIR)$(DATADIR)/zones.minimal.toml
-	rm -rf $(DESTDIR)$(DATADIR)/contrib && cp -r contrib $(DESTDIR)$(DATADIR)/contrib
+	@# never writable by others, whatever the checkout's modes (appzones-sway is run from a sway
+	@# config): copied into a directory only we can enter, made so there, then moved into place
+	rm -rf $(DESTDIR)$(DATADIR)/contrib $(DESTDIR)$(DATADIR)/.contrib.new
+	mkdir -m 700 $(DESTDIR)$(DATADIR)/.contrib.new
+	cp -r contrib/. $(DESTDIR)$(DATADIR)/.contrib.new/
+	chmod -R go-w $(DESTDIR)$(DATADIR)/.contrib.new && chmod 755 $(DESTDIR)$(DATADIR)/.contrib.new
+	mv $(DESTDIR)$(DATADIR)/.contrib.new $(DESTDIR)$(DATADIR)/contrib
 	@if [ "$(USE_SYSTEMD)" = yes ]; then \
 		install -d $(DESTDIR)$(UNITDIR) && \
 		for u in appzones@.service appzones-autostart.service appzones.slice; do \

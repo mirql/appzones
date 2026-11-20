@@ -1,15 +1,18 @@
 #!/bin/sh
 # appzones on another distribution, inside its disk image (tests/distro.nix):
-# `make install` as root, then zones as an ordinary user, without systemd (zones
+# `make install` (or the .deb) as root, then zones as an ordinary user, without systemd (zones
 # start on demand) and without a network (a dummy link gives pasta a route; a
 # local dnsmasq is the host's resolver). Prints "PASS ..." per check, exits non-zero
 # on the first failure.
 set -eu
 src=$1
 mflags=${2:-}  # extra make arguments (tests/distro.nix makeFlags)
-# where it installs (make's PREFIX), and whether with the Rust helper
+deb=${3:-}     # a .deb to install instead of `make install` (tests/distro.nix deb), or
+               # "pacman" or "rpm": the Arch or Fedora package, installed already (tests/cloud-test.sh)
+# where it installs (make's PREFIX, /usr for the .deb), and whether with the Rust helper
 prefix=/usr/local
 for f in $mflags; do case $f in PREFIX=*) prefix=${f#PREFIX=};; esac; done
+[ -z "$deb" ] || prefix=/usr
 rust=no
 case " $mflags " in *" HELPER=rust "*) rust=yes;; esac
 export PATH=$prefix/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -34,16 +37,38 @@ ip link set lo up
 # 0666 is the mode udev gives /dev/net/tun; this is the throw-away test VM
 chmod 666 /dev/net/tun  # NOSONAR
 ip link add az0 type dummy && ip link set az0 up
-ip addr add 192.0.2.1/24 dev az0 && ip route add default via 192.0.2.254 dev az0
+ip addr add 192.0.2.1/24 dev az0
+# a route for pasta where there is none (the offline images); a networked VM keeps its own
+ip route show default | grep -q . || ip route add default via 192.0.2.254 dev az0
 dnsmasq --no-resolv --listen-address=127.0.0.1 --bind-interfaces --address=/zone-test.example/192.0.2.99 \
   --pid-file=/run/dnsmasq.pid </dev/null >/dev/null 2>&1
-echo "nameserver 127.0.0.1" > /etc/resolv.conf
+rm -f /etc/resolv.conf && echo "nameserver 127.0.0.1" > /etc/resolv.conf  # (not through a resolved symlink)
 python3 -c 'import socket,os
 s=socket.socket(); s.bind(("192.0.2.1",8080)); s.listen(4)
 if os.fork(): os._exit(0)
 while True: s.accept()[0].close()' </dev/null >/dev/null 2>&1  # background: no pipe of ours held open
 
-# install as root, from a copy of the checkout
+# install as root: the .deb, or from a copy of the checkout (the Arch package: installed already)
+if [ "$deb" = pacman ] || [ "$deb" = rpm ]; then
+  if [ "$deb" = pacman ]; then v=$(pacman -Q appzones); else v=$(rpm -q appzones); fi || fail "the package is not installed"
+  getent group appzones >/dev/null || fail "no group appzones (sysusers)"
+  usermod -aG appzones alice
+  [ -x /usr/lib/appzones/zone-wayland ] || fail "no zone-wayland in the package"
+  [ "$(stat -c %a /etc/sudoers.d/appzones)" = 440 ] || fail "the sudo rule is not 0440"
+  pass "the package ($v): group appzones, zone-wayland, the sudo rule"
+elif [ -n "$deb" ]; then
+  dpkg -i "$deb" >/tmp/install.log 2>&1 || { cat /tmp/install.log; fail "dpkg -i"; }
+  getent group appzones >/dev/null || fail "no group appzones"
+  usermod -aG appzones alice
+  [ -x /usr/lib/appzones/zone-wayland ] || fail "no zone-wayland in the package"
+  if [ -e /etc/apparmor.d/abi/4.0 ]; then
+    # what postinst installs where user namespaces are restricted (not in this VM's kernel)
+    /usr/lib/appzones/apparmor-profile >/tmp/aa-profile || fail "apparmor-profile"
+    apparmor_parser -Q -K /tmp/aa-profile || fail "the AppArmor profile does not parse"
+  fi
+  [ ! -e /etc/apparmor.d/appzones ] || fail "an AppArmor profile where user namespaces are not restricted"
+  pass "dpkg -i (dependencies there, group appzones; the AppArmor profile only where needed, and it parses)"
+else
 cp -r "$src" /tmp/appzones && chmod -R u+w /tmp/appzones && cd /tmp/appzones
 make $mflags >/tmp/make.log 2>&1 || { cat /tmp/make.log; fail "make"; }
 grep -q "built build/zone-wayland" /tmp/make.log || fail "zone-wayland not built: $(tail -2 /tmp/make.log)"
@@ -57,6 +82,7 @@ else
   [ ! -e /etc/apparmor.d/appzones ] || fail "an AppArmor profile where user namespaces are not restricted"
   pass "make; make install (zone-wayland built, no AppArmor profile: not needed here)"
 fi
+fi
 v=$(as_alice "appzones --version")
 echo "$v" | grep -q "^appzones [0-9][0-9.]* (config release [0-9]*)$" || fail "version: $v"
 pass "$v"
@@ -65,7 +91,7 @@ pass "$v"
 as_alice 'mkdir -p ~/.config/appzones ~/proj ~/data ~/.ssh && echo hello >~/proj/f && echo data >~/data/x && echo secret >~/.ssh/id_test'
 as_alice 'cat >~/.config/appzones/zones.toml <<EOF
 version = 1
-requires = 5
+requires = 6
 [defaults]
 devices = []
 [zones.off]
@@ -74,6 +100,10 @@ network = "none"
 binds = [{ path = "~/proj", mode = "rw" }]
 [zones.web]
 colour = "#89b4fa"
+[zones.gui]
+colour = "#f38ba8"
+network = "none"
+wayland = "host"
 EOF'
 as_alice "appzones check" | grep -q "^ok:" || fail "appzones check"
 pass "appzones check"
@@ -100,16 +130,19 @@ fi
 (sleep 2; printf 'echo in-shell-$ZONE\r'; sleep 1; printf 'exit\r') \
   | timeout 60 su alice -s /bin/sh -c "$U script -qfc 'appzones shell off' /dev/null" >/tmp/shell.out \
   || fail "appzones shell did not end: $(tr -d '\r' </tmp/shell.out)"
-out=$(tr -d '\r' </tmp/shell.out)
+# (without the terminal's escapes: readline's bracketed paste where a terminfo is installed)
+out=$(tr -d '\r' </tmp/shell.out | sed 's/\x1b\[[?0-9;]*[a-zA-Z]//g')
 echo "$out" | grep -q "^in-shell-off" || fail "appzones shell: $out"
 pass "appzones shell (a pty in the zone)"
 
 # without systemd the host's mounts are private: a new mount does not reach the zone, and appzones says why
-out=$(as_alice 'appzones mount off ~/data --ro' 2>&1) || fail "appzones mount: $out"
-echo "$out" | grep -q "mount --make-rshared /" || fail "no hint for a private host mount: $out"
-as_alice 'appzones umount off data' >/dev/null
-pass "appzones mount on a host without systemd: names the fix (mount --make-rshared /)"
-mount --make-rshared /  # what systemd does at boot
+if [ "$(findmnt -no PROPAGATION /)" = private ]; then
+  out=$(as_alice 'appzones mount off ~/data --ro' 2>&1) || fail "appzones mount: $out"
+  echo "$out" | grep -q "mount --make-rshared /" || fail "no hint for a private host mount: $out"
+  as_alice 'appzones umount off data' >/dev/null
+  pass "appzones mount on a host without systemd: names the fix (mount --make-rshared /)"
+  mount --make-rshared /  # what systemd does at boot
+fi
 as_alice 'appzones restart off'
 as_alice 'appzones mount off ~/data --ro' >/dev/null || fail "appzones mount"
 got=$(as_alice 'appzones run --wait off -- cat /mnt/host/data/x </dev/null' 2>&1) || true
@@ -131,7 +164,136 @@ as_alice 'appzones stop off; appzones stop web'
 if fuser /run/user/1000/appzones/off.lock /run/user/1000/appzones/web.lock >/dev/null 2>&1; then fail "a server left after stop"; fi
 if pgrep -u alice -x zone-init >/dev/null; then fail "a zone-init left after stop"; fi
 [ -s /home/alice/.local/state/appzones/web.log ] || fail "no log in ~/.local/state/appzones"
-pass "stop: no server left; logs in ~/.local/state/appzones"
+# what runs behind pasta logs too (on Fedora, SELinux gave pasta's children /dev/null)
+grep -q "\[zone-init\] zone web ready" /home/alice/.local/state/appzones/web.log \
+  || fail "no zone-init lines in an internet zone's log: $(cat /home/alice/.local/state/appzones/web.log)"
+pass "stop: no server left; logs in ~/.local/state/appzones, also from inside an internet zone"
+
+# a compositor without the security-context protocol (Weston): the zone starts without a
+# Wayland socket and says why; it never gets the host's socket
+as_alice '(weston --backend=headless-backend.so --socket=wayland-9 --idle-time=0 >/tmp/weston-alice.log 2>&1 &); sleep 3; test -S /run/user/1000/wayland-9' \
+  || fail "weston did not start: $(tail -3 /tmp/weston-alice.log 2>/dev/null)"
+UW="$U WAYLAND_DISPLAY=wayland-9"
+out=$(timeout 120 su alice -s /bin/sh -c "$UW sh -c 'appzones run --wait off -- sh -c \"echo works; echo wl=\\\$WAYLAND_DISPLAY; ls /run/user/1000\" </dev/null'" 2>&1) || fail "a zone with Weston: $out"
+echo "$out"
+echo "$out" | grep -qx works && echo "$out" | grep -qx "wl=" || fail "a zone with Weston: $out"
+if echo "$out" | grep -q wayland; then fail "a Wayland socket in the zone: $out"; fi
+grep -q "no security-context protocol" /home/alice/.local/state/appzones/off.log \
+  || fail "not said why: $(tail -5 /home/alice/.local/state/appzones/off.log)"
+as_alice 'appzones stop off'
+pkill -u alice weston || true
+pass "a compositor without the security-context protocol (Weston): the zone starts without Wayland, says why"
+# wayland = "host" for such a compositor: the host's socket as the zone's wayland-0
+as_alice '(weston --backend=headless-backend.so --socket=wayland-9 --idle-time=0 >/tmp/weston-alice.log 2>&1 &); sleep 3; test -S /run/user/1000/wayland-9' \
+  || fail "weston did not start again"
+out=$(timeout 120 su alice -s /bin/sh -c "$UW sh -c 'appzones run --wait gui -- sh -c \"echo wl=\\\$WAYLAND_DISPLAY; wayland-info | grep -c wl_compositor\" </dev/null'" 2>&1) \
+  || fail "wayland = host: $out"
+echo "$out"
+echo "$out" | grep -qx "wl=wayland-0" && echo "$out" | grep -qx 1 || fail "wayland = host: $out"
+grep -q 'wayland = "host": the compositor has no security context' /home/alice/.local/state/appzones/gui.log || fail "wayland = host not logged"
+as_alice 'appzones stop gui'
+pkill -u alice weston || true
+pass "wayland = \"host\": the zone's apps reach the host's compositor (Weston) through wayland-0"
+
+# a desktop: headless sway, a Wayland app from a zone. Where sway has the security-context
+# protocol (Ubuntu 24.04: 1.9) the zone's client gets fewer globals than the host's
+# (no screencopy) and its window opens; Debian 12's sway 1.7 has none (checked above, Weston)
+cat >/tmp/desktop.sh <<'SH'
+set -eu
+cd "$HOME"  # (a shell in foot starts here; su keeps the caller's directory, maybe not alice's to enter)
+export WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
+printf 'output HEADLESS-1 resolution 1280x800\n' >/tmp/sway-alice.conf
+sway -c /tmp/sway-alice.conf >/tmp/sway-alice.log 2>&1 &
+sway=$!
+# both sockets: sway makes its Wayland socket before its IPC socket
+W= I=
+for _ in $(seq 50); do
+  W=$(ls /run/user/1000 | grep -x 'wayland-[0-8]' | head -1) || true
+  I=$(ls /run/user/1000/sway-ipc.*.sock 2>/dev/null | head -1) || true
+  [ -n "$W" ] && [ -n "$I" ] && break; sleep 0.2
+done
+[ -n "$W" ] && [ -n "$I" ] || { echo "sway did not start: $(tail -3 /tmp/sway-alice.log)"; exit 1; }
+export WAYLAND_DISPLAY=$W SWAYSOCK=$I
+WAYLAND_DISPLAY=$W wayland-info >/tmp/wl-host.txt 2>&1
+if ! grep -q wp_security_context_manager_v1 /tmp/wl-host.txt; then echo "$(sway --version)"; exit 3; fi
+appzones run --wait off -- wayland-info </dev/null >/tmp/wl-zone.txt 2>&1 || { cat /tmp/wl-zone.txt; exit 1; }
+h=$(grep -c "interface:" /tmp/wl-host.txt); z=$(grep -c "interface:" /tmp/wl-zone.txt)
+echo "globals: host $h, zone $z"
+grep -q zwlr_screencopy_manager_v1 /tmp/wl-host.txt || { echo "the host has no screencopy?"; exit 1; }
+if grep -q -e zwlr_screencopy_manager_v1 -e zwlr_data_control_manager_v1 /tmp/wl-zone.txt; then
+  echo "the zone's client sees screencopy or data-control"; exit 1
+fi
+# wayland = "host" is only for compositors without a security context: here the zone gets its own
+appzones run --wait gui -- wayland-info </dev/null >/tmp/wl-gui.txt 2>&1 || { cat /tmp/wl-gui.txt; exit 1; }
+if grep -q -e zwlr_screencopy_manager_v1 -e wp_security_context_manager_v1 /tmp/wl-gui.txt; then
+  echo "wayland = host got the host's socket although sway has a security context"; exit 1
+fi
+appzones stop gui
+# contrib/sway/appzones-sway marks the zone's window, not the host's (this zone runs
+# without systemd and sway 1.9 has no sandbox fields: "zone:?", as on Hyprland)
+"$HOOK" >/tmp/hook.log 2>&1 &
+hook=$!
+sleep 1
+foot </dev/null >/tmp/hostfoot.log 2>&1 &
+hostfoot=$!
+appzones run off -- foot </dev/null >/dev/null 2>&1
+# until both windows are there and the hook has marked the zone's (it works on events)
+for _ in $(seq 50); do
+  [ "$(swaymsg -t get_tree | grep -c '"app_id": "foot"')" = 2 ] && swaymsg -t get_tree | grep -q '"zone:' && break
+  sleep 0.2
+done
+python3 - "$hostfoot" <<'PY' || { echo "hook: $(cat /tmp/hook.log); host foot: $(tail -5 /tmp/hostfoot.log)"; exit 1; }
+import json, subprocess, sys
+def wins(n):
+    if n.get("pid"): yield n
+    for c in n.get("nodes", []) + n.get("floating_nodes", []): yield from wins(c)
+ws = [w for w in wins(json.loads(subprocess.check_output(["swaymsg", "-t", "get_tree"]))) if w.get("app_id") == "foot"]
+host = [w for w in ws if w["pid"] == int(sys.argv[1])]
+zone = [w for w in ws if w["pid"] != int(sys.argv[1])]
+assert len(host) == 1 and len(zone) == 1, ws
+assert host[0]["marks"] == [], host[0]["marks"]
+# sway 1.11+ names the zone from its security context; older sway cannot (this zone has no unit)
+want = "?"
+if zone[0].get("sandbox_engine"):
+    assert (zone[0]["sandbox_engine"], zone[0].get("sandbox_app_id")) == ("dev.mirql.zones", "dev.mirql.zone.off"), zone[0]
+    want = "off"
+assert zone[0]["marks"] == [f"zone:{want}:{zone[0]['id']}"], zone[0]["marks"]
+open("/tmp/zone-want", "w").write(want)
+print("marks: host", host[0]["marks"], "zone", zone[0]["marks"])
+PY
+want=$(cat /tmp/zone-want)
+# appzones active (a bar's label) from the mark: the zone's window "[?]", the host's ""
+appzones active --follow >/tmp/follow.txt 2>&1 &
+follow=$!
+sleep 0.5
+swaymsg "[pid=$hostfoot] focus" >/dev/null; sleep 0.5
+host=$(appzones active)
+# (by con_id: con_mark is a regex, and "?" is a quantifier there)
+zid=$(swaymsg -t get_tree | grep -o '"zone:[^"]*:[0-9]*"' | head -1 | tr -d '"' | cut -d: -f3)
+swaymsg "[con_id=$zid] focus" >/dev/null; sleep 0.5
+zone=$(appzones active --json)
+swaymsg workspace 9 >/dev/null; sleep 0.5  # an empty workspace: no window, no label
+empty=$(appzones active)
+# (the zone's window was focused before: without the workspace event the last line stays "[?]")
+followed=$(tail -1 /tmp/follow.txt)
+swaymsg workspace 1 >/dev/null; sleep 0.5
+kill $follow
+echo "active: host '$host', zone $zone, follow: $(tr '\n' '|' </tmp/follow.txt)"
+[ "$host" = "" ] && [ "$empty" = "" ] && echo "$zone" | grep -qF "\"text\": \"[$want]\"" || { echo "appzones active on sway"; exit 1; }
+[ "$followed" = "" ] || { echo "--follow kept a label on the empty workspace: $followed"; exit 1; }
+grep -qxF "[$want]" /tmp/follow.txt && grep -qx '' /tmp/follow.txt || { echo "appzones active --follow on sway"; exit 1; }
+kill $hostfoot $hook
+appzones stop off
+kill $sway
+SH
+rc=0; out=$(timeout 120 su alice -s /bin/sh -c "$U HOOK=$prefix/share/appzones/contrib/sway/appzones-sway sh /tmp/desktop.sh" 2>&1) || rc=$?
+echo "$out"
+case $rc in
+  0) pass "a desktop (headless sway): the zone's client in a security context (no screencopy, no data-control), wayland = host gets its own context here too, its window opens, appzones-sway marks it (not the host's), appzones active reads the mark";;
+  3) pkill -u alice sway || true
+     pass "a desktop (headless sway): this sway has no security-context protocol ($out), as Weston above";;
+  *) fail "a desktop (headless sway): $out";;
+esac
 
 # a server without the desktop's parts: a session bus is set (as over SSH with systemd),
 # but xdg-dbus-proxy and dbus-daemon are not there; and with the C zone-wayland also
@@ -155,9 +317,17 @@ as_alice 'appzones stop off'
 mv /tmp/hidden/xdg-dbus-proxy /tmp/hidden/dbus-daemon /usr/bin/
 pass "a server without zone-wayland, xdg-dbus-proxy, dbus-daemon: the zone starts, says why, bus = zone says what is missing"
 
-make uninstall $mflags >/dev/null 2>&1 || fail "make uninstall"
+if [ "$deb" = pacman ]; then
+  pacman -Rn --noconfirm appzones >/dev/null 2>&1 || fail "pacman -Rn"
+elif [ "$deb" = rpm ]; then
+  dnf -y -q remove appzones >/dev/null 2>&1 || fail "dnf remove"
+elif [ -n "$deb" ]; then
+  dpkg --purge appzones >/dev/null 2>&1 || fail "dpkg --purge"
+else
+  make uninstall $mflags >/dev/null 2>&1 || fail "make uninstall"
+fi
 left=$(ls -d $prefix/lib/appzones $prefix/bin/appzones $prefix/share/appzones /etc/sudoers.d/appzones \
-  /etc/apparmor.d/appzones 2>/dev/null || true)
+  /etc/apparmor.d/appzones $prefix/lib/systemd/user/appzones@.service 2>/dev/null || true)
 [ -z "$left" ] || fail "left after uninstall: $left"
-pass "make uninstall removes it all"
+pass "uninstall removes it all"
 echo "ALL PASSED"

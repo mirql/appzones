@@ -20,9 +20,26 @@ build:
 test-install:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.make-install
 
-# appzones on Ubuntu 24.04 and Debian 12, in their disk images: make install, zones as a user (~3 min each)
+# appzones on Ubuntu 24.04 and Debian 12, in their disk images: make install and the .deb, zones as a user (~3 min each)
 test-distros:
-    nice -n 19 nix build -L --no-link .#checks.x86_64-linux.debian12 .#checks.x86_64-linux.ubuntu2404
+    nice -n 19 nix build -L --no-link .#checks.x86_64-linux.debian12 .#checks.x86_64-linux.ubuntu2404 \
+        .#checks.x86_64-linux.debian12-deb .#checks.x86_64-linux.ubuntu2404-deb
+
+# The .deb (amd64, built in a Debian 12 image): result-deb/appzones_VERSION-1_amd64.deb
+deb:
+    nice -n 19 nix build -L -o result-deb .#deb
+
+# appzones on Arch: the AUR package built from this checkout, installed, the distro test (needs the network and /dev/kvm, ~10 min)
+test-arch:
+    nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh arch
+
+# appzones on openSUSE Leap 16 (SELinux enforcing): make install from this checkout, the distro test (network, /dev/kvm, ~15 min)
+test-opensuse:
+    nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh opensuse
+
+# appzones on Fedora (SELinux enforcing): the RPM built from this checkout, the distro test (needs the network and /dev/kvm, ~15 min)
+test-fedora:
+    nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh fedora
 
 # NixOS VM test: Hyprland, zone units, isolation probes, window tags (~6 min, needs /dev/kvm)
 test-vm:
@@ -58,7 +75,32 @@ release version:
     echo "$notes"
     read -rp "Publish v{{version}} on ${sha:0:7} with these notes? [y/N] " ok
     [ "$ok" = y ] || exit 1
+    # the .deb, built from exactly that commit, before anything is published
+    deb=$(nice -n 19 nix build --no-link --print-out-paths "github:mirql/appzones/$sha#deb")
     gh release create "v{{version}}" --target "$sha" --title "appzones {{version}}" --notes "$notes"
+    gh release upload --clobber "v{{version}}" "$deb"/appzones_{{version}}-1_amd64.deb \
+        || echo "the .deb was not attached: just release-deb {{version}}"
+
+# Build the RPM from the commit tag vVERSION points to, test it on Fedora, attach it to the release (network, /dev/kvm)
+release-rpm version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git fetch -q --tags origin
+    tree=$(mktemp -d) out=$(mktemp -d)
+    trap 'git worktree remove --force "$tree"; rm -rf "$out"' EXIT
+    git worktree add -q --detach "$tree" "v{{version}}"
+    APPZONES_RPM_OUT="$out" nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl \
+        -c nice -n 19 "$tree/tests/cloud-test.sh" fedora
+    gh release upload --clobber "v{{version}}" "$out"/appzones-{{version}}-1.fc*.x86_64.rpm
+
+# Attach (again) the .deb to release VERSION, built from the commit its tag points to
+release-deb version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git fetch -q --tags origin
+    sha=$(git rev-list -n 1 "v{{version}}")
+    deb=$(nice -n 19 nix build --no-link --print-out-paths "github:mirql/appzones/$sha#deb")
+    gh release upload --clobber "v{{version}}" "$deb"/appzones_{{version}}-1_amd64.deb
 
 # Format the Nix files
 fmt:

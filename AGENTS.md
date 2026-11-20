@@ -30,6 +30,11 @@
   A bare `# NOSONAR` hides every finding on that line, so keep such lines small. The
   taint findings (`pythonsecurity:*`: command or path injection) still show; a
   maintainer marks those false positive in SonarQube, again when the line changes.
-- A release (`just release VERSION`) is followed by the AUR package: in `contrib/arch/`,
+- After a release: `just release-rpm VERSION` builds the RPM from the tag, tests it on Fedora, attaches it;
+  the release PR bumps `Version:` in `contrib/fedora/appzones.spec` too.
+- Before an AUR update: `just test-arch` (the package built with makepkg from the checkout, then the
+  distro test, in an Arch VM). `just test-fedora` builds and tests the RPM on Fedora, `just test-opensuse` tests `make install` on openSUSE.
+- A release (`just release VERSION`) attaches the `.deb` (built from the tagged commit:
+  `nix build github:mirql/appzones/SHA#deb`), and is followed by the AUR package: in `contrib/arch/`,
   `pkgver`, the tarball's sha256 and `.SRCINFO` (a PR), then the same four files pushed
   to `ssh://aur@aur.archlinux.org/appzones.git` (needs the maintainer's AUR key).

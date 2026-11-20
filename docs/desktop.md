@@ -27,3 +27,37 @@ For a bar: `appzones active --follow --json` prints Waybar custom-module JSON
 ```json
 "custom/zone": { "exec": "appzones active --follow --json", "return-type": "json" }
 ```
+
+## Sway
+
+`contrib/sway/appzones-sway` (Python, standard library only) watches sway's
+windows over its IPC and gives every window whose process runs in a zone the
+mark `zone:NAME:ID` and the title prefix `[NAME]`, and switches off its
+keyboard-shortcuts inhibitor. Sway has no per-window border colour; with
+`show_marks yes` the mark shows in the title bar too.
+
+The zone comes from what an app in a zone cannot change, never from its title
+or app id: the window's security context (sway 1.11 and later report the app
+id `dev.mirql.zone.NAME` that appzones' zone-wayland sets on the host), or the
+process's cgroup (`appzones@NAME.service`, with systemd). If both are there they
+must agree. Like the Hyprland hook it fails closed: a window from a zone it
+cannot name, from another sandbox or from a nested pid namespace gets
+`zone:?`. On sway 1.11 and later this names zones started without systemd
+too; on older sway (Ubuntu 24.04 has 1.9) those get `zone:?`.
+
+Start it from your sway config:
+
+```
+exec /usr/share/appzones/contrib/sway/appzones-sway
+```
+
+That is the path of the .deb and the Arch package; after `make install` it is
+`/usr/local/share/appzones/contrib/sway/appzones-sway` (`PREFIX/share/...`), with
+Nix `share/appzones/contrib/sway/appzones-sway` in the package.
+
+`appzones active` reads the focused window's mark on sway (the hook must run),
+so the same Waybar module works there:
+
+```json
+"custom/zone": { "exec": "appzones active --follow --json", "return-type": "json" }
+```

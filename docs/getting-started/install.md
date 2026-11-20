@@ -3,11 +3,13 @@
 | Where | What works | How |
 |---|---|---|
 | **NixOS** | everything: desktop apps, window borders on Hyprland, `packages`, `nix_ld` | [the flake's module](#nixos) |
-| **Ubuntu 24.04, Debian 12** (preview) | command-line zones: dev tools and AI agents, also over SSH; desktop apps are not tested yet | [`make install`](#ubuntu-and-debian-preview) |
-| **Arch Linux** (preview) | the same as Ubuntu and Debian | [a PKGBUILD](#arch-linux-preview), or `make install` |
+| **Ubuntu 24.04, Debian 12** (preview) | command-line zones: dev tools and AI agents, also over SSH; desktop apps under sway 1.9+ (tested on Ubuntu 24.04) or GNOME (with `wayland = "host"`, tried by hand); no window borders | [the .deb, or `make install`](#ubuntu-and-debian-preview) |
+| **Arch Linux** (preview) | the same as Ubuntu and Debian; sway names zones started without systemd too | [a PKGBUILD](#arch-linux-preview), or `make install` |
+| **Fedora 45** (preview) | the same, with SELinux enforcing | [the RPM, or `make install`](#fedora-preview) |
+| **openSUSE Leap 16** (preview) | the same, with SELinux enforcing; internet zones need one SELinux setting | [`make install`](#opensuse-preview) |
 
 Other distributions with systemd or another init, Python 3.11 and the same
-tools should work like Ubuntu and Debian; they are not tested yet.
+tools should work like these; they are not tested yet.
 
 ## NixOS
 
@@ -35,7 +37,32 @@ Run `appzones check`.
 ## Ubuntu and Debian (preview)
 
 Tested on Ubuntu 24.04 and Debian 12, in VMs, for every change
-(`just test-distros`). Ubuntu 22.04 is too old (Python 3.10).
+(`just test-distros`): command-line zones, and on Ubuntu a Wayland app from a
+zone under headless sway (its own security context: no screencopy, no
+clipboard snooping). Ubuntu 22.04 is too old (Python 3.10).
+
+**The package.** Each [release](https://github.com/mirql/appzones/releases/latest)
+has a `.deb` for amd64 (built on Debian 12; tested on Debian 12 and Ubuntu 24.04).
+Installed from a checkout before? Remove that first (`sudo make uninstall` in the
+checkout, with the options you installed with), or its `/usr/local/bin/appzones`
+comes first on `PATH`. Download `appzones_VERSION-1_amd64.deb` from there, then:
+
+```bash
+sudo apt install ./appzones_*_amd64.deb   # also fetches bubblewrap, passt, nftables, ...
+sudo usermod -aG appzones $USER           # for appzones mount; log in again after it
+```
+
+It installs into `/usr`, with the systemd user units, a sudo rule for exactly
+the mount helper for members of the group `appzones`, and on Ubuntu 23.10 and
+later the AppArmor profile (see below). apt also installs the recommended
+`xdg-dbus-proxy` and `dbus` (the desktop's parts); on a server,
+`--no-install-recommends` leaves them out. Remove it with `sudo apt purge
+appzones`. Then go on with step 3. The package has Python and the C
+zone-wayland, not the Rust helpers: for those, install from a checkout. To
+build it yourself: `nix build .#deb`, or `sh contrib/debian/build-deb.sh OUTDIR`
+on Debian 12.
+
+**Or from a checkout** (for the Rust helpers, or any commit):
 
 **1. The packages.**
 
@@ -168,8 +195,10 @@ stay in `~/.local/share/appzones` and `~/.config/appzones`.
 
 ## Arch Linux (preview)
 
-Tested by hand on Arch (kernel 7.3, Python 3.14): the same as on Ubuntu and
-Debian, and no AppArmor profile is needed. From 0.8.2 on the package needs
+Tested on Arch with `just test-arch` (the package built from the checkout,
+then the same test as Ubuntu and Debian, in a VM): no AppArmor profile is
+needed, and sway 1.11 or later names a zone's windows also when the zone
+was started without systemd. From 0.8.2 on the package needs
 only what a server needs; for a desktop also install `wayland`,
 `xdg-dbus-proxy` and `dbus` (its optional dependencies). The package is on the AUR,
 [`appzones`](https://aur.archlinux.org/packages/appzones) (its `PKGBUILD` is
@@ -189,14 +218,77 @@ the users you add to it may use `appzones mount`. `pacman -R appzones` removes
 it all. Then [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3).
 `make install` from a checkout works too, as on Debian.
 
+## Fedora (preview)
+
+Tested on Fedora 45 with `just test-fedora` (the RPM built from the
+checkout, then the same test as Ubuntu and Debian, in a VM), with SELinux
+enforcing: no policy change and no AppArmor profile is needed. Releases from
+0.11.1 on have the RPM (`appzones-VERSION-1.fc45.x86_64.rpm`, from
+`contrib/fedora/appzones.spec`); download it from the
+[latest release](https://github.com/mirql/appzones/releases/latest), then:
+
+```bash
+sudo dnf install ./appzones-*.fc45.x86_64.rpm   # also fetches bubblewrap, passt, nftables, ...
+sudo usermod -aG appzones "$USER"              # for appzones mount; log in again after it
+```
+
+It installs into `/usr` like the .deb, with the systemd user units and a
+sudo rule for exactly the mount helper for the group `appzones`. `sudo dnf
+remove appzones` removes it. Or from a checkout:
+
+```bash
+sudo dnf install python3 bubblewrap passt nftables iproute git make   # enough for a server
+sudo dnf install xdg-dbus-proxy dbus-daemon gcc pkgconf-pkg-config wayland-devel  # for a desktop
+git clone https://github.com/mirql/appzones && cd appzones
+make && sudo make install
+```
+
+Then [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3).
+`sudo make uninstall` removes it again.
+
+## openSUSE (preview)
+
+Tested on Leap 16 with `just test-opensuse` (`make install` from the
+checkout, then the same test as Ubuntu and Debian, in a VM), with SELinux
+enforcing. There is no package yet.
+
+```bash
+sudo zypper install python3 bubblewrap passt nftables iproute2 git make   # enough for a server
+sudo zypper install xdg-dbus-proxy dbus-1-daemon gcc pkgconf-pkg-config wayland-devel  # for a desktop
+git clone https://github.com/mirql/appzones && cd appzones
+make && sudo make install
+```
+
+**Internet zones and SELinux.** On Leap 16 `/usr/bin/pasta` is a link to the
+`passt` binary, so SELinux runs pasta in passt's domain, which may not build a
+network namespace: a zone with `network = "internet"` does not start, and its
+log says why. Until openSUSE's passt has its own pasta binary, let that domain
+run unconfined (denials are still logged):
+
+```bash
+sudo zypper install policycoreutils-python-utils
+sudo semanage permissive -a passt_t
+```
+
+Zones with `network = "none"` or `"host"` work without it. Then
+[your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3).
+
 ## Requirements
 
 - x86_64 Linux: NixOS, or Ubuntu 24.04, Debian 12, Arch (preview, above).
   Python 3.11 or newer.
 - For desktop apps, a Wayland compositor with `wp_security_context_v1`
-  (Hyprland, sway, KWin and others): every zone gets its own security
-  context, and a zone does not start without it when there is a Wayland
-  session. Window tags and border colours need Hyprland 0.56 or later with
+  (Hyprland, sway 1.9 and later, other wlroots 0.17+ compositors, KDE Plasma
+  6's KWin): every zone gets its own security context. What the compositor
+  hides from a zone's apps differs: Hyprland and sway hide screencopy,
+  clipboard snooping, virtual input and the window list; KWin 6.8 hides
+  clipboard snooping, fake input, the window list and screencast, but still
+  offers them display configuration (`kde_output_management_v2`), DPMS and
+  `org_kde_plasma_shell`, so a zone's app could rearrange or blank the screens. Under a compositor without it (GNOME's
+  Mutter 46, Weston, older sway) a zone starts without a Wayland socket and
+  its log says why; `wayland = "host"` then gives that zone the host's socket
+  (no security context; under GNOME that hides little, since Mutter offers no
+  screencopy or clipboard snooping to apps). Window tags and border colours need Hyprland 0.56 or later with
   its Lua config (see [Desktop](../desktop.md)). Without a Wayland session
   (a server, SSH) zones start without it.
 - xdg-desktop-portal, PipeWire for `audio`, unprivileged user namespaces,
