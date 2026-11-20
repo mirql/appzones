@@ -135,6 +135,10 @@ def install_error(here: Path, layout: str) -> str | None:
     zone, and HERE does not matter."""
     if all(common.zone_helper_has(c) for c in IN_ZONE):
         return None  # (appzones' code directory is on the never-list: no zone can write it)
+    if common.HELPER == "rust" and "zone-init" in common.RUST_HELPERS and not common.zone_helper():
+        # before anything starts (fs.zone_init_argv would refuse it too, but later)
+        return ("appzones was installed with the Rust helper, but there is no appzones-helper that implements "
+                "zone-init (`appzones-helper --commands`); reinstall it")
     seen = "/nix/store" if layout == "nixos" else "/usr"
     if here.resolve().is_relative_to(seen):
         return None

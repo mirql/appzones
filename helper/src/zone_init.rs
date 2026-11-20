@@ -9,7 +9,7 @@
 //! and exec only async-signal-safe syscalls run (child_setup).
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::ffi::CString;
+use std::ffi::{CString, OsStr, OsString};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -163,7 +163,11 @@ fn child_setup(ctty: bool) -> std::io::Result<()> {
         if ctty && libc::ioctl(0, libc::TIOCSCTTY, 0) < 0 {
             return Err(std::io::Error::last_os_error());
         }
-        libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, libc::CLOSE_RANGE_CLOEXEC as u32);
+        // a child never gets zone-init's descriptors: if this fails (a kernel before 5.11),
+        // the spawn fails
+        if libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, libc::CLOSE_RANGE_CLOEXEC as u32) < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
     }
     Ok(())
 }
@@ -252,10 +256,18 @@ enum Tag {
     ShellOut(i32),
 }
 
+type Env = HashMap<OsString, OsString>;
+
+/// A variable as text (lossy: for zone-init's own use; children get the bytes).
+fn var(env: &Env, k: &str) -> Option<String> {
+    env.get(OsStr::new(k)).map(|v| v.to_string_lossy().into_owned())
+}
+
 struct Init {
     zone: String,
     zrt: String,
-    env: HashMap<String, String>,
+    // the environment as the host gave it: bytes, passed on unchanged (as Python's os.environ)
+    env: Env,
     waiting: HashMap<i32, UnixStream>,
     shells: HashMap<i32, Shell>,
     outputs: HashMap<RawFd, Output>,
@@ -325,12 +337,12 @@ impl Init {
         }
     }
 
-    fn child_env(&self, req: &Value) -> HashMap<String, String> {
+    fn child_env(&self, req: &Value) -> Env {
         let mut env = self.env.clone();
         if let Some(extra) = req.get("env").and_then(Value::as_object) {
             for (k, v) in extra {
                 if let (true, Some(v)) = (ENV_ALLOW.contains(&k.as_str()), v.as_str()) {
-                    env.insert(k.clone(), v.to_string());
+                    env.insert(k.into(), v.into());
                 }
             }
         }
@@ -338,7 +350,7 @@ impl Init {
     }
 
     fn cwd(&self, req: &Value) -> String {
-        let home = self.env.get("HOME").cloned().filter(|h| !h.is_empty()).unwrap_or_else(|| "/".into());
+        let home = var(&self.env, "HOME").filter(|h| !h.is_empty()).unwrap_or_else(|| "/".into());
         let want = req.get("cwd").and_then(Value::as_str).filter(|c| !c.is_empty()).unwrap_or(&home);
         if Path::new(want).is_dir() { want.to_string() } else { home }
     }
@@ -360,7 +372,7 @@ impl Init {
         let mut env = self.child_env(req);
         let label = basename(&argv[0]).to_string();
         if MOZ_APPS.contains(&label.as_str()) {
-            env.insert("MOZ_DBUS_APP_NAME".into(), moz_remoting_name(&self.zone, &label));
+            env.insert("MOZ_DBUS_APP_NAME".into(), moz_remoting_name(&self.zone, &label).into());
         }
         let bus = match req.get("bus") {
             None | Some(Value::Null) => "host".to_string(),
@@ -374,10 +386,10 @@ impl Init {
                 if let Err(e) = self.ensure_zone_bus() {
                     return fail(&mut conn, e);
                 }
-                env.insert("DBUS_SESSION_BUS_ADDRESS".into(), format!("unix:path={}/bus", self.zbus_dir()));
+                env.insert("DBUS_SESSION_BUS_ADDRESS".into(), format!("unix:path={}/bus", self.zbus_dir()).into());
             }
             "none" => {
-                env.remove("DBUS_SESSION_BUS_ADDRESS");
+                env.remove(OsStr::new("DBUS_SESSION_BUS_ADDRESS"));
                 argv = self.no_bus(argv);
             }
             other => return fail(&mut conn, format!("unknown bus '{other}' (host, zone, none)")),
@@ -429,8 +441,8 @@ impl Init {
         };
         let mut env = self.child_env(req);
         let term = req.get("term").and_then(Value::as_str).map(String::from)
-            .unwrap_or_else(|| env.get("TERM").cloned().unwrap_or_else(|| "xterm-256color".into()));
-        env.insert("TERM".into(), term);
+            .unwrap_or_else(|| var(&env, "TERM").unwrap_or_else(|| "xterm-256color".into()));
+        env.insert("TERM".into(), term.into());
         let (mut master, mut slave) = (0 as RawFd, 0 as RawFd);
         // Safety: openpty fills two descriptors, which we own from here on.
         if unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(),
@@ -488,6 +500,9 @@ impl Init {
     /// One read from an app's output pipe: whole lines go to the log and the tail. False
     /// when there was nothing to read; at EOF the pipe is closed and forgotten.
     fn read_output(&mut self, fd: RawFd) -> bool {
+        if !self.outputs.contains_key(&fd) {
+            return false; // closed already (at EOF, earlier in this pass): the number may be reused
+        }
         let mut buf = [0u8; 65536];
         // Safety: read into our buffer from a descriptor the outputs table owns.
         let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
@@ -619,8 +634,8 @@ impl Init {
             Some(_) => self.zbus = None, // exited, not reaped yet: start another
             None => {}
         }
-        let daemon = self.env.get("ZONE_DBUS_DAEMON").cloned().filter(|d| !d.is_empty())
-            .or_else(|| which("dbus-daemon", self.env.get("PATH").map_or("", String::as_str)))
+        let daemon = var(&self.env, "ZONE_DBUS_DAEMON").filter(|d| !d.is_empty())
+            .or_else(|| which("dbus-daemon", &var(&self.env, "PATH").unwrap_or_default()))
             .ok_or("zone bus: no dbus-daemon on this host (install dbus) for bus = \"zone\"")?;
         let dir = self.zbus_dir();
         let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir);
@@ -679,7 +694,7 @@ impl Init {
     fn service_links(&self, dir: &str) {
         let out = format!("{dir}/services");
         let _ = std::fs::create_dir_all(&out);
-        let dirs = self.env.get("XDG_DATA_DIRS").cloned().unwrap_or_else(|| "/usr/share".into());
+        let dirs = var(&self.env, "XDG_DATA_DIRS").unwrap_or_else(|| "/usr/share".into());
         for d in dirs.split(':') {
             let sd = Path::new(d).join("dbus-1/services");
             let Ok(entries) = std::fs::read_dir(&sd) else { continue };
@@ -707,7 +722,7 @@ impl Init {
     /// ARGV wrapped so the app sees no bus socket at all: a nested bwrap whose
     /// $XDG_RUNTIME_DIR holds the zone's other sockets, not bus and not zone-bus.
     fn no_bus(&self, argv: Vec<String>) -> Vec<String> {
-        let bwrap = self.env.get("ZONE_BWRAP").cloned().filter(|b| !b.is_empty()).unwrap_or_else(|| "bwrap".into());
+        let bwrap = var(&self.env, "ZONE_BWRAP").filter(|b| !b.is_empty()).unwrap_or_else(|| "bwrap".into());
         let zrt = &self.zrt;
         let mut a = vec![bwrap, "--dev-bind".into(), "/".into(), "/".into(), "--perms".into(), "0700".into(),
                          "--tmpfs".into(), zrt.clone()];
@@ -931,12 +946,13 @@ pub fn main(_args: &[String]) -> u8 {
         log("could not start the shutdown watcher; refusing to run");
         return 1;
     }
-    let env: HashMap<String, String> = std::env::vars().collect();
-    let zone = env.get("ZONE").cloned().unwrap_or_else(|| "?".into());
+    // vars_os: a value that is not UTF-8 (a locale's, a user's `env`) must not stop the zone
+    let env: Env = std::env::vars_os().collect();
+    let zone = var(&env, "ZONE").unwrap_or_else(|| "?".into());
     // Safety: getuid has no preconditions.
-    let zrt = env.get("XDG_RUNTIME_DIR").cloned().unwrap_or_else(|| format!("/run/user/{}", unsafe { libc::getuid() }));
-    if let Some(addr) = env.get("ZONE_DNS").filter(|a| !a.is_empty()) {
-        zone_dns::start(addr, log);
+    let zrt = var(&env, "XDG_RUNTIME_DIR").unwrap_or_else(|| format!("/run/user/{}", unsafe { libc::getuid() }));
+    if let Some(addr) = var(&env, "ZONE_DNS").filter(|a| !a.is_empty()) {
+        zone_dns::start(&addr, log);
     }
     let mut init = Init { zone: zone.clone(), zrt, env, waiting: HashMap::new(), shells: HashMap::new(),
                           outputs: HashMap::new(), tails: HashMap::new(), running: HashSet::new(),

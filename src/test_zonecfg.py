@@ -926,6 +926,9 @@ os.write(w, b"\\n"); os.close(w)
         self.assertIsNone(zone.install_error(Path("/home/u/appzones/src"), "nixos"))
         zone.implements = lambda h, c: c != "open-link"  # the helper lacks a part: the rule stays
         self.assertIsNotNone(zone.install_error(Path("/opt/appzones"), "fhs"))
+        zone.zone_helper = lambda: None  # installed for the Rust helper, but none is there: refused
+        for here in ("/usr/local/lib/appzones", "/opt/appzones"):  # before anything starts, also under /usr
+            self.assertIn("no appzones-helper that implements zone-init", zone.install_error(Path(here), "fhs"))
         zone = self._zone_mod()
         self.assertIsNone(zone.install_error(Path("/usr/local/lib/appzones"), "fhs"))
         self.assertIsNone(zone.install_error(Path("/nix/store/abc-appzones/libexec/appzones"), "nixos"))
@@ -1870,7 +1873,8 @@ class AgentProtocolTest(unittest.TestCase):
         cmd = shlex.split(os.environ.get("APPZONES_TEST_ZONE_INIT", "")) or [sys.executable, "-B",
                                                                                str(HERE / "zone_init.py")]
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(t), "ZONE": "tt",
-               "ZONE_CTL_FD": str(ls.fileno()), "ZONE_SERVER_FD": str(me), "XDG_RUNTIME_DIR": str(t)}
+               "ZONE_CTL_FD": str(ls.fileno()), "ZONE_SERVER_FD": str(me), "XDG_RUNTIME_DIR": str(t),
+               b"LC_TEST": b"caf\xe9"}  # not UTF-8 (a Latin-1 locale's): zone-init starts and passes it on
         self.proc = subprocess.Popen(cmd, env=env, pass_fds=(ls.fileno(), me), stdout=subprocess.DEVNULL,
                                      stderr=subprocess.DEVNULL)
         ls.close()
@@ -1967,6 +1971,15 @@ class AgentProtocolTest(unittest.TestCase):
                          (os.open(os.devnull, os.O_RDONLY), os.open(os.devnull, os.O_WRONLY),
                           os.open(os.devnull, os.O_WRONLY)), n=2)
         self.assertEqual(r[1], {"exit": -9})
+
+    def test_environment_bytes(self):
+        """A variable that is not UTF-8 reaches a command unchanged (zone-init answered, so it started)."""
+        null = [os.open(os.devnull, os.O_RDONLY), os.open(os.devnull, os.O_WRONLY), os.open(os.devnull, os.O_WRONLY)]
+        r = self.request({"op": "run", "argv": ["sh", "-c", 'test "$LC_TEST" = "$(printf "caf\\351")"'], "wait": True},
+                         null, n=2)
+        for f in null:
+            os.close(f)
+        self.assertEqual(r[1], {"exit": 0})
 
     def test_run_wait_refuses(self):
         """--wait takes pipes, files or /dev/null, never a tty or a socket, and exactly three."""
