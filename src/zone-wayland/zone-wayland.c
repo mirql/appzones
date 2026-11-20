@@ -61,7 +61,8 @@ int main(int argc, char **argv) {
   if (!dpy) { perror("wl_display_connect"); return 1; }
   struct wl_registry *reg = wl_display_get_registry(dpy);
   wl_registry_add_listener(reg, &reg_listener, NULL);
-  wl_display_roundtrip(dpy);
+  // only a complete list of globals may say "no protocol" (3); a broken connection is 1
+  if (wl_display_roundtrip(dpy) < 0) { fprintf(stderr, "the compositor's globals: protocol error %d\n", wl_display_get_error(dpy)); return 1; }
   if (!mgr) { fprintf(stderr, "compositor has no wp_security_context_manager_v1\n"); return 3; }
 
   int lfd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
