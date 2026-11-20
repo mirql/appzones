@@ -5,6 +5,11 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **Fedora 45 tested** (`just test-fedora`, #22): `make install` from the checkout in a
+  Fedora Cloud VM with SELinux enforcing, then the same distro test, desktop under
+  sway included. It passes without any change to appzones; the install page has a
+  Fedora section. `tests/arch-test.sh` became `tests/cloud-test.sh arch|fedora`.
+
 - **`just test-arch`**: the AUR package built with makepkg from the checkout, installed
   in an Arch VM (a pinned cloud image, the Arch Linux Archive of one date), then the
   same distro test as Debian and Ubuntu. It needs the network, so it is a `just`

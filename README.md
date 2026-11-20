@@ -55,7 +55,7 @@ appzones list                     # zones, state, network, devices, apps running
 
 > [!NOTE]
 > appzones is young (0.11). It runs on **x86_64 NixOS**, and as a preview on
-> **Ubuntu 24.04, Debian 12 and Arch**: command-line zones, and desktop apps
+> **Ubuntu 24.04, Debian 12, Arch and Fedora**: command-line zones, and desktop apps
 > under sway 1.9+ (tested) or GNOME (`wayland = "host"`, tried by hand).
 > Window borders and tags per zone need Hyprland.
 
@@ -221,7 +221,7 @@ its own:
 | Network | internet yes; LAN, host and tailnet no | on or off | on, off or a filter | per-VM firewall | the host's |
 | Which zone is this window? | border colour, the app can't fake it | no | no | border colour | no |
 | Isolation | namespaces, same kernel | namespaces, same kernel | namespaces, same kernel, setuid binary | separate VMs (much stronger) | almost none |
-| Runs on | NixOS; Ubuntu, Debian, Arch (preview) | any distro | any distro | Qubes only | any distro |
+| Runs on | NixOS; Ubuntu, Debian, Arch, Fedora (preview) | any distro | any distro | Qubes only | any distro |
 
 appzones is for when Flatpak is too fine-grained, Qubes is too much, and
 you want your messenger, your work browser, your agents and that PDF in
@@ -261,6 +261,7 @@ git clone https://github.com/mirql/appzones && cd appzones && make && sudo make 
 ```
 
 Arch: `paru -S appzones` from the [AUR](https://aur.archlinux.org/packages/appzones) ([details](https://mirql.github.io/appzones/getting-started/install.html#arch-linux-preview)).
+Fedora: `make install` from a checkout ([details](https://mirql.github.io/appzones/getting-started/install.html#fedora-preview)).
 The [install page](https://mirql.github.io/appzones/getting-started/install.html#ubuntu-and-debian-preview)
 says what it installs (an AppArmor profile on Ubuntu, a sudo rule for
 `appzones mount`) and how to start your first zone.
@@ -358,7 +359,7 @@ Issues, ideas and PRs are welcome. Good places to start:
   NixOS to build and test.
 - **Other compositors.** Hyprland gets window tags and border colours, sway
   marks and title prefixes. niri or KWin hooks would help ([#20](https://github.com/mirql/appzones/issues/20)).
-- **Other distributions.** Fedora, openSUSE and others: a package, and a VM
+- **Other distributions.** An RPM for Fedora; openSUSE and others: a package, and a VM
   test like the Debian and Ubuntu ones ([#22](https://github.com/mirql/appzones/issues/22)).
 - **aarch64.** Nothing has been tried there yet.
 - **Docs.** If something in the [docs](https://mirql.github.io/appzones/) was unclear to you,

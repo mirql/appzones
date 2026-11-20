@@ -31,7 +31,11 @@ deb:
 
 # appzones on Arch: the AUR package built from this checkout, installed, the distro test (needs the network and /dev/kvm, ~10 min)
 test-arch:
-    nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/arch-test.sh
+    nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh arch
+
+# appzones on Fedora (SELinux enforcing): make install from this checkout, the distro test (needs the network and /dev/kvm, ~15 min)
+test-fedora:
+    nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh fedora
 
 # NixOS VM test: Hyprland, zone units, isolation probes, window tags (~6 min, needs /dev/kvm)
 test-vm:

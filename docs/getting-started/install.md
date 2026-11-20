@@ -4,10 +4,11 @@
 |---|---|---|
 | **NixOS** | everything: desktop apps, window borders on Hyprland, `packages`, `nix_ld` | [the flake's module](#nixos) |
 | **Ubuntu 24.04, Debian 12** (preview) | command-line zones: dev tools and AI agents, also over SSH; desktop apps under sway 1.9+ (tested on Ubuntu 24.04) or GNOME (with `wayland = "host"`, tried by hand); no window borders | [the .deb, or `make install`](#ubuntu-and-debian-preview) |
-| **Arch Linux** (preview) | the same as Ubuntu and Debian | [a PKGBUILD](#arch-linux-preview), or `make install` |
+| **Arch Linux** (preview) | the same as Ubuntu and Debian; sway names zones started without systemd too | [a PKGBUILD](#arch-linux-preview), or `make install` |
+| **Fedora 45** (preview) | the same, with SELinux enforcing | [`make install`](#fedora-preview) |
 
 Other distributions with systemd or another init, Python 3.11 and the same
-tools should work like Ubuntu and Debian; they are not tested yet.
+tools should work like these; they are not tested yet.
 
 ## NixOS
 
@@ -193,8 +194,10 @@ stay in `~/.local/share/appzones` and `~/.config/appzones`.
 
 ## Arch Linux (preview)
 
-Tested by hand on Arch (kernel 7.3, Python 3.14): the same as on Ubuntu and
-Debian, and no AppArmor profile is needed. From 0.8.2 on the package needs
+Tested on Arch with `just test-arch` (the package built from the checkout,
+then the same test as Ubuntu and Debian, in a VM): no AppArmor profile is
+needed, and sway 1.11 or later names a zone's windows also when the zone
+was started without systemd. From 0.8.2 on the package needs
 only what a server needs; for a desktop also install `wayland`,
 `xdg-dbus-proxy` and `dbus` (its optional dependencies). The package is on the AUR,
 [`appzones`](https://aur.archlinux.org/packages/appzones) (its `PKGBUILD` is
@@ -213,6 +216,23 @@ for the mount helper for the group `appzones` (created by sysusers), so only
 the users you add to it may use `appzones mount`. `pacman -R appzones` removes
 it all. Then [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3).
 `make install` from a checkout works too, as on Debian.
+
+## Fedora (preview)
+
+Tested on Fedora 45 with `just test-fedora` (`make install` from the
+checkout, then the same test as Ubuntu and Debian, in a VM), with SELinux
+enforcing: no policy change and no AppArmor profile is needed. There is no
+package yet.
+
+```bash
+sudo dnf install python3 bubblewrap passt nftables iproute git make   # enough for a server
+sudo dnf install xdg-dbus-proxy dbus-daemon gcc pkgconf-pkg-config wayland-devel  # for a desktop
+git clone https://github.com/mirql/appzones && cd appzones
+make && sudo make install
+```
+
+Then [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3).
+`sudo make uninstall` removes it again.
 
 ## Requirements
 
