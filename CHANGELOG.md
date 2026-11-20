@@ -8,8 +8,8 @@ The config schema has its own release number (`requires = N` in
 - **Optional Rust helpers** (#97, `design/rust.md`): everything that runs inside a
   zone (zone-init, the link part of the `xdg-open` shim), zone-wayland, and the
   mount helper (the root step of `appzones mount`) also exist in Rust. Install them
-  with `make install HELPER=rust` (needs cargo and rustc 1.85+) or the Nix package
-  `appzones-rust`; Python and C stay the default.
+  with `make` (needs cargo and rustc 1.85+), then `sudo make install HELPER=rust`, or
+  the Nix package `appzones-rust`; Python and C stay the default.
   - No Python of the host's runs in a zone: the server binds the static
     `appzones-helper` read-only at `/run/appzones-helper` and runs its `zone-init`.
     appzones may then be installed outside `/usr` (`PREFIX=/opt/appzones`); there
@@ -21,8 +21,9 @@ The config schema has its own release number (`requires = N` in
   - zone-wayland is a pure-Rust Wayland client (no libwayland).
   - The never-list exists twice (`helper/src/policy.rs` for the root step,
     `zonecfg` for binds and `appzones check`); a differential test keeps them equal.
-  - `just test-rust` runs every test with the Rust helpers; `just audit` checks
-    their dependencies (`cargo deny`).
+  - `just test-rust` runs `cargo test`, the protocol and never-list tests, and the
+    NixOS VM and distro tests with the Rust helpers; `just audit` checks their
+    dependencies (`cargo deny`).
 - **appzones' own code directory is on the never-list**: no bind or mount is it,
   contains it or is inside it. The host runs that code, also from a checkout, so no
   zone may write it.
