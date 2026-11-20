@@ -1940,7 +1940,11 @@ class SwayHookTest(unittest.TestCase):
         loader = SourceFileLoader("appzones_sway", path)
         spec = importlib.util.spec_from_loader("appzones_sway", loader)
         self.m = importlib.util.module_from_spec(spec)
-        loader.exec_module(self.m)
+        dont, sys.dont_write_bytecode = sys.dont_write_bytecode, True  # no __pycache__ in contrib/
+        try:
+            loader.exec_module(self.m)
+        finally:
+            sys.dont_write_bytecode = dont
         self.tmp = tempfile.TemporaryDirectory()
         self.proc = Path(self.tmp.name)
 

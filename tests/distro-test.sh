@@ -215,7 +215,11 @@ sleep 1
 foot </dev/null >/dev/null 2>&1 &
 hostfoot=$!
 appzones run off -- foot </dev/null >/dev/null 2>&1
-for _ in $(seq 50); do [ "$(swaymsg -t get_tree | grep -c '"app_id": "foot"')" = 2 ] && break; sleep 0.2; done
+# until both windows are there and the hook has marked the zone's (it works on events)
+for _ in $(seq 50); do
+  [ "$(swaymsg -t get_tree | grep -c '"app_id": "foot"')" = 2 ] && swaymsg -t get_tree | grep -q '"zone:' && break
+  sleep 0.2
+done
 python3 - "$hostfoot" <<'PY' || { echo "hook: $(cat /tmp/hook.log)"; exit 1; }
 import json, subprocess, sys
 def wins(n):

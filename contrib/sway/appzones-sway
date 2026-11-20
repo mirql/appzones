@@ -5,7 +5,7 @@ config: `exec /usr/share/appzones/contrib/sway/appzones-sway` (or this file's pa
 
 The zone comes from what cannot be changed from inside a zone, never from the window's
 title or app_id, which the app chooses:
-- the window's security context (sway 1.10 and later): engine "dev.mirql.zones" and app
+- the window's security context (sway 1.11 and later): engine "dev.mirql.zones" and app
   id "dev.mirql.zone.NAME", which appzones' zone-wayland sets on the host (a zone's
   clients never see the security-context manager, so cannot make their own);
 - its process's cgroup, .../appzones.slice/appzones@NAME.service (also a cgroup below

@@ -7,7 +7,7 @@ The config schema has its own release number (`requires = N` in
 
 - **Zone markers on sway** (#20): `contrib/sway/appzones-sway` marks every window from a
   zone (`zone:NAME:ID`, the title prefix `[NAME]`, its shortcuts inhibitor off), with
-  the zone taken from the window's security context (sway 1.10+) or its cgroup, never
+  the zone taken from the window's security context (sway 1.11+) or its cgroup, never
   from its title or app id; `zone:?` where it cannot be named. Tested under headless
   sway in the Ubuntu 24.04 distro test.
 
