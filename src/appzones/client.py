@@ -21,7 +21,7 @@ from pathlib import Path
 import zonecfg
 
 from .common import die, load_cfg, load_zone, settings_hash, systemctl, use_systemd, warn
-from . import agent, common, server
+from . import agent, common, portals, server
 
 
 def up(name: str, quiet: bool = False) -> None:
@@ -232,6 +232,21 @@ def outside_paths(z: zonecfg.Zone, args: list[str]) -> list[str]:
         if not any(rp == v or rp.is_relative_to(v) for v in visible):
             bad.append(a)
     return bad
+
+
+def open_link(target: str, url: str) -> int:
+    """`appzones _link TARGET URL` (a zone's server, for a link from the zone): URL in
+    zone TARGET's browser. The browser starts in the background (the zone may have to
+    start first), so the server gets its answer at once: 0, or 1 when there is no browser
+    or URL is not a link."""
+    app = portals.link_browser(target, url)
+    if not app:
+        return 1
+    if os.fork() == 0:
+        os.setsid()
+        os.dup2(os.open(os.devnull, os.O_RDONLY), 0)
+        os._exit(run(target, [app, url], wait=False, restart=False) or 0)
+    return 0
 
 
 def run(name: str, words: list[str], wait: bool, restart: bool, bus: str | None = None) -> int:

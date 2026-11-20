@@ -59,14 +59,13 @@ from __future__ import annotations
 
 import difflib
 import json
-import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import zonecfg  # noqa: E402
 from appzones.common import die  # noqa: E402
-from appzones import agent, client, common, fs, mounts, portals, server, upgrade  # noqa: E402
+from appzones import agent, client, common, fs, mounts, server, upgrade  # noqa: E402
 
 
 # The package version. nix/package.nix replaces the placeholder when it builds the package;
@@ -122,16 +121,7 @@ def main(argv: list[str]) -> int:
     if cmd == "_link":
         if len(rest) != 2:
             die("usage: appzones _link ZONE URL")
-        app = portals.link_browser(rest[0], rest[1])
-        if not app:
-            return 1
-        # the browser starts in the background (the zone may have to start first): the
-        # server that asked gets its answer at once
-        if os.fork() == 0:
-            os.setsid()
-            os.dup2(os.open(os.devnull, os.O_RDONLY), 0)
-            os._exit(client.run(rest[0], [app, rest[1]], wait=False, restart=False) or 0)
-        return 0
+        return client.open_link(rest[0], rest[1])
     if cmd == "_cleanup":
         return 0 if fs.prepare_mnt(one(), common.STATE / one()) else 1
     if cmd == "list":
