@@ -189,9 +189,15 @@ export WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
 printf 'output HEADLESS-1 resolution 1280x800\n' >/tmp/sway-alice.conf
 sway -c /tmp/sway-alice.conf >/tmp/sway-alice.log 2>&1 &
 sway=$!
-for _ in $(seq 50); do W=$(ls /run/user/1000 | grep -x 'wayland-[0-8]' | head -1) && [ -n "$W" ] && break; sleep 0.2; done
-[ -n "${W:-}" ] || { echo "sway did not start: $(tail -3 /tmp/sway-alice.log)"; exit 1; }
-export WAYLAND_DISPLAY=$W SWAYSOCK=$(ls /run/user/1000/sway-ipc.*.sock | head -1)
+# both sockets: sway makes its Wayland socket before its IPC socket
+W= I=
+for _ in $(seq 50); do
+  W=$(ls /run/user/1000 | grep -x 'wayland-[0-8]' | head -1) || true
+  I=$(ls /run/user/1000/sway-ipc.*.sock 2>/dev/null | head -1) || true
+  [ -n "$W" ] && [ -n "$I" ] && break; sleep 0.2
+done
+[ -n "$W" ] && [ -n "$I" ] || { echo "sway did not start: $(tail -3 /tmp/sway-alice.log)"; exit 1; }
+export WAYLAND_DISPLAY=$W SWAYSOCK=$I
 WAYLAND_DISPLAY=$W wayland-info >/tmp/wl-host.txt 2>&1
 if ! grep -q wp_security_context_manager_v1 /tmp/wl-host.txt; then echo "$(sway --version)"; exit 3; fi
 appzones run --wait off -- wayland-info </dev/null >/tmp/wl-zone.txt 2>&1 || { cat /tmp/wl-zone.txt; exit 1; }
