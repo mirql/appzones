@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.11.0
+
+Sway: zone windows are marked (`contrib/sway/appzones-sway`), and `appzones active` gives a bar the focused window's zone there too. The distro tests now open a desktop app from a zone under sway.
+
 - **`appzones active` on sway**: the focused window's zone from the mark that
   `contrib/sway/appzones-sway` sets (never from its title or app id), also with
   `--follow` (sway's window events) for a Waybar module.
