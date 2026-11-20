@@ -8,7 +8,9 @@
 //! from them. The context lives as long as this process: its close fd is the read end
 //! of a pipe whose write end only this process holds. Prints "ready" once committed.
 //! With $ZONE_WAYLAND_PARENT (the server's pid) it gets SIGTERM when that process dies
-//! (PR_SET_PDEATHSIG), and exits at once if it died already.
+//! (PR_SET_PDEATHSIG), and exits at once if it died already. Exits 3 when the compositor
+//! has no security-context protocol (the server then starts the zone without a Wayland
+//! socket), 1 on any other error.
 
 use std::io::Write;
 use std::os::fd::AsFd;
@@ -40,6 +42,9 @@ impl Dispatch<WpSecurityContextV1, ()> for State {
     fn event(_: &mut Self, _: &WpSecurityContextV1, _: <WpSecurityContextV1 as wayland_client::Proxy>::Event,
              _: &(), _: &Connection, _: &QueueHandle<Self>) {}
 }
+
+/// The exit status for a compositor without wp_security_context_manager_v1.
+const NO_PROTOCOL: u8 = 3;
 
 fn fail(msg: impl std::fmt::Display) -> u8 {
     eprintln!("zone-wayland: {msg}");
@@ -90,7 +95,10 @@ pub fn main(args: &[String]) -> u8 {
     let qh = queue.handle();
     let mgr: WpSecurityContextManagerV1 = match globals.bind(&qh, 1..=1, ()) {
         Ok(m) => m,
-        Err(_) => return fail("compositor has no wp_security_context_manager_v1"),
+        Err(_) => {
+            fail("compositor has no wp_security_context_manager_v1");
+            return NO_PROTOCOL;
+        }
     };
     let _ = std::fs::remove_file(path);
     let listener = match UnixListener::bind(path) {

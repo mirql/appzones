@@ -23,8 +23,9 @@ appzones --version            # the version and the config release (for a bug re
 | No sound, microphone, camera or screen sharing | Not in the zone's `devices` | Add `audio`, `mic`, `camera` or `screencast`, then restart the zone |
 | A USB device is missing | Devices are bound at zone start ([Devices and USB](configuration/devices.md)) | Check `usb = [...]` matches `lsusb`, plug it in, restart the zone |
 | An X11-only app, a Flatpak app, an AppImage | X11-only apps do not run yet; Flatpak apps need the host's Flatpak; AppImages need FUSE | Run Flatpaks on the host; AppImages with `--appimage-extract-and-run` |
+| Desktop apps open no window; the log says "no security-context protocol" | The compositor has no `wp_security_context_v1` (Weston, sway before 1.9), so the zone has no Wayland socket | A compositor with it: Hyprland, sway 1.9+, others on wlroots 0.17+ |
 | A window has no zone border colour | Borders and tags need Hyprland and the appzones hook | See [Desktop](desktop.md) |
-| A zone does not start at all | Often a missing `wp_security_context_v1`, nftables modules, or an invalid config | `appzones check`, `appzones logs ZONE`; see [Install](getting-started/install.md) |
+| A zone does not start at all | Often missing nftables modules, or an invalid config | `appzones check`, `appzones logs ZONE`; see [Install](getting-started/install.md) |
 | "nft not found" (or bwrap, pasta, ...) | appzones looks for its helpers on `PATH`, then in `/usr/sbin` and `/sbin` | Install the package that has it, or point appzones at it: `export APPZONES_BIN_NFT=/path/to/nft` (`APPZONES_BIN_<NAME>` for any helper; for zones that systemd starts, also in the user manager: `systemctl --user set-environment`) |
 
 Still stuck? Ask in [Discussions](https://github.com/mirql/appzones/discussions/categories/q-a), or open an [issue](https://github.com/mirql/appzones/issues/new/choose) with `appzones --version`, `appzones check` output and the relevant part of your `zones.toml`.

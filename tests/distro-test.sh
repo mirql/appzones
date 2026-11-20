@@ -149,6 +149,21 @@ if pgrep -u alice -x zone-init >/dev/null; then fail "a zone-init left after sto
 [ -s /home/alice/.local/state/appzones/web.log ] || fail "no log in ~/.local/state/appzones"
 pass "stop: no server left; logs in ~/.local/state/appzones"
 
+# a compositor without the security-context protocol (Weston): the zone starts without a
+# Wayland socket and says why; it never gets the host's socket
+as_alice '(weston --backend=headless-backend.so --socket=wayland-9 --idle-time=0 >/tmp/weston-alice.log 2>&1 &); sleep 3; test -S /run/user/1000/wayland-9' \
+  || fail "weston did not start: $(tail -3 /tmp/weston-alice.log 2>/dev/null)"
+UW="$U WAYLAND_DISPLAY=wayland-9"
+out=$(timeout 120 su alice -s /bin/sh -c "$UW sh -c 'appzones run --wait off -- sh -c \"echo works; echo wl=\\\$WAYLAND_DISPLAY; ls /run/user/1000\" </dev/null'" 2>&1) || fail "a zone with Weston: $out"
+echo "$out"
+echo "$out" | grep -qx works && echo "$out" | grep -qx "wl=" || fail "a zone with Weston: $out"
+if echo "$out" | grep -q wayland; then fail "a Wayland socket in the zone: $out"; fi
+grep -q "no security-context protocol" /home/alice/.local/state/appzones/off.log \
+  || fail "not said why: $(tail -5 /home/alice/.local/state/appzones/off.log)"
+as_alice 'appzones stop off'
+pkill -u alice weston || true
+pass "a compositor without the security-context protocol (Weston): the zone starts without Wayland, says why"
+
 # a server without the desktop's parts: a session bus is set (as over SSH with systemd),
 # but xdg-dbus-proxy and dbus-daemon are not there; and with the C zone-wayland also
 # WAYLAND_DISPLAY without zone-wayland (the Rust one is zone-init's binary: always there)

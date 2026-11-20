@@ -57,6 +57,8 @@ let
       "login"
       "dnsmasq-base"
       "apparmor"
+      # a compositor without the security-context protocol
+      "weston"
     ];
   };
 in

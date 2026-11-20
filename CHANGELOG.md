@@ -5,6 +5,13 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **A compositor without the security-context protocol no longer stops a zone.**
+  Under Weston or sway before 1.9 (no `wp_security_context_v1`) a zone failed to
+  start at all, also for command-line work. Now it starts without a Wayland socket
+  (never with the host's), and its log says why. zone-wayland exits with status 3
+  for this. Found by trying desktop apps on Ubuntu 24.04; the distro tests run zones
+  under Weston on Debian 12 and Ubuntu 24.04.
+
 - **A .deb for Debian 12 and Ubuntu 24.04** (#22): each release has
   `appzones_VERSION-1_amd64.deb` (`sudo apt install ./appzones_*_amd64.deb`). Built
   in a Debian 12 image (`nix build .#deb`, `contrib/debian/build-deb.sh`); the sudo

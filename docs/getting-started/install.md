@@ -217,9 +217,10 @@ it all. Then [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3)
 - x86_64 Linux: NixOS, or Ubuntu 24.04, Debian 12, Arch (preview, above).
   Python 3.11 or newer.
 - For desktop apps, a Wayland compositor with `wp_security_context_v1`
-  (Hyprland, sway, KWin and others): every zone gets its own security
-  context, and a zone does not start without it when there is a Wayland
-  session. Window tags and border colours need Hyprland 0.56 or later with
+  (Hyprland, sway 1.9 and later, other wlroots 0.17+ compositors): every zone
+  gets its own security context. Under a compositor without it (Weston,
+  older sway) a zone starts without a Wayland socket, never with the
+  host's, and its log says why. Window tags and border colours need Hyprland 0.56 or later with
   its Lua config (see [Desktop](../desktop.md)). Without a Wayland session
   (a server, SSH) zones start without it.
 - xdg-desktop-portal, PipeWire for `audio`, unprivileged user namespaces,

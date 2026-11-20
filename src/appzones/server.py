@@ -146,6 +146,18 @@ def install_error(here: Path, layout: str) -> str | None:
             "(`sudo make install`, PREFIX=/usr/local by default; or the Nix package)")
 
 
+# zone-wayland's exit status for a compositor without wp_security_context_v1
+WAYLAND_NO_PROTOCOL = 3
+
+
+def _exit_status(p: subprocess.Popen) -> int | None:
+    """P's exit status once it has exited (a moment's wait: it closed its stdout), else None."""
+    try:
+        return p.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        return None
+
+
 class _Stopped(Exception):
     """A stop (SIGTERM, SIGINT) while the zone is being prepared."""
 
@@ -258,9 +270,18 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         h = subprocess.Popen([*wayland_helper, str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
                              stdout=subprocess.PIPE,
                              env=dict(os.environ, ZONE_WAYLAND_PARENT=str(os.getpid())))
-        helpers.append(h)
+        helpers.append(h)  # (a stop while it starts ends it too)
         if read_line(h.stdout.fileno(), START_TIMEOUT) != b"ready":
-            return abort(f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
+            rc = _exit_status(h)
+            if rc != WAYLAND_NO_PROTOCOL:
+                return abort(f"zone-wayland exited with status {rc} (its message is above)" if rc is not None
+                             else f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
+            # less, never more: no Wayland socket in the zone, and never the host's
+            helpers.remove(h)
+            print(f"[zone] {name}: the compositor has no security-context protocol (wp_security_context_v1), "
+                  "so the zone starts without a Wayland socket (desktop apps will not open windows). "
+                  "Compositors with it: Hyprland, sway 1.9 and later, others built on wlroots 0.17 or later",
+                  flush=True)
     else:
         print(f"[zone] no WAYLAND_DISPLAY: zone {name} starts without a Wayland socket", flush=True)
     if os.environ.get("DBUS_SESSION_BUS_ADDRESS") and not common.find_tool("xdg-dbus-proxy"):
