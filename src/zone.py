@@ -48,6 +48,8 @@ Internal (systemd and the supervisor):
                                            ZONE's agent socket (for zone-init: $ZONE_CTL_FD), take
                                            its server's pidfd ($ZONE_SERVER_FD), exec CMD
     appzones _autostart                    write launcher entries, start zones with autostart = true
+    appzones _link ZONE URL                open URL in ZONE's browser (a zone's link, from its server)
+    appzones _cleanup ZONE                 detach ZONE's runtime mounts (its server, when it ends)
 
 Config: ~/.config/appzones/zones.toml ($APPZONES_CONFIG). State: ~/.local/share/appzones.
 Before 0.6: ~/.config/zones and ~/.local/share/zones (read, and moved; see migrate_state).
@@ -63,7 +65,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import zonecfg  # noqa: E402
 from appzones.common import die  # noqa: E402
-from appzones import agent, client, mounts, server, upgrade  # noqa: E402
+from appzones import agent, client, common, fs, mounts, portals, server, upgrade  # noqa: E402
 
 
 # The package version. nix/package.nix replaces the placeholder when it builds the package;
@@ -71,7 +73,7 @@ from appzones import agent, client, mounts, server, upgrade  # noqa: E402
 VERSION = "@version@"
 
 
-# The commands a user types. The internal ones (`_netsetup`, `_autostart`) and
+# The commands a user types. The internal ones (`_netsetup`, `_autostart`, `_link`, `_cleanup`) and
 # the retired `_supervise` name are left out on purpose: they are for systemd
 # and the supervisor, and suggesting one for a typo would be wrong.
 COMMANDS = ("active", "apps", "check", "list", "logs", "mount", "mounts", "new", "ping", "ps",
@@ -116,6 +118,12 @@ def main(argv: list[str]) -> int:
         server.netsetup(rest[0], rest[1], rest[2], rest[i + 1:])
     if cmd == "_autostart":
         return client.autostart()
+    if cmd == "_link":
+        if len(rest) != 2:
+            die("usage: appzones _link ZONE URL")
+        return portals.open_in_zone(rest[0], rest[1])
+    if cmd == "_cleanup":
+        return 0 if fs.prepare_mnt(one(), common.STATE / one()) else 1
     if cmd == "list":
         return client.zone_list("--json" in rest)
     if cmd == "which":

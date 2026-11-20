@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import secrets
 import select
@@ -193,10 +194,15 @@ class _Stopped(Exception):
     """A stop (SIGTERM, SIGINT) while the zone is being prepared."""
 
 
+PLAN_VERSION = 1  # the plan's format (run_plan, appzones-helper serve)
+
+
 def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = None) -> int:
     """The zone NAME, in the foreground (`appzones serve`): builds it, holds it, and
     returns when it ends. SIGTERM or SIGINT stops it and its helpers. One server per
-    zone: take_lock comes before anything is changed."""
+    zone: take_lock comes before anything is changed. In two parts: make_plan (the
+    configuration, the zone's files, what it needs), then run_plan (the helpers and the
+    zone, until it ends), with the plan in the zone's runtime directory between them."""
     if notify_fd is not None and notify_fd == lock_fd:
         die("--notify-fd and --lock-fd must be different fds (readiness closes the notify fd)")
     if notify_fd is not None:
@@ -204,37 +210,169 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             die(f"--notify-fd {notify_fd}: not a pipe or file above 2, open for writing")
         os.set_inheritable(notify_fd, False)  # never into the zone or a helper
     lock = take_lock(name, lock_fd)  # noqa: F841  (held until this process exits)
+    stopped: list[int] = []  # a stop asked for by SIGTERM or SIGINT
+
+    def stop_preparing(signum, _frame):  # before any helper runs: unwind (a packages build is killed)
+        stopped.append(signum)
+        raise _Stopped
+
+    def stop_pending(signum, _frame):  # between the two parts: run_plan sees it and stops
+        stopped.append(signum)
+
+    signal.signal(signal.SIGTERM, stop_preparing)
+    signal.signal(signal.SIGINT, stop_preparing)
+    try:
+        plan = make_plan(name)
+        signal.signal(signal.SIGTERM, stop_pending)
+        signal.signal(signal.SIGINT, stop_pending)
+    except _Stopped:
+        print(f"[zone] {name}: stopped while starting", flush=True)
+        return 0 if stopped[-1] == signal.SIGINT else 128 + stopped[-1]
+    write_plan(plan)
+    return run_plan(plan, notify_fd, stopped)
+
+
+def write_plan(plan: dict) -> Path:
+    """The plan as JSON in the zone's runtime directory (0600, never in the zone)."""
+    path = Path(plan["zrt"]) / "plan.json"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(plan, f, indent=1)
+        f.write("\n")
+    return path
+
+
+def make_plan(name: str) -> dict:
+    """The first part of `appzones serve`: the configuration checked, the zone's files
+    written (its runtime directory, machine-id, resolv.conf, ...), old mounts detached,
+    packages built, and what the zone needs worked out. The plan says everything run_plan
+    (or appzones-helper serve) needs, with no configuration left to read."""
+    cfg = load_cfg(quiet=False)
+    if name not in cfg.zones:
+        die(f"no zone {name!r} in {common.CONFIG}")
+    z = cfg.zones[name]
+    s = z.settings
+    err = install_error(common.HERE, zonecfg.host_layout())
+    if err:
+        die(err)
+    timeout = zonecfg.duration(s["start_timeout"]) or START_TIMEOUT
+    zdir, zrt = common.STATE / name, common.RT / name
+    zdir.mkdir(parents=True, exist_ok=True)
+    common.RT.mkdir(parents=True, exist_ok=True)
+    os.chmod(common.RT, 0o700)
+    if zrt.exists():
+        shutil.rmtree(zrt)
+    (zrt / "ctl").mkdir(parents=True, mode=0o700)
+    if not (zdir / "machine-id").exists():
+        (zdir / "machine-id").write_text(secrets.token_hex(16) + "\n")
+    (zrt / "resolv.conf").write_text(net.resolv_conf(s))
+    (zrt / "hosts").write_text(f"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 {name}-zone\n")
+    instance = f"zone-{name}-{secrets.randbelow(2**31)}"
+    (zrt / "flatpak-info").write_text(portals.flatpak_info(z, instance))
+    (zrt / "config.sha256").write_text(settings_hash(z) + "\n")
+    write_colours(cfg)
+    if s["tmp"] == "disk":
+        fs.prepare_tmp(zdir)
+    if not fs.prepare_mnt(name, zdir):
+        die(f"mounts from the last run of {name} are still there (see above); not starting the zone with them: "
+            f"`appzones umount {name} NAME` or end what holds them")
+    extra_path = fs.package_paths(z, zdir) if s["packages"] else []
+    zone_py = [sys.executable, str(common.HERE / "zone.py")]
+    target = portals.link_target(z)
+    links = None
+    if target:
+        (zrt / "ctl/bin").mkdir()
+        xo = zrt / "ctl/bin/xdg-open"
+        xo.write_text(portals.XDG_OPEN.format(links=s["links"], target=target,
+                                              open_link=portals.open_link_command(os.path.realpath(sys.executable)),
+                                              xdg_open=portals.real_xdg_open()))
+        xo.chmod(0o755)
+        links = {"socket": str(zrt / "ctl" / "links.sock"), "command": [*zone_py, "_link", target]}
+    # the desktop's parts are optional: without their helper (a server, a package
+    # without them) the zone starts without them, and says so
+    # wayland = "host" is a fallback: the zone's own security context wherever the
+    # compositor has the protocol (with the raw socket a zone's client would also get
+    # the context manager, screencopy, virtual input...), the host's socket only where
+    # it has none (GNOME's Mutter, Weston)
+    wl = s["wayland"]
+    wayland_helper = common.helper_argv("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") and wl != "none" else None
+    if wl == "none":
+        print(f"[zone] {name}: wayland = \"none\": no Wayland socket", flush=True)
+    elif os.environ.get("WAYLAND_DISPLAY") and not wayland_helper:
+        print(f"[zone] {name}: zone-wayland not found: the zone starts without a Wayland socket "
+              "(desktop apps will not open windows; install appzones with zone-wayland)", flush=True)
+    elif not wayland_helper:
+        print(f"[zone] no WAYLAND_DISPLAY: zone {name} starts without a Wayland socket", flush=True)
+    proxy = None
+    if os.environ.get("DBUS_SESSION_BUS_ADDRESS") and not common.find_tool("xdg-dbus-proxy"):
+        print(f"[zone] {name}: xdg-dbus-proxy not found: the zone starts without a session bus "
+              "(no portals, notifications or tray; install xdg-dbus-proxy for them)", flush=True)
+    elif os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+        proxy = portals.dbus_proxy_argv(z, zrt)
+    network = s["network"]
+    (zrt / "nft.rules").write_text(net.nft_rules(z))
+    # bwrap writes its info (child-pid) to fd 3; the portal reads it as
+    # $XDG_RUNTIME_DIR/.flatpak/<instance>/bwrapinfo.json
+    fp = common.HOST_RT / ".flatpak" / instance
+    fp.mkdir(parents=True, exist_ok=True)
+    inner = fs.bwrap_argv(z, zdir, zrt, network, extra_path, plan=True)
+    # pasta closes inherited fds, so the info fd is opened by _netsetup, in
+    # pasta's namespace, right before it execs bwrap.
+    argv = [*zone_py, "_netsetup", str(zrt / "nft.rules") if network == "internet" else "-",
+            str(fp / "bwrapinfo.json"), name, "--"] + inner
+    if network == "internet":
+        argv = net.pasta_argv(z) + argv
+        problem = net.pasta_selinux_problem(argv[0])
+        if problem:
+            print(f"[zone] {name}: {problem}", flush=True)
+    return {
+        "version": PLAN_VERSION,
+        "name": name,
+        "zrt": str(zrt),
+        "start_timeout": timeout,
+        "linger": zonecfg.duration(s["linger"]),
+        "linger_text": s["linger"],
+        "network": network,
+        "dns": s["dns"],
+        "devices": list(s["devices"]),
+        "flatpak_dir": str(fp),
+        "wayland": {"mode": wl, "helper": None if not wayland_helper else
+                    [*wayland_helper, str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance]},
+        "dbus_proxy": proxy,
+        # the zone (pasta for an internet zone, _netsetup, bwrap, zone-init), with the
+        # parts that depend on the helpers marked (fs.resolve_plan_argv)
+        "argv": argv,
+        # an internet zone: its output through a socket (see run_plan), its DNS answered
+        "log_socket": network == "internet",
+        "dns_upstreams": dns.upstreams(z) if network == "internet" else None,
+        "links": links,
+        "autostart": [{"app": a, "argv": zonecfg.resolve_app(cfg, name, a) or [a], "bus": zonecfg.app_bus(cfg, name, a)}
+                      for a in s["autostart_apps"]],
+        "cleanup": [*zone_py, "_cleanup", name],
+    }
+
+
+def run_plan(plan: dict, notify_fd: int | None, stopped: list[int]) -> int:
+    """The second part of `appzones serve`: the helpers and the zone of PLAN (make_plan),
+    until it ends; returns the exit status. appzones-helper serve does the same in Rust.
+    STOPPED: the stops asked for already (SIGTERM or SIGINT), and those to come."""
+    global START_TIMEOUT
+    START_TIMEOUT = plan["start_timeout"]
+    name, zrt, fp = plan["name"], Path(plan["zrt"]), Path(plan["flatpak_dir"])
     helpers: list[subprocess.Popen] = []
     relay: list[threading.Thread] = []  # copies an internet zone's output to ours (_relay_output)
+    child: subprocess.Popen | None = None
 
     def relay_done() -> None:
         """The zone's last lines in our log: the relay ends when the zone's writers have,
         or after a moment (a helper that still holds the socket)."""
         for t in relay:
             t.join(timeout=2)
-    child: subprocess.Popen | None = None
-
-    stopped: list[int] = []  # a stop asked for by SIGTERM or SIGINT
-    fp: Path | None = None
 
     def stop_code() -> int:
         """SIGINT (`appzones stop`, Ctrl-C) ends the zone for good: 0. SIGTERM (a process
         manager's stop or restart): 143, so the manager does what it was asked."""
         return 0 if stopped[-1] == signal.SIGINT else 128 + stopped[-1]
-
-    def abort(msg: str) -> int:
-        """End a start that failed, or was stopped (then it is not a failure)."""
-        stop_all()
-        if child:
-            wait_or_kill(child)
-        relay_done()
-        if fp:
-            shutil.rmtree(fp, ignore_errors=True)
-        if stopped:
-            print(f"[zone] {name}: stopped while starting", flush=True)
-            return stop_code()
-        print(f"[zone] {name}: {msg}; stopping", flush=True)
-        return 1
 
     def stop_all(*_):
         if child and child.poll() is None:
@@ -247,81 +385,38 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         stopped.append(signum)
         stop_all()
 
-    def stop_preparing(signum, _frame):  # before any helper runs: unwind (a packages build is killed)
-        stopped.append(signum)
-        raise _Stopped
+    def abort(msg: str) -> int:
+        """End a start that failed, or was stopped (then it is not a failure)."""
+        stop_all()
+        if child:
+            wait_or_kill(child)
+        relay_done()
+        shutil.rmtree(fp, ignore_errors=True)
+        if stopped:
+            print(f"[zone] {name}: stopped while starting", flush=True)
+            return stop_code()
+        print(f"[zone] {name}: {msg}; stopping", flush=True)
+        return 1
 
-    signal.signal(signal.SIGTERM, stop_preparing)
-    signal.signal(signal.SIGINT, stop_preparing)
-    try:
-        cfg = load_cfg(quiet=False)
-        if name not in cfg.zones:
-            die(f"no zone {name!r} in {common.CONFIG}")
-        z = cfg.zones[name]
-        s = z.settings
-        err = install_error(common.HERE, zonecfg.host_layout())
-        if err:
-            die(err)
-        global START_TIMEOUT
-        START_TIMEOUT = zonecfg.duration(s["start_timeout"]) or START_TIMEOUT
-        linger = zonecfg.duration(s["linger"])
-        zdir, zrt = common.STATE / name, common.RT / name
-        zdir.mkdir(parents=True, exist_ok=True)
-        common.RT.mkdir(parents=True, exist_ok=True)
-        os.chmod(common.RT, 0o700)
-        if zrt.exists():
-            shutil.rmtree(zrt)
-        (zrt / "ctl").mkdir(parents=True, mode=0o700)
-        if not (zdir / "machine-id").exists():
-            (zdir / "machine-id").write_text(secrets.token_hex(16) + "\n")
-        (zrt / "resolv.conf").write_text(net.resolv_conf(s))
-        (zrt / "hosts").write_text(f"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 {name}-zone\n")
-        instance = f"zone-{name}-{secrets.randbelow(2**31)}"
-        (zrt / "flatpak-info").write_text(portals.flatpak_info(z, instance))
-        (zrt / "config.sha256").write_text(settings_hash(z) + "\n")
-        write_colours(cfg)
-        if s["tmp"] == "disk":
-            fs.prepare_tmp(zdir)
-        if not fs.prepare_mnt(name, zdir):
-            die(f"mounts from the last run of {name} are still there (see above); not starting the zone with them: "
-                f"`appzones umount {name} NAME` or end what holds them")
-        extra_path = fs.package_paths(z, zdir) if s["packages"] else []
-        target = portals.link_target(z)
-        links_srv = None
-        if target:
-            (zrt / "ctl/bin").mkdir()
-            xo = zrt / "ctl/bin/xdg-open"
-            xo.write_text(portals.XDG_OPEN.format(links=s["links"], target=target,
-                                                  open_link=portals.open_link_command(os.path.realpath(sys.executable)),
-                                                  xdg_open=portals.real_xdg_open()))
-            xo.chmod(0o755)
-            links_srv = portals.serve_links(z, zrt, target)
-        signal.signal(signal.SIGTERM, stop_asked)
-        signal.signal(signal.SIGINT, stop_asked)
-    except _Stopped:
-        print(f"[zone] {name}: stopped while starting", flush=True)
-        return stop_code()
-    # the desktop's parts are optional: without their helper (a server, a package
-    # without them) the zone starts without them, and says so
-    # wayland = "host" is a fallback: the zone's own security context wherever the
-    # compositor has the protocol (with the raw socket a zone's client would also get
-    # the context manager, screencopy, virtual input...), the host's socket only where
-    # it has none (GNOME's Mutter, Weston)
-    wl = z.settings["wayland"]
-    host_wayland = False
-    wayland_helper = common.helper_argv("zone-wayland") if os.environ.get("WAYLAND_DISPLAY") and wl != "none" else None
-    if wl == "none":
-        print(f"[zone] {name}: wayland = \"none\": no Wayland socket", flush=True)
-    elif os.environ.get("WAYLAND_DISPLAY") and not wayland_helper:
-        print(f"[zone] {name}: zone-wayland not found: the zone starts without a Wayland socket "
-              "(desktop apps will not open windows; install appzones with zone-wayland)", flush=True)
-    elif wayland_helper:
-        h = subprocess.Popen([*wayland_helper, str(zrt / "wayland-0"), f"dev.mirql.zone.{name}", instance],
-                             stdout=subprocess.PIPE,
+    signal.signal(signal.SIGTERM, stop_asked)
+    signal.signal(signal.SIGINT, stop_asked)
+    links_srv = None
+    if plan["links"]:
+        links_srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        links_srv.bind(plan["links"]["socket"])
+        links_srv.listen(8)
+        links_srv.setblocking(False)
+    have: set[str] = set()  # what the helpers made (fs.resolve_plan_argv)
+    host_wl = None
+    wl = plan["wayland"]
+    if wl["helper"]:
+        h = subprocess.Popen(wl["helper"], stdout=subprocess.PIPE,
                              env=dict(os.environ, ZONE_WAYLAND_PARENT=str(os.getpid())))
         helpers.append(h)  # (a stop while it starts ends it too)
         ready = read_line(h.stdout.fileno(), START_TIMEOUT) == b"ready"
-        if ready and wl == "host":
+        if ready and (zrt / "wayland-0").exists():
+            have.add("wayland-0")
+        if ready and wl["mode"] == "host":
             print(f"[zone] {name}: wayland = \"host\", but the compositor has a security context: the zone "
                   "gets its own (the host's socket is only for compositors without one)", flush=True)
         if not ready:
@@ -330,8 +425,8 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
                 return abort(f"zone-wayland exited with status {rc} (its message is above)" if rc is not None
                              else f"zone-wayland did not become ready within {START_TIMEOUT:.0f} s")
             helpers.remove(h)
-        if not ready and wl == "host" and common.host_wayland_socket():
-            host_wayland = True
+        if not ready and wl["mode"] == "host" and (host_wl := common.host_wayland_socket()):
+            have.add("wayland-host")
             print(f"[zone] {name}: wayland = \"host\": the compositor has no security context, so the zone's apps "
                   "get the host's Wayland socket", flush=True)
         elif not ready:
@@ -342,36 +437,19 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
                   "KDE Plasma 6. "
                   "To give this zone's apps the host's socket instead (GNOME): wayland = \"host\"",
                   flush=True)
-    else:
-        print(f"[zone] no WAYLAND_DISPLAY: zone {name} starts without a Wayland socket", flush=True)
-    if os.environ.get("DBUS_SESSION_BUS_ADDRESS") and not common.find_tool("xdg-dbus-proxy"):
-        print(f"[zone] {name}: xdg-dbus-proxy not found: the zone starts without a session bus "
-              "(no portals, notifications or tray; install xdg-dbus-proxy for them)", flush=True)
-    elif os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+    if plan["dbus_proxy"]:
         # its bwrap has --die-with-parent too, but arms it only once running
-        helpers.append(subprocess.Popen(portals.dbus_proxy_argv(z, zrt), preexec_fn=die_with(os.getpid())))
+        helpers.append(subprocess.Popen(plan["dbus_proxy"], preexec_fn=die_with(os.getpid())))
         end = time.monotonic() + START_TIMEOUT
         while not (zrt / "bus").exists():
             if time.monotonic() > end or helpers[-1].poll() is not None:
                 return abort("xdg-dbus-proxy did not create the zone's bus")
             time.sleep(0.05)
-    network = s["network"]
-    (zrt / "nft.rules").write_text(net.nft_rules(z))
-    # bwrap writes its info (child-pid) to fd 3; the portal reads it as
-    # $XDG_RUNTIME_DIR/.flatpak/<instance>/bwrapinfo.json
-    fp = common.HOST_RT / ".flatpak" / instance
-    fp.mkdir(parents=True, exist_ok=True)
-    inner = fs.bwrap_argv(z, zdir, zrt, network, extra_path, host_wayland=host_wayland)
-    # pasta closes inherited fds, so the info fd is opened by _netsetup, in
-    # pasta's namespace, right before it execs bwrap.
-    argv = [sys.executable, str(common.HERE / "zone.py"), "_netsetup", str(zrt / "nft.rules") if network == "internet" else "-",
-            str(fp / "bwrapinfo.json"), name, "--"] + inner
+    if (zrt / "bus").exists():
+        have.add("bus")
+    argv = fs.resolve_plan_argv(plan["argv"], have, host_wl)
     log_sock = None
-    if network == "internet":
-        argv = net.pasta_argv(z) + argv
-        problem = net.pasta_selinux_problem(argv[0])
-        if problem:
-            print(f"[zone] {name}: {problem}", flush=True)
+    if plan["log_socket"]:
         # the zone's output through a socket, not through pasta: where pasta is confined
         # (Fedora's passt-selinux) it may not use the server's stdout, and the kernel
         # gives it, and so everything it starts, /dev/null instead. _netsetup, after
@@ -388,7 +466,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     # _netsetup's own deadline (bwrap clears the environment: it goes no further)
     # the zone's DNS answers in threads: started only now, after every launch with a
     # preexec_fn (die_with), which is not safe once a process has threads
-    dns_srv = dns.serve(zrt / "ctl" / "dns.sock", dns.upstreams(z)) if network == "internet" else None  # noqa: F841
+    dns_srv = dns.serve(zrt / "ctl" / "dns.sock", plan["dns_upstreams"]) if plan["dns_upstreams"] is not None else None  # noqa: F841
     child = subprocess.Popen(argv, env=dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT)))  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
     if log_sock:  # a thread, like the DNS: after the last launch with a preexec_fn
         relay.append(threading.Thread(target=_relay_output, args=(log_sock,), daemon=True))
@@ -406,17 +484,18 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         return abort(f"zone-init did not answer within {START_TIMEOUT:.0f} s")
     if child.poll() is None:
         notify_ready(name, notify_fd)
-        print(f"[zone] {name} ready (network={network}, dns={s['dns']}, devices={','.join(s['devices']) or '-'})",
-              flush=True)
-        for app in s["autostart_apps"]:
+        print(f"[zone] {name} ready (network={plan['network']}, dns={plan['dns']}, "
+              f"devices={','.join(plan['devices']) or '-'})", flush=True)
+        for a in plan["autostart"]:
             try:
-                r = agent.send_run(name, zonecfg.resolve_app(cfg, name, app) or [app], bus=zonecfg.app_bus(cfg, name, app))
-                print(f"[zone] autostart {app}: {r}", flush=True)
+                r = agent.send_run(name, a["argv"], bus=a["bus"])
+                print(f"[zone] autostart {a['app']}: {r}", flush=True)
             except (OSError, ValueError) as e:
-                print(f"[zone] autostart {app} failed: {e}", flush=True)
+                print(f"[zone] autostart {a['app']} failed: {e}", flush=True)
     # wait for the zone; a dead helper takes the zone down (a zone without
     # its proxy or Wayland socket is worse than a restart)
     rc = None
+    linger = plan["linger"]
     idle_since: float | None = None  # since the first of an unbroken run of idle reports
     next_check = 0.0
     while rc is None:
@@ -431,7 +510,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             elif idle_since is None:
                 idle_since = now
             elif now - idle_since >= linger:
-                print(f"[zone] {name}: no app for {s['linger']} (linger); stopping", flush=True)
+                print(f"[zone] {name}: no app for {plan['linger_text']} (linger); stopping", flush=True)
                 child.terminate()
                 wait_or_kill(child)
                 rc = 0  # ended as configured: not a failure, so no restart
@@ -448,11 +527,11 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         fds = [links_srv] if links_srv else []
         r, _, _ = select.select(fds, [], [], 0.5)
         if r and links_srv:
-            portals.handle_link(links_srv, target)
+            portals.handle_link(links_srv, plan["links"]["command"])
     stop_all()
     relay_done()
     shutil.rmtree(fp, ignore_errors=True)
-    fs.prepare_mnt(name, zdir)  # runtime mounts end with the zone
+    subprocess.run(plan["cleanup"], stdin=subprocess.DEVNULL)  # runtime mounts end with the zone
     # a stop that was asked for is not a failure: a process manager restarts only failures
     return stop_code() if stopped else rc
 

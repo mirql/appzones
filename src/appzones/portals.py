@@ -117,18 +117,28 @@ def browser_for(cfg: zonecfg.Config, zone: str) -> str | None:
     return None
 
 
-def serve_links(z: zonecfg.Zone, zrt: Path, target: str) -> socket.socket:
-    """Listen on the zone's link socket (host side). Only an http(s) URL, as
-    one argv element, ever leaves the zone this way."""
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    path = zrt / "ctl" / "links.sock"
-    srv.bind(str(path))
-    srv.listen(8)
-    srv.setblocking(False)
-    return srv
+def link_ok(url: str) -> bool:
+    """Only an http(s) URL, short, without line breaks or NUL, ever leaves a zone as a link."""
+    return url.startswith(("http://", "https://")) and len(url) < 8000 and not any(c in url for c in "\n\r\0")
 
 
-def handle_link(srv: socket.socket, target: str) -> None:
+def open_in_zone(target: str, url: str) -> int:
+    """`appzones _link TARGET URL`: open URL in zone TARGET's browser (its first browser
+    in [apps]); 0 when started, 1 when there is none (or URL is not a link)."""
+    if not link_ok(url):
+        return 1
+    cfg = zonecfg.load(common.CONFIG)
+    app = browser_for(cfg, target) if not cfg.errors else None
+    if not app:
+        print(f"[zone] links: no browser declared for zone {target}", flush=True)
+        return 1
+    subprocess.Popen([sys.executable, str(common.HERE / "zone.py"), "run", target, app, url],
+                     stdin=subprocess.DEVNULL, start_new_session=True)
+    return 0
+
+
+def handle_link(srv: socket.socket, command: list[str]) -> None:
+    """One link from the zone's link socket: COMMAND + [url] opens it (`appzones _link`)."""
     try:
         conn, _ = srv.accept()
     except BlockingIOError:
@@ -139,16 +149,12 @@ def handle_link(srv: socket.socket, target: str) -> None:
             url = conn.recv(8192).decode(errors="replace").strip()
         except OSError:
             return
-        ok = (url.startswith(("http://", "https://")) and len(url) < 8000 and not any(c in url for c in "\n\r\0"))
-        if ok:
-            cfg = zonecfg.load(common.CONFIG)
-            app = browser_for(cfg, target) if not cfg.errors else None
-            if app:
-                subprocess.Popen([sys.executable, str(common.HERE / "zone.py"), "run", target, app, url],
-                                 stdin=subprocess.DEVNULL, start_new_session=True)
-            else:
+        ok = False
+        if link_ok(url):
+            try:
+                ok = subprocess.run([*command, url], stdin=subprocess.DEVNULL, timeout=30).returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
                 ok = False
-                print(f"[zone] links: no browser declared for zone {target}", flush=True)
         try:
             conn.sendall(b"ok\n" if ok else b"no\n")
         except OSError:

@@ -1672,6 +1672,46 @@ os.write(w, b"\\n"); os.close(w)
         finally:
             shutil.rmtree(t, ignore_errors=True)
 
+    def test_plan_argv(self):
+        """A plan's bwrap command line: the parts that depend on the helpers are marked, and
+        resolve_plan_argv keeps a group when its condition holds, else drops it."""
+        zone = self._zone_mod()
+        I, E, H = zone.PLAN_IF, zone.PLAN_END, zone.PLAN_HOST_WAYLAND
+        argv = ["bwrap", I + "wayland-0", "--bind", "/z/wl", "/run/user/1000/wayland-0", E,
+                I + "wayland-host", "--bind", H, "/run/user/1000/wayland-0", E,
+                I + "bus", "--bind", "/z/bus", "/run/user/1000/bus", E, "--", "zone-init"]
+        self.assertEqual(zone.resolve_plan_argv(argv, set()), ["bwrap", "--", "zone-init"])
+        self.assertEqual(zone.resolve_plan_argv(argv, {"wayland-0", "bus"}),
+                         ["bwrap", "--bind", "/z/wl", "/run/user/1000/wayland-0",
+                          "--bind", "/z/bus", "/run/user/1000/bus", "--", "zone-init"])
+        self.assertEqual(zone.resolve_plan_argv(argv, {"wayland-host"}, "/run/user/1000/wayland-1"),
+                         ["bwrap", "--bind", "/run/user/1000/wayland-1", "/run/user/1000/wayland-0", "--", "zone-init"])
+        with self.assertRaises(ValueError):  # the host's socket asked for, but none given
+            zone.resolve_plan_argv(argv, {"wayland-host"})
+        # bwrap_argv(plan=True): the groups, by the zone's wayland setting; nothing checked on disk
+        zone.tool = lambda name: f"/usr/bin/{name}"
+        t = Path(tempfile.mkdtemp())
+        try:
+            for wl, groups in [("zone", {"wayland-0", "bus"}), ("host", {"wayland-0", "wayland-host", "bus"}),
+                               ("none", {"bus"})]:
+                z = self.cfg(f'version = 1\n[zones.tt]\ncolour = "#112233"\nwayland = "{wl}"\n').zones["tt"]
+                a = zone.bwrap_argv(z, t / "zdir", t / "zrt", "none", [], plan=True)
+                with self.subTest(wayland=wl):
+                    self.assertEqual({x[len(I):] for x in a if x.startswith(I)}, groups)
+                    self.assertEqual(sum(x == E for x in a), len(groups))
+                    self.assertNotIn("WAYLAND_DISPLAY", zone.resolve_plan_argv(a, set(), None))
+        finally:
+            shutil.rmtree(t, ignore_errors=True)
+
+    def test_link_ok(self):
+        """Only an http(s) URL, short, without line breaks or NUL, leaves a zone as a link."""
+        zone = self._zone_mod()
+        for url, ok in [("https://example.com/a", True), ("http://x", True), ("file:///etc/passwd", False),
+                        ("https://x\nrm", False), ("https://x\0", False), ("https://" + "a" * 8000, False),
+                        ("javascript:alert(1)", False)]:
+            with self.subTest(url=url[:40]):
+                self.assertEqual(zone.link_ok(url), ok)
+
     def test_prepare_mnt_leftovers(self):
         """A runtime mount that umount-all could not detach: prepare_mnt says so (the server then
         does not start the zone with it)."""
