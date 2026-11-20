@@ -798,6 +798,10 @@ pkgs.testers.runNixOSTest {
         # mounts end with the zone run
         u("appzones mount td ~/proj")
         ok("td", "test -f /mnt/host/proj/a.txt", "mounted again")
+        # a mount under a name with a trailing newline, as older versions allowed: detached too
+        machine.succeed("M=/home/alice/.local/share/appzones/td/mnt; mkdir \"$M/old\n\" "
+                        "&& chown alice \"$M/old\n\" && mount --bind /home/alice/rosrc \"$M/old\n\" "
+                        "&& findmnt -rn -o TARGET | grep -q 'td/mnt/old'")
         u("appzones restart td")
         refused("td", "test -e /mnt/host/proj", "appzones restart drops the mount")
         machine.succeed("! findmnt -rn -o TARGET | grep -q 'zones/td/mnt'")

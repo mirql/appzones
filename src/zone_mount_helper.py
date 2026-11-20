@@ -223,7 +223,8 @@ def do_umount_all(c: Caller, zone: str) -> int:
     n = 0
     for _ in range(256):  # a stacked mount shows up again under the same name
         names = [m[len(mnt) + 1:] for m in mount_points() if m.startswith(mnt + "/")]
-        names = [x for x in names if zonecfg.MOUNT_NAME_RE.fullmatch(x)]
+        # a name with one trailing newline is one older versions allowed: detached too
+        names = [x for x in names if zonecfg.MOUNT_NAME_RE.fullmatch(x.removesuffix("\n"))]
         if not names:
             break
         for x in names:

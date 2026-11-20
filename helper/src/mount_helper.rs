@@ -412,10 +412,14 @@ fn do_umount_all(c: &Caller, zone: &str) -> u8 {
     let prefix = [mnt.as_slice(), b"/"].concat();
     let mut n = 0;
     for _ in 0..256 {
-        // a stacked mount shows up again under the same name
+        // a stacked mount shows up again under the same name; a name with one trailing
+        // newline is one older versions allowed: detached too
         let names: Vec<Vec<u8>> = mount_points().into_iter()
             .filter_map(|m| m.strip_prefix(prefix.as_slice()).map(<[u8]>::to_vec))
-            .filter(|x| std::str::from_utf8(x).map(policy::mount_name_ok).unwrap_or(false))
+            .filter(|x| {
+                let base = x.strip_suffix(b"\n").unwrap_or(x);
+                std::str::from_utf8(base).map(policy::mount_name_ok).unwrap_or(false)
+            })
             .collect();
         if names.is_empty() {
             break;
