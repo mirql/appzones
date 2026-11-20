@@ -216,22 +216,28 @@ def do_umount(c: Caller, zone: str, name: str, lazy: bool) -> int:
 
 
 def do_umount_all(c: Caller, zone: str) -> int:
+    """Detach every mount under the zone's mnt directory: 0, or 1 when some are left."""
     mnt = c.mnt_dir(zone)
     if not os.path.isdir(mnt):
         return 0
     pfd = c.open_owned(mnt)
-    n = 0
-    for _ in range(256):  # a stacked mount shows up again under the same name
+
+    def mounted() -> list[str]:
         names = [m[len(mnt) + 1:] for m in mount_points() if m.startswith(mnt + "/")]
         # a name with one trailing newline is one older versions allowed: detached too
-        names = [x for x in names if zonecfg.MOUNT_NAME_RE.fullmatch(x.removesuffix("\n"))]
+        return [x for x in names if zonecfg.MOUNT_NAME_RE.fullmatch(x.removesuffix("\n"))]
+
+    n = 0
+    for _ in range(256):  # a stacked mount shows up again under the same name
+        names = mounted()
         if not names:
             break
         for x in names:
             umount_one(pfd, f"{mnt}/{x}", x, lazy=True)
             n += 1
-    print(f"{n} mount(s) under {mnt} detached")
-    return 0
+    left = mounted()
+    print(f"{n} mount(s) under {mnt} detached" + (f"; still mounted: {', '.join(left)}" if left else ""))
+    return 1 if left else 0
 
 
 def main(argv: list[str]) -> int:

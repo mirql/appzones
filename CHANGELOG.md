@@ -5,6 +5,9 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **The mount helper's `umount-all` says when mounts are left** (both helpers): it exits
+  1 and names them if any are still mounted after it is done, instead of always 0.
+
 ## 0.11.0
 
 Sway: zone windows are marked (`contrib/sway/appzones-sway`), and `appzones active` gives a bar the focused window's zone there too. The distro tests now open a desktop app from a zone under sway.
