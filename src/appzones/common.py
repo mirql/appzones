@@ -89,7 +89,8 @@ def rust_helper(command: str) -> str | None:
     implements COMMAND (an older helper elsewhere may not). None when there is none."""
     override = zonecfg.env("BIN_APPZONES_HELPER")
     if override:
-        candidates = [override]
+        # a bare name: resolved once on PATH, so the probe here and an exec later use one file
+        candidates = [override if "/" in override else (shutil.which(override) or override)]
     else:
         own = HERE / "appzones-helper"
         candidates = [str(own)] if own.is_file() else []

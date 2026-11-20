@@ -202,7 +202,7 @@ fn send_fd(sock: &UnixStream, data: &[u8], fd: RawFd) -> std::io::Result<()> {
 /// One request to zone-init (the agent protocol, a JSON line each way); None when it does
 /// not answer.
 fn agent(zrt: &Path, req: &Value, timeout: Duration) -> Option<Value> {
-    let mut s = UnixStream::connect(zrt.join("agent.sock")).ok()?;
+    let mut s = connect_now(&zrt.join("agent.sock"))?;
     s.set_read_timeout(Some(timeout)).ok()?;
     s.set_write_timeout(Some(timeout)).ok()?;
     s.write_all(format!("{req}\n").as_bytes()).ok()?;
@@ -212,6 +212,37 @@ fn agent(zrt: &Path, req: &Value, timeout: Duration) -> Option<Value> {
         return Some(json!({}));
     }
     serde_json::from_str(line.trim()).ok()
+}
+
+/// A connection to the unix socket at PATH without waiting: a full queue (a stalled
+/// zone-init) is no answer, never a block.
+fn connect_now(path: &Path) -> Option<UnixStream> {
+    use std::os::unix::ffi::OsStrExt;
+    let bytes = path.as_os_str().as_bytes();
+    // Safety: a sockaddr_un filled within its size, a socket we own (from_raw_fd below or
+    // closed on failure).
+    unsafe {
+        let mut sa: libc::sockaddr_un = std::mem::zeroed();
+        if bytes.len() >= sa.sun_path.len() {
+            return None;
+        }
+        sa.sun_family = libc::AF_UNIX as libc::sa_family_t;
+        for (d, b) in sa.sun_path.iter_mut().zip(bytes) {
+            *d = *b as libc::c_char;
+        }
+        let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC, 0);
+        if fd < 0 {
+            return None;
+        }
+        let len = (std::mem::size_of::<libc::sa_family_t>() + bytes.len() + 1) as libc::socklen_t;
+        if libc::connect(fd, (&sa as *const libc::sockaddr_un).cast(), len) != 0 {
+            libc::close(fd);
+            return None;
+        }
+        let s = <UnixStream as std::os::fd::FromRawFd>::from_raw_fd(fd);
+        s.set_nonblocking(false).ok()?;
+        Some(s)
+    }
 }
 
 /// zone-init answers (agent.ping: a non-empty answer).
@@ -400,22 +431,24 @@ fn handle_link(listener: &UnixListener, command: &[String]) {
     let _ = conn.write_all(if ok { b"ok\n" } else { b"no\n" });
 }
 
-fn parse_args(args: &[String]) -> Result<(PathBuf, RawFd, Option<RawFd>), String> {
+/// The arguments, raw: the plan's path byte for byte, the rest must be text.
+fn parse_args(args: &[std::ffi::OsString]) -> Result<(PathBuf, RawFd, Option<RawFd>), String> {
     let (mut plan, mut lock, mut notify) = (None, None, None);
     let mut it = args.iter();
+    let fd = |v: &std::ffi::OsString| v.to_str().and_then(|v| v.parse::<RawFd>().ok()).ok_or(USAGE);
     while let Some(a) = it.next() {
         let v = it.next().ok_or(USAGE)?;
-        match a.as_str() {
-            "--plan" => plan = Some(PathBuf::from(v)),
-            "--lock-fd" => lock = Some(v.parse::<RawFd>().map_err(|_| USAGE)?),
-            "--notify-fd" => notify = Some(v.parse::<RawFd>().map_err(|_| USAGE)?),
+        match a.to_str() {
+            Some("--plan") => plan = Some(PathBuf::from(v)),
+            Some("--lock-fd") => lock = Some(fd(v)?),
+            Some("--notify-fd") => notify = Some(fd(v)?),
             _ => return Err(USAGE.into()),
         }
     }
     Ok((plan.ok_or(USAGE)?, lock.ok_or(USAGE)?, notify))
 }
 
-pub fn main(args: &[String]) -> u8 {
+pub fn main(args: &[std::ffi::OsString]) -> u8 {
     let (plan_path, lock_fd, notify_fd) = match parse_args(args) {
         Ok(a) => a,
         Err(e) => {
@@ -436,6 +469,13 @@ pub fn main(args: &[String]) -> u8 {
         libc::sigemptyset(&mut sa.sa_mask);
         libc::sigaction(libc::SIGTERM, &sa, std::ptr::null_mut());
         libc::sigaction(libc::SIGINT, &sa, std::ptr::null_mut());
+        // `appzones serve` blocked both across the exec, so a stop in that instant waits:
+        // now that it is handled, let it through (a pending one sets STOP at once)
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        libc::sigaddset(&mut set, libc::SIGTERM);
+        libc::sigaddset(&mut set, libc::SIGINT);
+        libc::sigprocmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut());
     }
     let plan: Value = match std::fs::read(&plan_path).ok().and_then(|b| serde_json::from_slice(&b).ok()) {
         Some(p) => p,
@@ -611,6 +651,9 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
         say(&format!("[zone] {name} ready (network={}, dns={}, devices={})", s("network")?, s("dns")?,
                      if devices.is_empty() { "-".into() } else { devices.join(",") }));
         for a in plan.get("autostart").and_then(Value::as_array).cloned().unwrap_or_default() {
+            if stop() != 0 {
+                break; // a stop: no more apps, on to the shutdown
+            }
             let app = a.get("app").and_then(Value::as_str).unwrap_or("?");
             let req = json!({"op": "run", "argv": a.get("argv"), "env": {}, "cwd": null, "bus": a.get("bus")});
             match agent(&zrt, &req, Duration::from_secs(5)) {
@@ -728,10 +771,16 @@ mod tests {
 
     #[test]
     fn args() {
-        assert!(parse_args(&v(&["--plan", "/p", "--lock-fd", "4"])).is_ok());
-        assert_eq!(parse_args(&v(&["--plan", "/p", "--lock-fd", "4", "--notify-fd", "6"])).unwrap().2, Some(6));
-        assert!(parse_args(&v(&["--plan", "/p"])).is_err(), "no lock");
-        assert!(parse_args(&v(&["--plan", "/p", "--lock-fd", "x"])).is_err());
-        assert!(parse_args(&v(&["--other", "1"])).is_err());
+        use std::os::unix::ffi::OsStringExt;
+        let o = |a: &[&str]| a.iter().map(std::ffi::OsString::from).collect::<Vec<_>>();
+        assert!(parse_args(&o(&["--plan", "/p", "--lock-fd", "4"])).is_ok());
+        assert_eq!(parse_args(&o(&["--plan", "/p", "--lock-fd", "4", "--notify-fd", "6"])).unwrap().2, Some(6));
+        assert!(parse_args(&o(&["--plan", "/p"])).is_err(), "no lock");
+        assert!(parse_args(&o(&["--plan", "/p", "--lock-fd", "x"])).is_err());
+        assert!(parse_args(&o(&["--other", "1"])).is_err());
+        // a plan path that is not UTF-8 stays byte for byte
+        let raw = std::ffi::OsString::from_vec(b"/run/caf\xe9/plan.json".to_vec());
+        let got = parse_args(&[std::ffi::OsString::from("--plan"), raw.clone(), "--lock-fd".into(), "4".into()]).unwrap();
+        assert_eq!(got.0.as_os_str(), raw.as_os_str());
     }
 }

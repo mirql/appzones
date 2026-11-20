@@ -71,18 +71,42 @@ fn addrs(server: &str) -> Vec<SocketAddr> {
     (server, PORT).to_socket_addrs().map(|a| a.collect()).unwrap_or_default()
 }
 
-fn ask_tcp(addr: SocketAddr, msg: &[u8], end: Instant) -> Option<Vec<u8>> {
+/// The time left before END, at most TCP_TIMEOUT, set on S for its next call; None when
+/// none is left (each call gets only what remains of the query's deadline).
+fn arm(s: &TcpStream, end: Instant) -> Option<()> {
     let t = left(end)?.min(TCP_TIMEOUT);
-    let mut s = TcpStream::connect_timeout(&addr, t).ok()?;
     s.set_read_timeout(Some(t)).ok()?;
-    s.set_write_timeout(Some(t)).ok()?;
+    s.set_write_timeout(Some(t)).ok()
+}
+
+fn write_all_by(s: &mut TcpStream, mut data: &[u8], end: Instant) -> Option<()> {
+    while !data.is_empty() {
+        arm(s, end)?;
+        let n = s.write(data).ok().filter(|n| *n > 0)?;
+        data = &data[n..];
+    }
+    Some(())
+}
+
+fn read_exact_by(s: &mut TcpStream, buf: &mut [u8], end: Instant) -> Option<()> {
+    let mut got = 0;
+    while got < buf.len() {
+        arm(s, end)?;
+        let n = s.read(&mut buf[got..]).ok().filter(|n| *n > 0)?;
+        got += n;
+    }
+    Some(())
+}
+
+fn ask_tcp(addr: SocketAddr, msg: &[u8], end: Instant) -> Option<Vec<u8>> {
+    let mut s = TcpStream::connect_timeout(&addr, left(end)?.min(TCP_TIMEOUT)).ok()?;
     let mut out = (msg.len() as u16).to_be_bytes().to_vec();
     out.extend_from_slice(msg);
-    s.write_all(&out).ok()?;
+    write_all_by(&mut s, &out, end)?;
     let mut head = [0u8; 2];
-    s.read_exact(&mut head).ok()?;
+    read_exact_by(&mut s, &mut head, end)?;
     let mut ans = vec![0u8; u16::from_be_bytes(head) as usize];
-    s.read_exact(&mut ans).ok()?;
+    read_exact_by(&mut s, &mut ans, end)?;
     (ans.len() >= 2 && ans[..2] == msg[..2]).then_some(ans)
 }
 
@@ -165,18 +189,26 @@ pub fn serve(path: &Path, servers: Vec<String>) -> std::io::Result<()> {
     let inflight = Arc::new(AtomicUsize::new(0));
     thread::Builder::new().name("dns".into()).spawn(move || {
         for conn in listener.incoming() {
-            let Ok(conn) = conn else { continue };
+            let conn = match conn {
+                Ok(c) => c,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => {
+                    // out of descriptors or the like: wait a moment, never spin
+                    thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+            };
             if inflight.fetch_add(1, Ordering::SeqCst) >= MAX_INFLIGHT {
                 inflight.fetch_sub(1, Ordering::SeqCst);
                 continue; // too many at once: the client retries
             }
-            let (servers, budget, inflight) = (servers.clone(), budget.clone(), inflight.clone());
+            let (servers2, budget2, inflight2) = (servers.clone(), budget.clone(), inflight.clone());
             let spawned = thread::Builder::new().spawn(move || {
-                handle(conn, &servers, &budget);
-                inflight.fetch_sub(1, Ordering::SeqCst);
+                handle(conn, &servers2, &budget2);
+                inflight2.fetch_sub(1, Ordering::SeqCst);
             });
             if spawned.is_err() {
-                // (the closure, and with it the slot, is gone: give the slot back)
+                inflight.fetch_sub(1, Ordering::SeqCst); // no worker: its slot back
             }
         }
     })?;

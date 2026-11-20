@@ -32,6 +32,9 @@ fn main() -> ExitCode {
     if raw.first().map(|a| a == "check-mount-source").unwrap_or(false) {
         return ExitCode::from(check_mount_source(&raw[1..])); // paths as given, byte for byte
     }
+    if raw.first().map(|a| a == "serve").unwrap_or(false) {
+        return ExitCode::from(serve::main(&raw[1..])); // the plan's path byte for byte
+    }
     let args: Vec<String> = raw.iter().map(|a| a.to_string_lossy().into_owned()).collect();
     match args.first().map(String::as_str) {
         Some("--version") | Some("-V") => {
@@ -49,7 +52,6 @@ fn main() -> ExitCode {
         Some("zone-wayland") => ExitCode::from(zone_wayland::main(&args[1..])),
         Some("zone-init") => ExitCode::from(zone_init::main(&args[1..])),
         Some("open-link") => ExitCode::from(open_link::main(&args[1..])),
-        Some("serve") => ExitCode::from(serve::main(&args[1..])),
         _ => {
             eprintln!("{USAGE}");
             ExitCode::from(2)
