@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.9.1
+
+Zones start under GNOME (Ubuntu's default desktop), Weston and sway before 1.9: without a Wayland socket there, since those compositors have no security-context protocol. Before, a zone did not start at all under them. And a .deb for Debian 12 and Ubuntu 24.04, attached to the release.
+
 - **A compositor without the security-context protocol no longer stops a zone.**
   Under Weston or sway before 1.9 (no `wp_security_context_v1`) a zone failed to
   start at all, also for command-line work. Now it starts without a Wayland socket
