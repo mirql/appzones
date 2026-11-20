@@ -245,11 +245,13 @@ swaymsg "[con_id=$zid] focus" >/dev/null; sleep 0.5
 zone=$(appzones active --json)
 swaymsg workspace 9 >/dev/null; sleep 0.5  # an empty workspace: no window, no label
 empty=$(appzones active)
+# (the zone's window was focused before: without the workspace event the last line stays "[?]")
+followed=$(tail -1 /tmp/follow.txt)
 swaymsg workspace 1 >/dev/null; sleep 0.5
 kill $follow
 echo "active: host '$host', zone $zone, follow: $(tr '\n' '|' </tmp/follow.txt)"
 [ "$host" = "" ] && [ "$empty" = "" ] && echo "$zone" | grep -q '"text": "\[?\]"' || { echo "appzones active on sway"; exit 1; }
-[ "$(tail -2 /tmp/follow.txt | head -1)" = "" ] || { echo "--follow kept a label on the empty workspace"; exit 1; }
+[ "$followed" = "" ] || { echo "--follow kept a label on the empty workspace: $followed"; exit 1; }
 grep -qx '\[?\]' /tmp/follow.txt && grep -qx '' /tmp/follow.txt || { echo "appzones active --follow on sway"; exit 1; }
 kill $hostfoot $hook
 appzones stop off
