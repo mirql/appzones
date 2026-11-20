@@ -11,13 +11,24 @@ use std::process::ExitCode;
 
 mod zone_wayland;
 
-const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-wayland SOCKET APP_ID INSTANCE | --version";
+const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-wayland SOCKET APP_ID INSTANCE | --version | --commands";
+
+/// The commands this build implements (`--commands`).
+const IMPLEMENTED: &[&str] = &["zone-wayland"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("--version") | Some("-V") => {
             println!("appzones-helper {}", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
+        }
+        // what this build implements, one per line: the Python side and `make install`
+        // use only these (an older build may lack some)
+        Some("--commands") => {
+            for c in IMPLEMENTED {
+                println!("{c}");
+            }
             ExitCode::SUCCESS
         }
         Some("zone-wayland") => ExitCode::from(zone_wayland::main(&args[1..])),

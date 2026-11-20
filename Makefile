@@ -78,8 +78,9 @@ zone-wayland:
 
 # before anything is copied
 preflight: $(if $(filter rust,$(HELPER)),helper)
-	@[ "$(HELPER)" != rust ] || [ -f "$(HELPER_BIN)" ] \
-		|| { echo "HELPER=rust needs the Rust helper: cargo for \`make\`, or HELPER_BIN=PATH"; exit 1; }
+	@[ "$(HELPER)" != rust ] || "$(HELPER_BIN)" --commands 2>/dev/null | grep -qx zone-wayland \
+		|| { echo "HELPER=rust needs a Rust helper that implements zone-wayland (appzones-helper --commands):"; \
+		     echo "  cargo for \`make\`, or HELPER_BIN=PATH"; exit 1; }
 	@[ -n "$(PYTHON)" ] && "$(PYTHON)" -c 'import sys; sys.exit(sys.version_info < (3, 11))' \
 		|| { echo "appzones needs Python 3.11 or newer (PYTHON=$(PYTHON))"; exit 1; }
 	@case "$(PREFIX)" in /usr|/usr/*) ;; *) echo "PREFIX must be under /usr (a zone sees /usr, not $(PREFIX))"; exit 1;; esac
