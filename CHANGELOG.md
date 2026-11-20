@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.8.3
+
+A folder given with `appzones mount` no longer brings along mounts made in it later. Upgrade, then `appzones restart` zones with such mounts.
+
 - `appzones mount`: the zone's copy of the folder is private. Before, a mount made
   under the source afterwards (a USB stick, a FUSE mount) also showed up in the zone.
 - Zone and mount names with a trailing newline are refused (`fullmatch`, not `match`);
