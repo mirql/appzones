@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+  if [ -f /etc/apparmor.d/appzones ]; then
+    if command -v apparmor_parser >/dev/null && [ -d /sys/kernel/security/apparmor ]; then
+      apparmor_parser -R /etc/apparmor.d/appzones 2>/dev/null || true
+    fi
+    rm -f /etc/apparmor.d/appzones
+  fi
+fi
+exit 0

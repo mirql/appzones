@@ -1,15 +1,17 @@
 #!/bin/sh
 # appzones on another distribution, inside its disk image (tests/distro.nix):
-# `make install` as root, then zones as an ordinary user, without systemd (zones
+# `make install` (or the .deb) as root, then zones as an ordinary user, without systemd (zones
 # start on demand) and without a network (a dummy link gives pasta a route; a
 # local dnsmasq is the host's resolver). Prints "PASS ..." per check, exits non-zero
 # on the first failure.
 set -eu
 src=$1
 mflags=${2:-}  # extra make arguments (tests/distro.nix makeFlags)
-# where it installs (make's PREFIX), and whether with the Rust helper
+deb=${3:-}     # a .deb to install instead of `make install` (tests/distro.nix deb)
+# where it installs (make's PREFIX, /usr for the .deb), and whether with the Rust helper
 prefix=/usr/local
 for f in $mflags; do case $f in PREFIX=*) prefix=${f#PREFIX=};; esac; done
+[ -z "$deb" ] || prefix=/usr
 rust=no
 case " $mflags " in *" HELPER=rust "*) rust=yes;; esac
 export PATH=$prefix/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -43,7 +45,20 @@ s=socket.socket(); s.bind(("192.0.2.1",8080)); s.listen(4)
 if os.fork(): os._exit(0)
 while True: s.accept()[0].close()' </dev/null >/dev/null 2>&1  # background: no pipe of ours held open
 
-# install as root, from a copy of the checkout
+# install as root: the .deb, or from a copy of the checkout
+if [ -n "$deb" ]; then
+  dpkg -i "$deb" >/tmp/install.log 2>&1 || { cat /tmp/install.log; fail "dpkg -i"; }
+  getent group appzones >/dev/null || fail "no group appzones"
+  usermod -aG appzones alice
+  [ -x /usr/lib/appzones/zone-wayland ] || fail "no zone-wayland in the package"
+  if [ -e /etc/apparmor.d/abi/4.0 ]; then
+    # what postinst installs where user namespaces are restricted (not in this VM's kernel)
+    /usr/lib/appzones/apparmor-profile >/tmp/aa-profile || fail "apparmor-profile"
+    apparmor_parser -Q -K /tmp/aa-profile || fail "the AppArmor profile does not parse"
+  fi
+  [ ! -e /etc/apparmor.d/appzones ] || fail "an AppArmor profile where user namespaces are not restricted"
+  pass "dpkg -i (dependencies there, group appzones; the AppArmor profile only where needed, and it parses)"
+else
 cp -r "$src" /tmp/appzones && chmod -R u+w /tmp/appzones && cd /tmp/appzones
 make $mflags >/tmp/make.log 2>&1 || { cat /tmp/make.log; fail "make"; }
 grep -q "built build/zone-wayland" /tmp/make.log || fail "zone-wayland not built: $(tail -2 /tmp/make.log)"
@@ -56,6 +71,7 @@ if [ $aa = yes ]; then
 else
   [ ! -e /etc/apparmor.d/appzones ] || fail "an AppArmor profile where user namespaces are not restricted"
   pass "make; make install (zone-wayland built, no AppArmor profile: not needed here)"
+fi
 fi
 v=$(as_alice "appzones --version")
 echo "$v" | grep -q "^appzones [0-9][0-9.]* (config release [0-9]*)$" || fail "version: $v"
@@ -155,9 +171,13 @@ as_alice 'appzones stop off'
 mv /tmp/hidden/xdg-dbus-proxy /tmp/hidden/dbus-daemon /usr/bin/
 pass "a server without zone-wayland, xdg-dbus-proxy, dbus-daemon: the zone starts, says why, bus = zone says what is missing"
 
-make uninstall $mflags >/dev/null 2>&1 || fail "make uninstall"
+if [ -n "$deb" ]; then
+  dpkg --purge appzones >/dev/null 2>&1 || fail "dpkg --purge"
+else
+  make uninstall $mflags >/dev/null 2>&1 || fail "make uninstall"
+fi
 left=$(ls -d $prefix/lib/appzones $prefix/bin/appzones $prefix/share/appzones /etc/sudoers.d/appzones \
-  /etc/apparmor.d/appzones 2>/dev/null || true)
+  /etc/apparmor.d/appzones $prefix/lib/systemd/user/appzones@.service 2>/dev/null || true)
 [ -z "$left" ] || fail "left after uninstall: $left"
-pass "make uninstall removes it all"
+pass "uninstall removes it all"
 echo "ALL PASSED"

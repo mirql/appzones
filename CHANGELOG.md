@@ -5,6 +5,13 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **A .deb for Debian 12 and Ubuntu 24.04** (#22): each release has
+  `appzones_VERSION-1_amd64.deb` (`sudo apt install ./appzones_*_amd64.deb`). Built
+  in a Debian 12 image (`nix build .#deb`, `contrib/debian/build-deb.sh`); the sudo
+  rule is for the group `appzones`, created on install; the AppArmor profile is
+  installed and loaded only where the kernel restricts user namespaces (Ubuntu 23.10
+  and later). `just test-distros` installs it on both, runs zones and purges it.
+
 ## 0.9.0
 
 Optional Rust helpers: with them no Python of the host's runs in a zone, the root step of `appzones mount` is a small binary, and appzones may be installed outside `/usr`. Without them nothing changes. Install with `make` (cargo and rustc 1.85+) and `sudo make install HELPER=rust`, or use the Nix package `appzones-rust`.

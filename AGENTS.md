@@ -30,6 +30,7 @@
   A bare `# NOSONAR` hides every finding on that line, so keep such lines small. The
   taint findings (`pythonsecurity:*`: command or path injection) still show; a
   maintainer marks those false positive in SonarQube, again when the line changes.
-- A release (`just release VERSION`) is followed by the AUR package: in `contrib/arch/`,
+- A release (`just release VERSION`) attaches the `.deb` (built from the tagged commit:
+  `nix build github:mirql/appzones/SHA#deb`), and is followed by the AUR package: in `contrib/arch/`,
   `pkgver`, the tarball's sha256 and `.SRCINFO` (a PR), then the same four files pushed
   to `ssh://aur@aur.archlinux.org/appzones.git` (needs the maintainer's AUR key).

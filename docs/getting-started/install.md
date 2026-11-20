@@ -37,6 +37,27 @@ Run `appzones check`.
 Tested on Ubuntu 24.04 and Debian 12, in VMs, for every change
 (`just test-distros`). Ubuntu 22.04 is too old (Python 3.10).
 
+**The package.** Each [release](https://github.com/mirql/appzones/releases/latest)
+has a `.deb` for amd64 (built on Debian 12; tested on Debian 12 and Ubuntu 24.04).
+Download `appzones_VERSION-1_amd64.deb` from there, then:
+
+```bash
+sudo apt install ./appzones_*_amd64.deb   # also fetches bubblewrap, passt, nftables, ...
+sudo usermod -aG appzones $USER           # for appzones mount; log in again after it
+```
+
+It installs into `/usr`, with the systemd user units, a sudo rule for exactly
+the mount helper for members of the group `appzones`, and on Ubuntu 23.10 and
+later the AppArmor profile (see below). apt also installs the recommended
+`xdg-dbus-proxy` and `dbus` (the desktop's parts); on a server,
+`--no-install-recommends` leaves them out. Remove it with `sudo apt purge
+appzones`. Then go on with step 3. The package has Python and the C
+zone-wayland, not the Rust helpers: for those, install from a checkout. To
+build it yourself: `nix build .#deb`, or `sh contrib/debian/build-deb.sh OUTDIR`
+on Debian 12.
+
+**Or from a checkout** (for the Rust helpers, or any commit):
+
 **1. The packages.**
 
 ```bash

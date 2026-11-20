@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+if [ "$1" = configure ]; then
+  # the sudo rule for `appzones mount` names this group
+  getent group appzones >/dev/null || groupadd --system appzones
+  # Ubuntu 23.10 and later restrict unprivileged user namespaces: bwrap and pasta need a
+  # profile there (AppArmor 4). Elsewhere (Debian 12: AppArmor 3) none is installed.
+  if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ] \
+     && [ -e /etc/apparmor.d/abi/4.0 ]; then
+    /usr/lib/appzones/apparmor-profile > /etc/apparmor.d/appzones.tmp
+    mv /etc/apparmor.d/appzones.tmp /etc/apparmor.d/appzones
+    if command -v apparmor_parser >/dev/null && [ -d /sys/kernel/security/apparmor ]; then
+      apparmor_parser -r /etc/apparmor.d/appzones || echo "appzones: the AppArmor profile did not load" >&2
+    fi
+  fi
+  echo "appzones: for appzones mount, add users to the group: sudo usermod -aG appzones USER"
+fi
+exit 0

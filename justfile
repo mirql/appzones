@@ -20,9 +20,14 @@ build:
 test-install:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.make-install
 
-# appzones on Ubuntu 24.04 and Debian 12, in their disk images: make install, zones as a user (~3 min each)
+# appzones on Ubuntu 24.04 and Debian 12, in their disk images: make install and the .deb, zones as a user (~3 min each)
 test-distros:
-    nice -n 19 nix build -L --no-link .#checks.x86_64-linux.debian12 .#checks.x86_64-linux.ubuntu2404
+    nice -n 19 nix build -L --no-link .#checks.x86_64-linux.debian12 .#checks.x86_64-linux.ubuntu2404 \
+        .#checks.x86_64-linux.debian12-deb .#checks.x86_64-linux.ubuntu2404-deb
+
+# The .deb (amd64, built in a Debian 12 image): result-deb/appzones_VERSION-1_amd64.deb
+deb:
+    nice -n 19 nix build -L -o result-deb .#deb
 
 # NixOS VM test: Hyprland, zone units, isolation probes, window tags (~6 min, needs /dev/kvm)
 test-vm:
@@ -59,6 +64,9 @@ release version:
     read -rp "Publish v{{version}} on ${sha:0:7} with these notes? [y/N] " ok
     [ "$ok" = y ] || exit 1
     gh release create "v{{version}}" --target "$sha" --title "appzones {{version}}" --notes "$notes"
+    # the .deb, built from exactly that commit
+    deb=$(nice -n 19 nix build --no-link --print-out-paths "github:mirql/appzones/$sha#deb")
+    gh release upload "v{{version}}" "$deb"/appzones_{{version}}-1_amd64.deb
 
 # Format the Nix files
 fmt:

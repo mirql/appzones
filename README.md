@@ -250,7 +250,9 @@ Then copy [`examples/minimal.toml`](examples/minimal.toml) to
 `~/.config/appzones/zones.toml` (or run `appzones new daily -y`) and run
 `appzones check`.
 
-Ubuntu 24.04 and Debian 12 (preview, command-line zones):
+Ubuntu 24.04 and Debian 12 (preview, command-line zones): the `.deb` from the
+[latest release](https://github.com/mirql/appzones/releases/latest), with
+`sudo apt install ./appzones_*_amd64.deb`. Or from a checkout:
 
 ```bash
 sudo apt install python3 bubblewrap passt nftables iproute2 git make   # a desktop also: xdg-dbus-proxy dbus gcc pkg-config libwayland-dev

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Prints appzones' AppArmor profile (contrib/apparmor/appzones) with this system's paths of
+# bwrap and pasta. The package's postinst installs it where the kernel restricts
+# unprivileged user namespaces (Ubuntu 23.10 and later).
+set -eu
+bwrap=$(command -v bwrap) && pasta=$(command -v pasta) || { echo "bwrap or pasta not found" >&2; exit 1; }
+sed -e "s|@BWRAP@|$(readlink -f "$bwrap")|" -e "s|@PASTA@|$(readlink -f "$pasta")|" \
+  /usr/share/appzones/contrib/apparmor/appzones

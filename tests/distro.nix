@@ -1,6 +1,6 @@
 # appzones on Ubuntu 24.04 and Debian 12: their disk images from pinned .deb
 # packages (nixpkgs vmTools), booted in a VM, run tests/distro-test.sh:
-# `make install`, then zones as an ordinary user. Offline, no systemd. The
+# `make install` (or appzones' .deb), then zones as an ordinary user. Offline, no systemd. The
 # kernel is nixpkgs', so Ubuntu's AppArmor restriction on user namespaces is
 # not in force here; the profile is only checked to parse.
 {
@@ -8,6 +8,8 @@
   image,
   # extra `make` and `make install` arguments (e.g. another helper implementation)
   makeFlags ? "",
+  # the .deb (nix/deb.nix) to install instead of `make install`
+  deb ? null,
 }:
 let
   # the VM's kernel modules: pasta's tun device, a dummy link for the test's
@@ -66,7 +68,9 @@ vmTools.runInLinuxImage (
       src = pkgs.lib.cleanSource ../.;
     }
     ''
-      timeout 900 sh ${./distro-test.sh} $src ${pkgs.lib.escapeShellArg makeFlags} > $NIX_BUILD_TOP/log 2>&1 || true
+      timeout 900 sh ${./distro-test.sh} $src ${pkgs.lib.escapeShellArg makeFlags} ${
+        if deb == null then "" else "${deb}/appzones_*.deb"
+      } > $NIX_BUILD_TOP/log 2>&1 || true
       cat $NIX_BUILD_TOP/log
       grep -qx "ALL PASSED" $NIX_BUILD_TOP/log
       mkdir -p $out && cp $NIX_BUILD_TOP/log $out/log
