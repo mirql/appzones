@@ -522,8 +522,9 @@ def zone_init_argv() -> list[str]:
     zone); else the host's Python running zone_init.py, which the zone sees in /usr or
     the Nix store."""
     if common.HELPER == "rust" and "zone-init" in common.RUST_HELPERS:
-        helper = common.find_tool("appzones-helper")
+        helper = common.rust_helper("zone-init")
         if not helper:
-            die("appzones was installed with the Rust helper, but appzones-helper is missing; reinstall it")
+            die("appzones was installed with the Rust helper, but there is no appzones-helper that implements "
+                "zone-init (`appzones-helper --commands`); reinstall it")
         return ["--ro-bind", os.path.realpath(helper), ZONE_HELPER, "--", ZONE_HELPER, "zone-init"]
     return ["--", os.path.realpath(sys.executable), str(common.HERE / "zone_init.py")]

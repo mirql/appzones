@@ -33,10 +33,9 @@ fn give_slot() {
 
 /// The answer to MSG from the host side, or None.
 pub fn forward(msg: &[u8]) -> Option<Vec<u8>> {
-    let mut s = UnixStream::connect(DNS_SOCK).ok()?;
-    // longer than the host side's deadline for one query (8 s)
+    // longer than the host side's deadline for one query (8 s); also for the connect
+    let mut s = connect(DNS_SOCK, Duration::from_secs(12))?;
     s.set_read_timeout(Some(Duration::from_secs(12))).ok()?;
-    s.set_write_timeout(Some(Duration::from_secs(12))).ok()?;
     let len = u16::try_from(msg.len()).ok()?;
     s.write_all(&len.to_be_bytes()).ok()?;
     s.write_all(msg).ok()?;
@@ -45,6 +44,37 @@ pub fn forward(msg: &[u8]) -> Option<Vec<u8>> {
     let mut ans = vec![0u8; u16::from_be_bytes(head) as usize];
     s.read_exact(&mut ans).ok()?;
     (!ans.is_empty()).then_some(ans)
+}
+
+/// A unix stream socket connected to PATH within TIMEOUT: a connect to a listener whose
+/// backlog is full waits only as long as the socket's send timeout, so it is set first.
+fn connect(path: &str, timeout: Duration) -> Option<UnixStream> {
+    use std::os::fd::FromRawFd;
+    let bytes = path.as_bytes();
+    // Safety: a new socket we own, a sockaddr_un filled within its bounds, a timeval.
+    unsafe {
+        let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0);
+        if fd < 0 {
+            return None;
+        }
+        let s = UnixStream::from_raw_fd(fd); // closes fd on every return below
+        let tv = libc::timeval { tv_sec: timeout.as_secs() as libc::time_t, tv_usec: 0 };
+        libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_SNDTIMEO, (&tv as *const libc::timeval).cast(),
+                         std::mem::size_of::<libc::timeval>() as libc::socklen_t);
+        let mut addr: libc::sockaddr_un = std::mem::zeroed();
+        addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+        if bytes.len() >= addr.sun_path.len() {
+            return None;
+        }
+        for (d, b) in addr.sun_path.iter_mut().zip(bytes) {
+            *d = *b as libc::c_char;
+        }
+        let len = (std::mem::size_of::<libc::sa_family_t>() + bytes.len() + 1) as libc::socklen_t;
+        if libc::connect(fd, (&addr as *const libc::sockaddr_un).cast(), len) != 0 {
+            return None;
+        }
+        Some(s)
+    }
 }
 
 /// The offset after the domain name at I (labels, or a compression pointer).

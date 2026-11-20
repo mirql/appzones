@@ -14,7 +14,9 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
       │                   socket, then exec)
       └─ bwrap (user, pid, ipc, uts, cgroup ns; no caps; no_new_privs)
          └─ zone-init     the agent inside: run, shell (pty), ps (its protocol: the
-                          top of src/zone_init.py, tested by AgentProtocolTest)
+                          top of src/zone_init.py, tested by AgentProtocolTest; with
+                          the Rust helper, appzones-helper zone-init, bound read-only
+                          at /run/appzones-helper)
             └─ apps
 ```
 

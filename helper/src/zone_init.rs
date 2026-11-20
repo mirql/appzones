@@ -213,9 +213,15 @@ fn recv_request(conn: &UnixStream) -> Option<(Vec<u8>, Vec<OwnedFd>)> {
         return None;
     }
     buf.truncate(n as usize);
-    // a request split across reads: on until a newline, EOF or 64 KiB
+    // a request split across reads: on until a newline, EOF or 64 KiB, all within the one
+    // deadline (a client cannot hold the loop up by sending a byte now and then)
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
     let mut reader = conn;
     while n > 0 && !buf.contains(&b'\n') && buf.len() < 65536 {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() || conn.set_read_timeout(Some(left)).is_err() {
+            break;
+        }
         let mut more = [0u8; 4096];
         match reader.read(&mut more) {
             Ok(0) | Err(_) => break,
@@ -241,7 +247,6 @@ struct Shell {
 enum Tag {
     Listener,
     Signals,
-    Server,
     Out(RawFd),
     ShellIn(i32),
     ShellOut(i32),
@@ -472,7 +477,7 @@ impl Init {
                 let tail: Vec<String> = self.tails.get(&pid).map(|t| t.iter().cloned().collect()).unwrap_or_default();
                 return reply(conn, &json!({"ok": true, "running": true, "exit": null, "tail": tail}));
             }
-            if let Some((_, code, tail)) = self.finished.iter().find(|f| f.0 == pid) {
+            if let Some((_, code, tail)) = self.finished.iter().rev().find(|f| f.0 == pid) {
                 return reply(conn, &json!({"ok": true, "running": false, "exit": code, "tail": tail}));
             }
         }
@@ -500,13 +505,12 @@ impl Init {
             return false;
         }
         out.part.extend_from_slice(&buf[..n as usize]);
-        let mut lines = Vec::new();
-        while let Some(i) = out.part.iter().position(|&b| b == b'\n') {
-            lines.push(out.part.drain(..=i).collect::<Vec<u8>>());
-        }
-        for mut l in lines {
-            l.pop();
-            self.line(pid, &label, &l);
+        // whole lines out, the unfinished rest kept: one pass over the buffer
+        let Some(last) = out.part.iter().rposition(|&b| b == b'\n') else { return true };
+        let rest = out.part.split_off(last + 1);
+        let done = std::mem::replace(&mut out.part, rest);
+        for l in done[..last].split(|&b| b == b'\n') {
+            self.line(pid, &label, l);
         }
         true
     }
@@ -545,9 +549,16 @@ impl Init {
             if self.running.remove(&pid) {
                 let fds: Vec<RawFd> = self.outputs.iter().filter(|(_, o)| o.pid == pid).map(|(fd, _)| *fd).collect();
                 for fd in fds {
-                    while self.read_output(fd) {}
+                    // a bounded drain: an app's children may keep the pipe busy; the
+                    // rest is read by the poll loop
+                    for _ in 0..16 {
+                        if !self.read_output(fd) {
+                            break;
+                        }
+                    }
                 }
                 let tail = self.tails.remove(&pid).map(Vec::from).unwrap_or_default();
+                self.finished.retain(|f| f.0 != pid); // a reused pid: only its newest exit
                 self.finished.push_back((pid, code, tail));
                 while self.finished.len() > FINISHED {
                     self.finished.pop_front();
@@ -603,8 +614,10 @@ impl Init {
     }
 
     fn ensure_zone_bus(&mut self) -> Result<(), String> {
-        if self.zbus.is_some() {
-            return Ok(());
+        match self.zbus {
+            Some(pid) if alive(pid) => return Ok(()),
+            Some(_) => self.zbus = None, // exited, not reaped yet: start another
+            None => {}
         }
         let daemon = self.env.get("ZONE_DBUS_DAEMON").cloned().filter(|d| !d.is_empty())
             .or_else(|| which("dbus-daemon", self.env.get("PATH").map_or("", String::as_str)))
@@ -649,6 +662,12 @@ impl Init {
         };
         let addr = if n > 0 { String::from_utf8_lossy(&line[..n as usize]).trim().to_string() } else { String::new() };
         if addr.is_empty() {
+            // never a second daemon next to one that is still starting
+            // Safety: SIGKILL and a wait for our own child.
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+                libc::waitpid(pid, std::ptr::null_mut(), 0);
+            }
             return Err("zone bus: dbus-daemon did not start within 5 s".into());
         }
         log(&format!("zone bus up ({addr}), pid {pid}"));
@@ -710,6 +729,16 @@ impl Init {
                   "--".into()]);
         a.extend(argv);
         a
+    }
+}
+
+/// Whether child PID has not exited yet (a zombie counts as exited); it is not reaped.
+fn alive(pid: i32) -> bool {
+    // Safety: waitid with WNOWAIT only looks at our child's state, into a local siginfo.
+    unsafe {
+        let mut info: libc::siginfo_t = std::mem::zeroed();
+        let r = libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, libc::WEXITED | libc::WNOHANG | libc::WNOWAIT);
+        r == 0 && info.si_pid() == 0
     }
 }
 
@@ -843,21 +872,42 @@ fn harden_self() -> bool {
     }
 }
 
-/// SIGCHLD and SIGTERM through a signalfd, blocked before any thread starts, so every
-/// thread has them blocked and the poll loop gets them.
-fn signal_fd() -> Option<OwnedFd> {
-    // Safety: a sigset on the stack, sigprocmask on this thread, and a new signalfd we own.
+/// SIGCHLD and SIGTERM blocked before any thread starts, so every thread has them blocked;
+/// a signalfd for each: SIGCHLD for the poll loop, SIGTERM for the shutdown watcher.
+fn signal_fds() -> Option<(OwnedFd, OwnedFd)> {
+    // Safety: sigsets on the stack, sigprocmask on this thread, new signalfds we own.
     unsafe {
-        let mut set: libc::sigset_t = std::mem::zeroed();
-        libc::sigemptyset(&mut set);
-        libc::sigaddset(&mut set, libc::SIGCHLD);
-        libc::sigaddset(&mut set, libc::SIGTERM);
-        if libc::sigprocmask(libc::SIG_BLOCK, &set, std::ptr::null_mut()) != 0 {
+        let mut both: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut both);
+        libc::sigaddset(&mut both, libc::SIGCHLD);
+        libc::sigaddset(&mut both, libc::SIGTERM);
+        if libc::sigprocmask(libc::SIG_BLOCK, &both, std::ptr::null_mut()) != 0 {
             return None;
         }
-        let fd = libc::signalfd(-1, &set, libc::SFD_CLOEXEC | libc::SFD_NONBLOCK);
-        (fd >= 0).then(|| OwnedFd::from_raw_fd(fd))
+        let one = |sig: libc::c_int| {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            libc::sigaddset(&mut set, sig);
+            let fd = libc::signalfd(-1, &set, libc::SFD_CLOEXEC | libc::SFD_NONBLOCK);
+            (fd >= 0).then(|| OwnedFd::from_raw_fd(fd))
+        };
+        Some((one(libc::SIGCHLD)?, one(libc::SIGTERM)?))
     }
+}
+
+/// Ends the zone at once on SIGTERM or when the server's pidfd fires, in a thread of its
+/// own: a shell client that stops reading, or a log nobody reads, never holds it up.
+fn watch_shutdown(term: OwnedFd, server: RawFd) {
+    let _ = std::thread::Builder::new().name("shutdown".into()).spawn(move || loop {
+        let mut fds = [libc::pollfd { fd: term.as_raw_fd(), events: libc::POLLIN, revents: 0 },
+                       libc::pollfd { fd: server, events: libc::POLLIN, revents: 0 }];
+        // Safety: poll over our array; _exit ends the process without running anything.
+        unsafe {
+            if libc::poll(fds.as_mut_ptr(), 2, -1) > 0 && (fds[0].revents != 0 || fds[1].revents != 0) {
+                libc::_exit(0);
+            }
+        }
+    });
 }
 
 pub fn main(_args: &[String]) -> u8 {
@@ -873,10 +923,11 @@ pub fn main(_args: &[String]) -> u8 {
         log("no $ZONE_SERVER_FD from the host; refusing to run");
         return 1;
     };
-    let Some(signals) = signal_fd() else {
+    let Some((signals, term)) = signal_fds() else {
         log("could not set up signals; refusing to run");
         return 1;
     };
+    watch_shutdown(term, server);
     let env: HashMap<String, String> = std::env::vars().collect();
     let zone = env.get("ZONE").cloned().unwrap_or_else(|| "?".into());
     // Safety: getuid has no preconditions.
@@ -892,9 +943,8 @@ pub fn main(_args: &[String]) -> u8 {
         let mut fds = vec![
             libc::pollfd { fd: ctl, events: libc::POLLIN, revents: 0 },
             libc::pollfd { fd: signals.as_raw_fd(), events: libc::POLLIN, revents: 0 },
-            libc::pollfd { fd: server, events: libc::POLLIN, revents: 0 },
         ];
-        let mut tags = vec![Tag::Listener, Tag::Signals, Tag::Server];
+        let mut tags = vec![Tag::Listener, Tag::Signals];
         for fd in init.outputs.keys() {
             fds.push(libc::pollfd { fd: *fd, events: libc::POLLIN, revents: 0 });
             tags.push(Tag::Out(*fd));
@@ -924,22 +974,10 @@ pub fn main(_args: &[String]) -> u8 {
                 }
                 Tag::Signals => {
                     let mut info = [0u8; 128];
-                    let mut child = false;
-                    // Safety: reads whole signalfd_siginfo records into our buffer.
-                    while unsafe { libc::read(signals.as_raw_fd(), info.as_mut_ptr().cast(), info.len()) } == 128 {
-                        let signo = u32::from_ne_bytes([info[0], info[1], info[2], info[3]]) as i32;
-                        if signo == libc::SIGTERM {
-                            std::process::exit(0);
-                        }
-                        child |= signo == libc::SIGCHLD;
-                    }
-                    if child {
-                        init.reap();
-                    }
+                    // Safety: reads whole signalfd_siginfo records (SIGCHLD) into our buffer.
+                    while unsafe { libc::read(signals.as_raw_fd(), info.as_mut_ptr().cast(), info.len()) } == 128 {}
+                    init.reap();
                 }
-                // the server is gone: no one reads our log now, and a blocked write must
-                // not keep the zone alive; end it at once
-                Tag::Server => unsafe { libc::_exit(0) },
                 Tag::Out(fd) => {
                     init.read_output(fd);
                 }
