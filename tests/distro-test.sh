@@ -126,6 +126,12 @@ if [ $rust = yes ]; then
   inside=$(as_alice 'appzones run --wait off -- sh -c "cat /proc/[0-9]*/cmdline | tr \"\\000\" \" \""' </dev/null)
   if echo "$inside" | grep -q python; then fail "Python runs in the zone: $inside"; fi
   pass "the Rust helper: zone-init runs from /run/appzones-helper, no Python in the zone (installed under $prefix)"
+  # the part of appzones serve that holds the zone: the Rust runner, no Python in memory for it
+  srv=$(fuser /run/user/1000/appzones/off.lock 2>/dev/null | tr -s ' ' '\n' | grep -m1 '[0-9]')
+  scmd=$(tr '\0' ' ' </proc/$srv/cmdline)
+  case "$scmd" in *"appzones-helper serve --plan "*) ;; *) fail "zone off's server is not the Rust runner: $scmd";; esac
+  rss=$(awk '/^VmRSS/{print $2}' /proc/$srv/status)
+  pass "the Rust runner holds the zone ($rss kB RSS)"
   case " $mflags " in *" MOUNT_HELPER_BIN="*)
     [ "$(head -c 4 $prefix/lib/appzones/appzones-mount-helper | od -An -c | tr -d ' ')" = '177ELF' ] \
       || fail "the mount helper is not the Rust one"
