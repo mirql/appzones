@@ -29,7 +29,7 @@ MOUNT_USERS ?= $(if $(SUDO_USER),$(SUDO_USER),%users)
 SUDOERS ?= yes
 APPARMOR ?= auto
 SYSTEMD ?= auto
-# rust: appzones runs the Rust helper (build/appzones-helper, or HELPER_BIN=PATH) for
+# rust: appzones runs the Rust helper (build/appzones-helper, or HELPER_BIN=FILE, a path) for
 # what it has replaced so far (design/rust.md); empty: the Python and C ones
 HELPER ?=
 HELPER_BIN ?= build/appzones-helper
@@ -78,7 +78,7 @@ zone-wayland:
 
 # before anything is copied
 preflight: $(if $(filter rust,$(HELPER)),helper)
-	@[ "$(HELPER)" != rust ] || "$(HELPER_BIN)" --commands 2>/dev/null | grep -qx zone-wayland \
+	@[ "$(HELPER)" != rust ] || { [ -f "$(HELPER_BIN)" ] && "$(realpath $(HELPER_BIN))" --commands 2>/dev/null | grep -qx zone-wayland; } \
 		|| { echo "HELPER=rust needs a Rust helper that implements zone-wayland (appzones-helper --commands):"; \
 		     echo "  cargo for \`make\`, or HELPER_BIN=PATH"; exit 1; }
 	@[ -n "$(PYTHON)" ] && "$(PYTHON)" -c 'import sys; sys.exit(sys.version_info < (3, 11))' \
