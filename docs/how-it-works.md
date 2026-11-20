@@ -11,7 +11,7 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
    │                      carries /.flatpak-info, so portals see
    │                      app id dev.mirql.zone.work
    └─ pasta (own netns) ─ appzones _netsetup (nft deny list, the agent's
-      │                   socket, then exec)
+      │                   socket, its output to the server's log socket, then exec)
       └─ bwrap (user, pid, ipc, uts, cgroup ns; no caps; no_new_privs)
          └─ zone-init     the agent inside: run, shell (pty), ps (its protocol: the
                           top of src/zone_init.py, tested by AgentProtocolTest; with
@@ -54,6 +54,13 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   readiness. Other clients wait for the zone to answer, and give up after about
   60 seconds (try again once it answers). The log directory is on the
   never-list: no zone can bind it.
+- What runs inside a zone (zone-init, the apps) writes to the server's output,
+  so to the log file or the journal. For `network = "internet"` it does not go
+  through pasta, which a distribution may confine (Fedora's SELinux policy
+  gives pasta's children `/dev/null`): the server listens on `log.sock` in the
+  zone's runtime directory on the host (0600, never bound into the zone),
+  `_netsetup` puts it on its stdout and stderr before it starts bwrap, and the
+  server copies what arrives to its own output.
 - The zone ends with its server, however the server ends (also `kill -9`):
   zone-init holds a pidfd of the server (handed over a unix socket, since
   pasta closes inherited fds) and ends the zone when it becomes readable;

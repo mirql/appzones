@@ -205,6 +205,13 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         os.set_inheritable(notify_fd, False)  # never into the zone or a helper
     lock = take_lock(name, lock_fd)  # noqa: F841  (held until this process exits)
     helpers: list[subprocess.Popen] = []
+    relay: list[threading.Thread] = []  # copies an internet zone's output to ours (_relay_output)
+
+    def relay_done() -> None:
+        """The zone's last lines in our log: the relay ends when the zone's writers have,
+        or after a moment (a helper that still holds the socket)."""
+        for t in relay:
+            t.join(timeout=2)
     child: subprocess.Popen | None = None
 
     stopped: list[int] = []  # a stop asked for by SIGTERM or SIGINT
@@ -220,6 +227,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         stop_all()
         if child:
             wait_or_kill(child)
+        relay_done()
         if fp:
             shutil.rmtree(fp, ignore_errors=True)
         if stopped:
@@ -368,12 +376,13 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     # the zone's DNS answers in threads: started only now, after every launch with a
     # preexec_fn (die_with), which is not safe once a process has threads
     dns_srv = dns.serve(zrt / "ctl" / "dns.sock", dns.upstreams(z)) if network == "internet" else None  # noqa: F841
-    env = dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT))
-    if log_sock:
-        env["ZONE_LOG_SOCK"] = str(zrt / "log.sock")
-    child = subprocess.Popen(argv, env=env)  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
+    if log_sock:  # for _netsetup, through pasta's environment
+        os.environ["ZONE_LOG_SOCK"] = str(zrt / "log.sock")
+    child = subprocess.Popen(argv, env=dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT)))  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
+    os.environ.pop("ZONE_LOG_SOCK", None)
     if log_sock:  # a thread, like the DNS: after the last launch with a preexec_fn
-        threading.Thread(target=_relay_output, args=(log_sock,), daemon=True).start()
+        relay.append(threading.Thread(target=_relay_output, args=(log_sock,), daemon=True))
+        relay[0].start()
     if not offer_pidfd(name, child):
         return abort("_netsetup did not take the server's pidfd")
     # ready: zone-init answers; then the autostart apps
@@ -431,6 +440,7 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
         if r and links_srv:
             portals.handle_link(links_srv, target)
     stop_all()
+    relay_done()
     shutil.rmtree(fp, ignore_errors=True)
     fs.prepare_mnt(name, zdir)  # runtime mounts end with the zone
     # a stop that was asked for is not a failure: a process manager restarts only failures
