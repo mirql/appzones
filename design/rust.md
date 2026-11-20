@@ -290,6 +290,18 @@ zone-wayland, open-link), static where it can be, plus `appzones-mount-helper` o
    keeping the lock and notify descriptors. The Rust server holds the zone: helpers and
    their readiness, `_netsetup`, the pidfd handoff, the log and DNS relays, links, linger,
    autostart, stop and cleanup. Done: `vm-rust` and the distro tests with it.
+   In two steps:
+   - **1a (Python only)**: `supervise` split into making the plan and running it, with the
+     plan as JSON; Python still runs it, so `vm` shows nothing changed, and the plan format
+     is the tested interface. Parts that depend on what the helpers produce (the zone's
+     Wayland socket, the host's as a fallback, the bus) are marked in bwrap's command line,
+     and the runner keeps or drops them. `_netsetup` stays Python in this stage: it execs
+     bwrap at once and holds no memory.
+   - **1b**: the Rust runner (`appzones-helper serve --plan FILE`): helpers and their
+     readiness (zone-wayland's exit 3 and the host fallback), the D-Bus proxy, the pidfd
+     handoff, zone-init's answer, readiness, autostart, the log and DNS relays (`dns.py`),
+     links, linger, a dead helper, stop, cleanup, the exit statuses. With the Rust helper
+     installed, `appzones serve` writes the plan and execs it. About 800 to 1,000 lines.
 2. **The configuration.** `zonecfg` in Rust (TOML with each key's origin, `[defaults]`,
    `RELEASE`/`SINCE`, the never-list from phase 1b), and the plan made in Rust. A
    differential test runs both on every example and unit-test case (results, warnings,
