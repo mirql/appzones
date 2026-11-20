@@ -12,7 +12,8 @@ just test-vm        # NixOS VM: Hyprland, zone units, isolation, window tags (~6
 just test-install   # `make install` into a staging directory (for other distributions)
 just test-distros   # Ubuntu 24.04 and Debian 12 in a VM: make install and the .deb, zones as a user (~3 min each)
 just test-arch      # Arch: the AUR package built from this checkout, the same test (network, ~15 min)
-just test-fedora    # Fedora 45, SELinux enforcing: make install, the same test (network, ~15 min)
+just test-fedora    # Fedora 45, SELinux enforcing: the RPM from this checkout, the same test (network, ~15 min)
+just test-opensuse  # openSUSE Leap 16, SELinux enforcing: make install, the same test (network, ~15 min)
 just deb            # the .deb, in result-deb/
 just test-rust      # the Rust helpers (helper/, design/rust.md): cargo test, protocol, never-list, VM, distros
 just audit          # the Rust helpers' dependencies (cargo deny: advisories, licenses; needs the network)

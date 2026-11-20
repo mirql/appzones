@@ -6,6 +6,7 @@
 | **Ubuntu 24.04, Debian 12** (preview) | command-line zones: dev tools and AI agents, also over SSH; desktop apps under sway 1.9+ (tested on Ubuntu 24.04) or GNOME (with `wayland = "host"`, tried by hand); no window borders | [the .deb, or `make install`](#ubuntu-and-debian-preview) |
 | **Arch Linux** (preview) | the same as Ubuntu and Debian; sway names zones started without systemd too | [a PKGBUILD](#arch-linux-preview), or `make install` |
 | **Fedora 45** (preview) | the same, with SELinux enforcing | [the RPM, or `make install`](#fedora-preview) |
+| **openSUSE Leap 16** (preview) | the same, with SELinux enforcing; internet zones need one SELinux setting | [`make install`](#opensuse-preview) |
 
 Other distributions with systemd or another init, Python 3.11 and the same
 tools should work like these; they are not tested yet.
@@ -244,6 +245,33 @@ make && sudo make install
 
 Then [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3).
 `sudo make uninstall` removes it again.
+
+## openSUSE (preview)
+
+Tested on Leap 16 with `just test-opensuse` (`make install` from the
+checkout, then the same test as Ubuntu and Debian, in a VM), with SELinux
+enforcing. There is no package yet.
+
+```bash
+sudo zypper install python3 bubblewrap passt nftables iproute2 git make   # enough for a server
+sudo zypper install xdg-dbus-proxy dbus-1-daemon gcc pkgconf-pkg-config wayland-devel  # for a desktop
+git clone https://github.com/mirql/appzones && cd appzones
+make && sudo make install
+```
+
+**Internet zones and SELinux.** On Leap 16 `/usr/bin/pasta` is a link to the
+`passt` binary, so SELinux runs pasta in passt's domain, which may not build a
+network namespace: a zone with `network = "internet"` does not start, and its
+log says why. Until openSUSE's passt has its own pasta binary, let that domain
+run unconfined (denials are still logged):
+
+```bash
+sudo zypper install policycoreutils-python-utils
+sudo semanage permissive -a passt_t
+```
+
+Zones with `network = "none"` or `"host"` work without it. Then
+[your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3).
 
 ## Requirements
 

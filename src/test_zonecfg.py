@@ -1637,6 +1637,33 @@ os.write(w, b"\\n"); os.close(w)
                 os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
             shutil.rmtree(t, ignore_errors=True)
 
+    def test_pasta_selinux_problem(self):
+        """pasta linked to the passt binary (labelled passt_exec_t) under enforcing SELinux is named,
+        with the fix; otherwise nothing."""
+        zone = self._zone_mod()
+        t = Path(tempfile.mkdtemp())
+        try:
+            (t / "selinux").mkdir()
+            (t / "passt").write_text("")
+            os.symlink("passt", t / "pasta")
+            labels = {str(t / "passt"): b"system_u:object_r:passt_exec_t:s0\0"}
+            real = zone.os.getxattr
+            zone.os.getxattr = lambda p, name: labels[p]
+            self.addCleanup(setattr, zone.os, "getxattr", real)
+            for enforce, label, want in [("1", b"system_u:object_r:passt_exec_t:s0\0", True),
+                                         ("0", b"system_u:object_r:passt_exec_t:s0\0", False),
+                                         ("1", b"system_u:object_r:pasta_exec_t:s0\0", False)]:
+                (t / "selinux/enforce").write_text(enforce)
+                labels[str(t / "passt")] = label
+                got = zone.pasta_selinux_problem(str(t / "pasta"), selinux=str(t / "selinux"))
+                with self.subTest(enforce=enforce, label=label):
+                    self.assertEqual(got is not None, want, got)
+                    if want:
+                        self.assertIn("semanage permissive -a passt_t", got)
+            self.assertIsNone(zone.pasta_selinux_problem(str(t / "pasta"), selinux=str(t / "none")))  # no SELinux
+        finally:
+            shutil.rmtree(t, ignore_errors=True)
+
     def test_prepare_mnt_leftovers(self):
         """A runtime mount that umount-all could not detach: prepare_mnt says so (the server then
         does not start the zone with it)."""

@@ -369,6 +369,9 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     log_sock = None
     if network == "internet":
         argv = net.pasta_argv(z) + argv
+        problem = net.pasta_selinux_problem(argv[0])
+        if problem:
+            print(f"[zone] {name}: {problem}", flush=True)
         # the zone's output through a socket, not through pasta: where pasta is confined
         # (Fedora's passt-selinux) it may not use the server's stdout, and the kernel
         # gives it, and so everything it starts, /dev/null instead. _netsetup, after

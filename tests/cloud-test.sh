@@ -3,6 +3,7 @@
 #   arch    the AUR package (contrib/arch/PKGBUILD), built with makepkg from this checkout
 #   fedora  the RPM (contrib/fedora/appzones.spec), built with rpmbuild from this checkout
 #           (SELinux enforcing); APPZONES_RPM_OUT=DIR copies it there
+#   opensuse  `make install` from this checkout, on Leap 16 (SELinux enforcing)
 # then tests/distro-test.sh against it: zones as an ordinary user, and a desktop under sway
 # (1.11+ names a zone from its security context). Unlike the Debian and Ubuntu checks this
 # needs the network, since nixpkgs has no images of these: a pinned cloud image (its
@@ -10,7 +11,7 @@
 # the release repositories, without updates), so every run gets the same ones. Needs
 # /dev/kvm. A real systemd host, unlike the other distro checks.
 set -euo pipefail
-distro=${1:?usage: cloud-test.sh arch|fedora}
+distro=${1:?usage: cloud-test.sh arch|fedora|opensuse}
 case $distro in
   arch)
     IMAGE=Arch-Linux-x86_64-cloudimg-20261115.625457.qcow2
@@ -23,7 +24,12 @@ case $distro in
     IMAGE_URL=https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Cloud/x86_64/images/$IMAGE
     IMAGE_SHA256=50bdc5e70f6a24f540932d15411c1c6ae9fcfa40fb990d876d83c5cc823b2ad0
     PKGCACHE=/var/cache/libdnf5;;
-  *) echo "usage: cloud-test.sh arch|fedora"; exit 2;;
+  opensuse)
+    IMAGE=Leap-16.0-Minimal-VM.x86_64-Cloud-Build18.95.qcow2
+    IMAGE_URL=https://download.opensuse.org/distribution/leap/16.0/appliances/$IMAGE
+    IMAGE_SHA256=cdf1e5eefc20b7479059eb7ef12694e395d787168a11792997a0209499084ae5
+    PKGCACHE=/var/cache/zypp/packages;;
+  *) echo "usage: cloud-test.sh arch|fedora|opensuse"; exit 2;;
 esac
 
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -85,6 +91,14 @@ if [[ $distro == arch ]]; then
     sudo pacman -Syyuu --noconfirm --needed --disable-download-timeout base-devel python bubblewrap passt \
     nftables iproute2 wayland pkgconf xdg-dbus-proxy dbus sudo dnsmasq procps-ng psmisc util-linux weston \
     wayland-utils sway foot >/tmp/pkgs.log 2>&1 || { tail -20 /tmp/pkgs.log; exit 1; }"
+elif [[ $distro == opensuse ]]; then
+  # the release repositories only (no updates: the same packages every run), packages kept
+  vm "for r in \$(sudo zypper -q lr -E | awk -F'|' 'NR>2 && tolower(\$2) ~ /update/ {gsub(/ /,\"\",\$2); print \$2}'); do \
+      sudo zypper -q mr -d \"\$r\"; done; sudo zypper -q mr -k -a && \
+    sudo zypper -n -q --gpg-auto-import-keys install --no-recommends gcc make pkgconf-pkg-config wayland-devel \
+    python3 bubblewrap passt nftables iproute2 xdg-dbus-proxy dbus-1-daemon sudo dnsmasq procps psmisc \
+    util-linux weston wayland-utils sway foot policycoreutils-python-utils >/tmp/pkgs.log 2>&1 \
+    || { tail -20 /tmp/pkgs.log; exit 1; }"
 else
   # (script, for the shell check, is its own package on Fedora)
   vm "echo keepcache=True | sudo tee -a /etc/dnf/dnf.conf >/dev/null && \
@@ -109,6 +123,14 @@ if [[ $distro == arch ]]; then
     sudo pacman -U --noconfirm ~/pkg/appzones-$version-*-x86_64.pkg.tar.zst >/dev/null"
   echo "built and installed appzones $version with makepkg"
   mode=pacman src=/nonexistent
+elif [[ $distro == opensuse ]]; then
+  # Leap 16's pasta runs as passt (a link to the passt binary, passt_exec_t), which may not
+  # build a network namespace: the documented workaround (docs: install, openSUSE)
+  vm "sudo /usr/sbin/semanage permissive -a passt_t"
+  # the checkout's tracked files; the test runs make and make install itself
+  (cd "$here" && git ls-files -z | tar --null -T - -czf "$work/src.tar.gz")
+  vm "mkdir -p /tmp/src && tar xz -C /tmp/src" <"$work/src.tar.gz"
+  mode="" src=/tmp/src
 else
   # the RPM from this checkout: a tarball of the tracked files, as GitHub's would be
   (cd "$here" && git ls-files -z | tar --null -T - --transform "s,^,appzones-$version/," -czf "$work/src.tar.gz")
@@ -133,4 +155,9 @@ tar c -C "$here" tests/distro-test.sh | vm "tar x -C /tmp"
 rc=0
 vm "cd / && sudo timeout 900 sh /tmp/tests/distro-test.sh $src '' $mode" | tee "$work/test.log" || rc=$?
 grep -qx "ALL PASSED" "$work/test.log" || { echo "test-$distro: failed (status $rc)"; exit 1; }
+if [[ $distro == opensuse ]]; then  # the zone said why pasta may fail here, and how to fix it
+  vm "sudo grep -q 'semanage permissive -a passt_t' /home/alice/.local/state/appzones/web.log" \
+    || { echo "test-opensuse: no SELinux hint for pasta in the zone's log"; exit 1; }
+  echo "the zone's log names the pasta/passt SELinux problem and its fix"
+fi
 ok=yes

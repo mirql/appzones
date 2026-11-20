@@ -33,6 +33,10 @@ deb:
 test-arch:
     nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh arch
 
+# appzones on openSUSE Leap 16 (SELinux enforcing): make install from this checkout, the distro test (network, /dev/kvm, ~15 min)
+test-opensuse:
+    nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh opensuse
+
 # appzones on Fedora (SELinux enforcing): the RPM built from this checkout, the distro test (needs the network and /dev/kvm, ~15 min)
 test-fedora:
     nix shell --inputs-from . nixpkgs#qemu nixpkgs#cdrkit nixpkgs#openssh nixpkgs#curl -c nice -n 19 tests/cloud-test.sh fedora

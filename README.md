@@ -55,7 +55,7 @@ appzones list                     # zones, state, network, devices, apps running
 
 > [!NOTE]
 > appzones is young (0.11). It runs on **x86_64 NixOS**, and as a preview on
-> **Ubuntu 24.04, Debian 12, Arch and Fedora**: command-line zones, and desktop apps
+> **Ubuntu 24.04, Debian 12, Arch, Fedora and openSUSE**: command-line zones, and desktop apps
 > under sway 1.9+ (tested) or GNOME (`wayland = "host"`, tried by hand).
 > Window borders and tags per zone need Hyprland.
 
@@ -221,7 +221,7 @@ its own:
 | Network | internet yes; LAN, host and tailnet no | on or off | on, off or a filter | per-VM firewall | the host's |
 | Which zone is this window? | border colour, the app can't fake it | no | no | border colour | no |
 | Isolation | namespaces, same kernel | namespaces, same kernel | namespaces, same kernel, setuid binary | separate VMs (much stronger) | almost none |
-| Runs on | NixOS; Ubuntu, Debian, Arch, Fedora (preview) | any distro | any distro | Qubes only | any distro |
+| Runs on | NixOS; Ubuntu, Debian, Arch, Fedora, openSUSE (preview) | any distro | any distro | Qubes only | any distro |
 
 appzones is for when Flatpak is too fine-grained, Qubes is too much, and
 you want your messenger, your work browser, your agents and that PDF in
@@ -359,7 +359,7 @@ Issues, ideas and PRs are welcome. Good places to start:
   NixOS to build and test.
 - **Other compositors.** Hyprland gets window tags and border colours, sway
   marks and title prefixes. niri or KWin hooks would help ([#20](https://github.com/mirql/appzones/issues/20)).
-- **Other distributions.** openSUSE and others: a package, and a VM
+- **Other distributions.** A package for openSUSE; others: a package, and a VM
   test like the Debian and Ubuntu ones ([#22](https://github.com/mirql/appzones/issues/22)).
 - **aarch64.** Nothing has been tried there yet.
 - **Docs.** If something in the [docs](https://mirql.github.io/appzones/) was unclear to you,

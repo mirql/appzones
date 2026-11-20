@@ -5,6 +5,13 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **openSUSE Leap 16 tested** (`just test-opensuse`, #22): `make install` and the whole
+  distro test pass with SELinux enforcing, once pasta may run: on Leap 16
+  `/usr/bin/pasta` links to the passt binary, so SELinux runs it in passt's domain,
+  which may not build a network namespace. An internet zone's log now says so when
+  this applies, with the fix (`semanage permissive -a passt_t`); the install page has
+  an openSUSE section.
+
 ## 0.11.3
 
 `wayland = "host"` now gives the host's Wayland socket only where the compositor has no security context (GNOME, Weston), as intended; on Hyprland, sway or KDE the zone gets its own context. If you set it, restart those zones. Also: a zone no longer starts with last run's mounts, and `make install` and the .deb never install `contrib/` writable by others.
