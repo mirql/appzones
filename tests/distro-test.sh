@@ -164,7 +164,10 @@ as_alice 'appzones stop off; appzones stop web'
 if fuser /run/user/1000/appzones/off.lock /run/user/1000/appzones/web.lock >/dev/null 2>&1; then fail "a server left after stop"; fi
 if pgrep -u alice -x zone-init >/dev/null; then fail "a zone-init left after stop"; fi
 [ -s /home/alice/.local/state/appzones/web.log ] || fail "no log in ~/.local/state/appzones"
-pass "stop: no server left; logs in ~/.local/state/appzones"
+# what runs behind pasta logs too (on Fedora, SELinux gave pasta's children /dev/null)
+grep -q "\[zone-init\] zone web ready" /home/alice/.local/state/appzones/web.log \
+  || fail "no zone-init lines in an internet zone's log: $(cat /home/alice/.local/state/appzones/web.log)"
+pass "stop: no server left; logs in ~/.local/state/appzones, also from inside an internet zone"
 
 # a compositor without the security-context protocol (Weston): the zone starts without a
 # Wayland socket and says why; it never gets the host's socket

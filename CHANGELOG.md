@@ -5,6 +5,14 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **Logs from inside internet zones on Fedora**: with Fedora's SELinux policy for pasta
+  (passt-selinux), pasta may not use the server's stdout (its log file, or the journal),
+  so the kernel gave pasta, and everything it starts, `/dev/null`: zone-init's lines
+  and the apps' output of `network = "internet"` zones were lost, without a message.
+  Now the process after pasta connects to a socket of the server (in the zone's runtime
+  directory on the host, never in the zone) and logs through it. Found by the Fedora
+  test, which now checks it on every distribution.
+
 ## 0.11.1
 
 An RPM for Fedora, attached to the release like the .deb. Fedora 45 (SELinux enforcing) and Arch are now tested in VMs (`just test-fedora`, `just test-arch`), and KDE Plasma 6 is documented. One small fix in the mount helper.

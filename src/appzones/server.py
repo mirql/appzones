@@ -13,6 +13,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -156,6 +157,36 @@ def _exit_status(p: subprocess.Popen) -> int | None:
         return p.wait(timeout=2)
     except subprocess.TimeoutExpired:
         return None
+
+
+def _relay_output(listener: socket.socket) -> None:
+    """Copy what the zone writes to its log socket (zone-init, the apps) to the server's
+    own stdout: its log file or the journal. Until the zone closes it."""
+    listener.settimeout(START_TIMEOUT)
+    try:
+        conn, _ = listener.accept()
+    except OSError:
+        return  # no zone came (it failed to start: the server says why)
+    finally:
+        listener.close()
+    with conn:
+        conn.settimeout(None)
+        while data := conn.recv(65536):
+            while data:
+                data = data[os.write(1, data):]
+
+
+def _output_to(path: str) -> None:
+    """_netsetup: stdout and stderr to the server's log socket at PATH (see supervise)."""
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.connect(path)
+    except OSError:
+        s.close()
+        return  # keep what pasta gave (a log line less, never a failed start)
+    os.dup2(s.fileno(), 1)
+    os.dup2(s.fileno(), 2)
+    s.close()
 
 
 class _Stopped(Exception):
@@ -318,15 +349,31 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
     # pasta's namespace, right before it execs bwrap.
     argv = [sys.executable, str(common.HERE / "zone.py"), "_netsetup", str(zrt / "nft.rules") if network == "internet" else "-",
             str(fp / "bwrapinfo.json"), name, "--"] + inner
+    log_sock = None
     if network == "internet":
         argv = net.pasta_argv(z) + argv
+        # the zone's output through a socket, not through pasta: where pasta is confined
+        # (Fedora's passt-selinux) it may not use the server's stdout, and the kernel
+        # gives it, and so everything it starts, /dev/null instead. _netsetup, after
+        # pasta, connects here and puts the socket on its stdout and stderr.
+        log_path = zrt / "log.sock"
+        log_path.unlink(missing_ok=True)
+        log_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        log_sock.bind(str(log_path))
+        os.chmod(log_path, 0o600)
+        log_sock.listen(1)
     if stopped:  # asked to stop before the zone itself was started
         return abort("")
     # _netsetup's own deadline (bwrap clears the environment: it goes no further)
     # the zone's DNS answers in threads: started only now, after every launch with a
     # preexec_fn (die_with), which is not safe once a process has threads
     dns_srv = dns.serve(zrt / "ctl" / "dns.sock", dns.upstreams(z)) if network == "internet" else None  # noqa: F841
-    child = subprocess.Popen(argv, env=dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT)))  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
+    env = dict(os.environ, ZONE_START_TIMEOUT=str(START_TIMEOUT))
+    if log_sock:
+        env["ZONE_LOG_SOCK"] = str(zrt / "log.sock")
+    child = subprocess.Popen(argv, env=env)  # NOSONAR: argv built by appzones from the zone's config; run as the user, no shell
+    if log_sock:  # a thread, like the DNS: after the last launch with a preexec_fn
+        threading.Thread(target=_relay_output, args=(log_sock,), daemon=True).start()
     if not offer_pidfd(name, child):
         return abort("_netsetup did not take the server's pidfd")
     # ready: zone-init answers; then the autostart apps
@@ -555,6 +602,9 @@ def receive_pidfd(name: str) -> int:
 
 def netsetup(rules: str, info: str, name: str, argv: list[str]) -> None:
     global START_TIMEOUT
+    log = os.environ.pop("ZONE_LOG_SOCK", "")
+    if log:
+        _output_to(log)
     try:
         START_TIMEOUT = float(os.environ.pop("ZONE_START_TIMEOUT", START_TIMEOUT))
     except ValueError:
