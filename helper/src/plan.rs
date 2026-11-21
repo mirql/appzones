@@ -1309,6 +1309,12 @@ pub fn write_plan(plan: &J) -> Result<PathBuf, String> {
 
 /// `appzones-helper plan ZONE --python EXE --code-dir DIR`: make and write the plan (as
 /// `appzones serve`'s first part), print its path.
+/// The directory of this executable (resolved): appzones' code directory, with one binary.
+pub fn exe_dir() -> PathBuf {
+    std::env::current_exe().ok().and_then(|e| std::fs::canonicalize(e).ok())
+        .and_then(|e| e.parent().map(Path::to_path_buf)).unwrap_or_else(|| PathBuf::from("/"))
+}
+
 pub fn plan_main(args: &[OsString]) -> u8 {
     let (mut name, mut python, mut code) = (None, None, None);
     let mut it = args.iter();
@@ -1318,16 +1324,17 @@ pub fn plan_main(args: &[OsString]) -> u8 {
             Some("--code-dir") => code = it.next().map(|v| PathBuf::from(v.clone())),
             Some(x) if !x.starts_with("--") && name.is_none() => name = Some(x.to_string()),
             _ => {
-                eprintln!("usage: appzones-helper plan ZONE --python EXE --code-dir DIR");
+                eprintln!("usage: appzones-helper plan ZONE [--python EXE --code-dir DIR]");
                 return 2;
             }
         }
     }
-    let (Some(name), Some(python), Some(code)) = (name, python, code) else {
-        eprintln!("usage: appzones-helper plan ZONE --python EXE --code-dir DIR");
+    let Some(name) = name else {
+        eprintln!("usage: appzones-helper plan ZONE [--python EXE --code-dir DIR]");
         return 2;
     };
-    let host = Host::new(code, python);
+    // (no Python: the plan's own steps are `appzones-helper cli ...`, the code its directory)
+    let host = Host::new(code.unwrap_or_else(exe_dir), python.unwrap_or_default());
     match make_plan(&host, &name).and_then(|p| write_plan(&p)) {
         Ok(path) => {
             println!("{}", sh(&path));

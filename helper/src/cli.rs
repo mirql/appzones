@@ -1529,9 +1529,7 @@ pub fn main(args: &[OsString]) -> i32 {
         out(&format!("appzones {} (config release {})", env!("CARGO_PKG_VERSION"), config::RELEASE));
         return 0;
     }
-    let here = std::env::current_exe().ok().and_then(|e| std::fs::canonicalize(e).ok()).and_then(|e| e.parent().map(Path::to_path_buf))
-        .unwrap_or_else(|| PathBuf::from("/"));
-    let mut cli = Cli::new(Host::new(here, String::new()));
+    let mut cli = Cli::new(Host::new(crate::plan::exe_dir(), String::new()));
     let (cmd, rest) = (argv[0].as_str(), &argv[1..]);
     if cmd == "_autostart" || (COMMANDS.contains(&cmd) && cmd != "active" && cmd != "serve") {
         cli.migrate_state();
