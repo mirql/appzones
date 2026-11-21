@@ -108,10 +108,22 @@ runCommand "appzones-${version}"
     ${lib.optionalString (
       helper != null
     ) "install -m 555 ${helper}/bin/appzones-helper $lib/appzones-helper"}
-    makeWrapper ${python3}/bin/python3 $out/bin/appzones \
-      --add-flags "-B $lib/zone.py" ${
-        lib.optionalString (helper != null) "--set APPZONES_HELPER rust"
-      } \
-      --prefix PATH : ${runtimePath} \
-      --suffix PATH : /run/current-system/sw/bin
+    # with the Rust helper, `appzones` is the helper's own command line (no Python runs);
+    # else Python's zone.py
+    ${
+      if helper != null then
+        ''
+          makeWrapper $lib/appzones-helper $out/bin/appzones \
+            --add-flags cli --set APPZONES_HELPER rust \
+            --prefix PATH : ${runtimePath} \
+            --suffix PATH : /run/current-system/sw/bin
+        ''
+      else
+        ''
+          makeWrapper ${python3}/bin/python3 $out/bin/appzones \
+            --add-flags "-B $lib/zone.py" \
+            --prefix PATH : ${runtimePath} \
+            --suffix PATH : /run/current-system/sw/bin
+        ''
+    }
   ''

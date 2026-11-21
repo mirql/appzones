@@ -476,6 +476,15 @@ pub fn main(args: &[std::ffi::OsString]) -> u8 {
             return 2;
         }
     };
+    serve_from(source, lock_fd, notify_fd)
+}
+
+/// `appzones serve NAME` in Rust (cli.rs): the lock taken, the plan made and run here.
+pub fn serve_zone(host: &crate::plan::Host, name: &str, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
+    serve_from(Source::Zone { name: name.into(), python: host.python.clone(), code_dir: host.here.clone() }, lock_fd, notify_fd)
+}
+
+fn serve_from(source: Source, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
     // the lock is held as long as this process lives; neither it nor the readiness fd
     // goes into the zone or a helper
     set_cloexec(lock_fd);

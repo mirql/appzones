@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **The commands in Rust (rust-version, stage 3 of #157)**: with the Rust helper,
+  `appzones` is `appzones-helper cli`: every command (`run`, `shell`, `up`, `stop`,
+  `list`, `mount`, `check`, ...) and the internal steps (`serve`, `_netsetup`, `_link`,
+  `_cleanup`, `_autostart`) in Rust, with Python's options, outputs and messages. No
+  Python runs. Without the Rust helper nothing changes.
+
 - **The configuration and the plan in Rust (rust-version, stage 2 of #157)**: with the
   Rust helper, `appzones serve` hands over to `appzones-helper serve --zone NAME` right
   after taking the zone's lock: zones.toml is read and checked in Rust (the same errors,
