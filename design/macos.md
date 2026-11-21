@@ -130,10 +130,14 @@ What appzones can take from it, on both systems:
 
 ## Stages
 
-1. **It builds on macOS**: the Linux-only parts behind `cfg`, portable wrappers for
-   the rest. `appzones check`, `list`, `which`, `new` work there; `up` says zones
-   are not built for macOS yet. `cargo test` passes on the Mac (`just test-macos`
-   runs it there over ssh).
+1. **It builds on macOS** (done): the Linux-only parts (the mount helper, `_netsetup`,
+   zone-wayland, zone-init and its DNS) behind `cfg(target_os = "linux")`, `helper/src/sys.rs`
+   for the calls the two systems spell differently. `appzones check`, `list`, `which`, `new`,
+   `ps`, `ping`, `stop`, `logs` work there; `up`, `run`, `shell`, `restart`, `serve`, `mount`,
+   `apps` say zones do not run on this system yet. Clippy and `cargo test` pass on the Mac
+   (`just test-macos user@host` runs them there over ssh). Left for stage 2: finding a zone's
+   server by its lock reads `/proc` (macOS: libproc), "dies with its parent" is Linux's
+   `PR_SET_PDEATHSIG` (macOS: kqueue's process events), and pidfds (macOS: none).
 2. **Zones on macOS**: the Seatbelt plan, zone-init inside it, `run`, `shell`, `ps`,
    `stop`, `logs`; `network = "none"` and `"host"`; the settings table above, with its errors.
 3. **The proxy**: `network = "internet"` on macOS (and later the allow list on both systems).

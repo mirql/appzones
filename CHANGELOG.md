@@ -5,6 +5,11 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **macOS, first step** (design/macos.md): appzones builds on macOS (Apple silicon), with a
+  Nix dev shell there. `check`, `list`, `which` and `new` work; starting zones says that
+  zones do not run on macOS yet. The plan for zones on macOS (Seatbelt, a proxy for
+  `network = "internet"`) is in the design note.
+
 ## 0.12.0
 
 appzones is written in Rust now: one binary for every command, the server and what runs in a zone, plus the small root helper of `appzones mount`. The config, the commands and their output stay as they were. The defaults are tighter (D-Bus notifications per interface, a longer never-list) and zones are more robust. Restart running zones after updating. Building from a checkout needs Rust 1.85 or newer; `make install` now puts the binaries in `PREFIX/libexec/appzones`.
