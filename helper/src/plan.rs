@@ -77,8 +77,12 @@ pub fn say(msg: &str) {
 pub fn output_within(cmd: &mut Command, timeout: Option<std::time::Duration>, stoppable: bool) -> Option<std::process::Output> {
     let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().ok()?;
     let (mut so, mut se) = (child.stdout.take()?, child.stderr.take()?);
-    let out = std::thread::spawn(move || { let mut b = Vec::new(); let _ = so.read_to_end(&mut b); b });
-    let err = std::thread::spawn(move || { let mut b = Vec::new(); let _ = se.read_to_end(&mut b); b });
+    // the output in threads that report through channels: a descendant that keeps a pipe
+    // open after the command exited holds only its reader, never this caller past the deadline
+    let (otx, orx) = std::sync::mpsc::channel();
+    let (etx, erx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || { let mut b = Vec::new(); let _ = so.read_to_end(&mut b); let _ = otx.send(b); });
+    std::thread::spawn(move || { let mut b = Vec::new(); let _ = se.read_to_end(&mut b); let _ = etx.send(b); });
     let end = timeout.map(|t| std::time::Instant::now() + t);
     let status = loop {
         match child.try_wait() {
@@ -92,7 +96,20 @@ pub fn output_within(cmd: &mut Command, timeout: Option<std::time::Duration>, st
             Err(_) => return None,
         }
     };
-    Some(std::process::Output { status, stdout: out.join().ok()?, stderr: err.join().ok()? })
+    let collect = |rx: &std::sync::mpsc::Receiver<Vec<u8>>| loop {
+        let left = end.map(|e| e.saturating_duration_since(std::time::Instant::now()));
+        if left.is_some_and(|l| l.is_zero()) || (stoppable && crate::serve::stopped()) {
+            return None;
+        }
+        match rx.recv_timeout(left.unwrap_or(std::time::Duration::from_secs(1)).min(std::time::Duration::from_millis(200))) {
+            Ok(b) => return Some(b),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(_) => return None,
+        }
+    };
+    let stdout = collect(&orx)?;
+    let stderr = collect(&erx)?;
+    Some(std::process::Output { status, stdout, stderr })
 }
 
 pub fn which(name: &str, path: Option<&str>) -> Option<String> {

@@ -128,8 +128,19 @@ fn pin_binds_by(argv: Vec<String>, policy: &crate::policy::Policy) -> Result<Vec
         i += 4;
         let expanded = policy.expand(raw.as_bytes());
         let c = CString::new(expanded).map_err(|_| format!("bind {raw}: a NUL byte; refusing to start the zone"))?;
-        // Safety: open a NUL-terminated path, O_PATH: nothing is read through it.
-        let fd = unsafe { libc::open(c.as_ptr(), libc::O_PATH | libc::O_CLOEXEC) };
+        // O_PATH: nothing is read through it; ordinary symlinks are followed, a magic link
+        // never (/proc/PID/root and its kind reach another mount namespace, whose paths read
+        // back as this one's, past the check below)
+        #[repr(C)]
+        struct OpenHow {
+            flags: u64,
+            mode: u64,
+            resolve: u64,
+        }
+        let how = OpenHow { flags: (libc::O_PATH | libc::O_CLOEXEC) as u64, mode: 0, resolve: libc::RESOLVE_NO_MAGICLINKS };
+        // Safety: openat2 reads the NUL-terminated path and the open_how struct of the given size.
+        let fd = unsafe { libc::syscall(libc::SYS_openat2, libc::AT_FDCWD, c.as_ptr(), &how as *const OpenHow,
+                                        std::mem::size_of::<OpenHow>()) } as libc::c_int;
         if fd < 0 {
             let e = std::io::Error::last_os_error();
             let text = e.to_string();
@@ -253,6 +264,10 @@ mod tests {
         std::os::unix::fs::symlink(h.join(".ssh"), h.join("Docs/proj")).unwrap();
         let err = pin_binds_by(a(&["bwrap", PIN, "rw", "~/Docs/proj", "/x"]), &policy).unwrap_err();
         assert!(err.contains(".ssh") && err.ends_with("refusing to start the zone"), "{err}");
+        // an ordinary symlink to a magic link (/proc/PID/cwd, another namespace's view): never opened
+        std::os::unix::fs::symlink("/proc/self/cwd", h.join("Docs/magic")).unwrap();
+        let err = pin_binds_by(a(&["bwrap", PIN, "ro", "~/Docs/magic", "/x"]), &policy).unwrap_err();
+        assert!(err.contains("refusing to start the zone"), "{err}");
         let err = pin_binds_by(a(&["bwrap", PIN, "rw", "~/Docs/gone", "/x"]), &policy).unwrap_err();
         assert!(err.contains("No such file"), "{err}");
         let _ = std::fs::remove_dir_all(&t);

@@ -1164,7 +1164,8 @@ impl Cli {
         let cfg = self.load_cfg(true);
         let dir = self.launcher();
         if let Err(e) = std::fs::create_dir_all(&dir) {
-            die(&format!("{}: {e}", sh(&dir)));
+            warn(&format!("{}: {e}; no launcher entries", sh(&dir))); // (autostart goes on with its zones)
+            return 1;
         }
         // the new entries first (each written whole, then renamed into place), the stale ones
         // removed after: a failed write never leaves launchers missing, and is said

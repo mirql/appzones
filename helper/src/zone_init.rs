@@ -258,6 +258,8 @@ struct Shell {
     /// client that does, can never stall the agent
     pending: Vec<u8>,
     pending_out: Vec<u8>,
+    /// the pty gave its end (EIO): the shell is dropped once PENDING_OUT reached the client
+    master_closed: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -491,7 +493,7 @@ impl Init {
         };
         set_nonblocking(master.as_raw_fd(), true);
         reply(&mut conn, &json!({"ok": true, "pid": pid}));
-        let mut sh = Shell { conn, master, pending: rest, pending_out: Vec::new() };
+        let mut sh = Shell { conn, master, pending: rest, pending_out: Vec::new(), master_closed: false };
         sh.write_pending();
         self.shells.insert(pid, sh);
         log(&format!("shell pid {pid}"));
@@ -618,15 +620,33 @@ impl Init {
                 reply(&mut conn, &json!({"exit": code}));
             }
             if let Some(mut sh) = self.shells.remove(&pid) {
-                // what the shell wrote last (bounded: the client's write timeout, 64 reads)
-                let _ = sh.conn.set_write_timeout(Some(SHELL_WRITE_TIMEOUT));
-                let out = std::mem::take(&mut sh.pending_out);
-                let _ = sh.conn.write_all(&out);
+                // what the shell wrote last: within one deadline for all of it (and 64 reads)
+                let end = std::time::Instant::now() + SHELL_WRITE_TIMEOUT;
+                let mut out = std::mem::take(&mut sh.pending_out);
+                let send = |data: &[u8], conn: &mut UnixStream| -> bool {
+                    let mut data = data;
+                    while !data.is_empty() {
+                        let left = end.saturating_duration_since(std::time::Instant::now());
+                        if left.is_zero() || conn.set_write_timeout(Some(left)).is_err() {
+                            return false;
+                        }
+                        match conn.write(data) {
+                            Ok(0) | Err(_) => return false,
+                            Ok(n) => data = &data[n..],
+                        }
+                    }
+                    true
+                };
+                let ok = send(&out, &mut sh.conn);
+                out.clear();
                 let mut buf = [0u8; 65536];
                 for _ in 0..64 {
+                    if !ok {
+                        break;
+                    }
                     // Safety: read from the pty master the shells table owned.
                     let n = unsafe { libc::read(sh.master.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
-                    if n <= 0 || sh.conn.write_all(&buf[..n as usize]).is_err() {
+                    if n <= 0 || !send(&buf[..n as usize], &mut sh.conn) {
                         break;
                     }
                 }
@@ -657,11 +677,14 @@ impl Init {
                 if n > 0 {
                     sh.pending_out.extend_from_slice(&buf[..n as usize]);
                 } else if !(n < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock) {
-                    done = true; // EIO: the shell side closed
+                    sh.master_closed = true; // EIO: the shell side closed (what waits still goes out)
                 }
             }
         }
-        if !done && !(sh.write_pending() && sh.send_pending()) {
+        if !done && !((sh.master_closed || sh.write_pending()) && sh.send_pending()) {
+            done = true;
+        }
+        if sh.master_closed && sh.pending_out.is_empty() {
             done = true;
         }
         if done {
@@ -829,7 +852,7 @@ impl Shell {
             | if self.pending_out.is_empty() { 0 } else { libc::POLLOUT };
         let master = if self.pending_out.is_empty() { libc::POLLIN } else { 0 }
             | if self.pending.is_empty() { 0 } else { libc::POLLOUT };
-        (conn, master)
+        (conn, if self.master_closed { 0 } else { master })
     }
 
     /// As much of PENDING as the pty takes now; false when it is gone.
@@ -1047,7 +1070,8 @@ pub fn main(_args: &[String]) -> u8 {
             let (conn_events, master_events) = sh.events();
             fds.push(libc::pollfd { fd: sh.conn.as_raw_fd(), events: conn_events, revents: 0 });
             tags.push(Tag::ShellIn(*pid));
-            fds.push(libc::pollfd { fd: sh.master.as_raw_fd(), events: master_events, revents: 0 });
+            // (a closed pty is not polled: it would report its hangup again and again)
+            fds.push(libc::pollfd { fd: if sh.master_closed { -1 } else { sh.master.as_raw_fd() }, events: master_events, revents: 0 });
             tags.push(Tag::ShellOut(*pid));
         }
         // Safety: poll over our own array of pollfds.

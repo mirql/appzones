@@ -205,6 +205,10 @@ fn same_configs() {
         }
     }
     if write_to().is_some() {
+        // (never a golden file with an old answer kept for a case that gave none)
+        let missing: Vec<&String> = diffs.iter().filter(|d| d.contains("\n  no JSON: ")).collect();
+        assert!(missing.is_empty(), "{} configurations gave no JSON, nothing written:\n{}", missing.len(),
+                missing.iter().take(3).map(|d| d.as_str()).collect::<Vec<_>>().join("\n"));
         for (c, w) in g["cases"].as_array_mut().unwrap().iter_mut().zip(new_wants) {
             c["want"] = w;
         }

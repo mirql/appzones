@@ -17,11 +17,11 @@
 mod policy;
 
 use std::ffi::{OsStr, OsString};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::Write;
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::process::ExitCode;
 
 const USAGE: &str = "    sudo -n appzones-mount-helper mount ZONE NAME SOURCE [--ro]
@@ -115,6 +115,17 @@ mod sys {
     /// PATH opened O_PATH|O_DIRECTORY, refusing every symlink on the way (RESOLVE_NO_SYMLINKS:
     /// the last one too, with ELOOP) and magic links.
     pub fn openat2_nosym(path: &[u8]) -> Result<OwnedFd> {
+        openat2(path, (libc::O_PATH | libc::O_DIRECTORY | libc::O_CLOEXEC) as u64,
+                libc::RESOLVE_NO_SYMLINKS | libc::RESOLVE_NO_MAGICLINKS)
+    }
+
+    /// PATH opened for reading as a directory, following ordinary symlinks but never a magic
+    /// link (/proc/PID/root and its kind, in any spelling: they reach other mount namespaces).
+    pub fn open_dir_no_magic(path: &[u8]) -> Result<OwnedFd> {
+        openat2(path, (libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC) as u64, libc::RESOLVE_NO_MAGICLINKS)
+    }
+
+    fn openat2(path: &[u8], flags: u64, resolve: u64) -> Result<OwnedFd> {
         let p = cstr(path)?;
         // struct open_how (linux/openat2.h): flags, mode, resolve, all u64
         #[repr(C)]
@@ -123,11 +134,7 @@ mod sys {
             mode: u64,
             resolve: u64,
         }
-        let how = OpenHow {
-            flags: (libc::O_PATH | libc::O_DIRECTORY | libc::O_CLOEXEC) as u64,
-            mode: 0,
-            resolve: libc::RESOLVE_NO_SYMLINKS | libc::RESOLVE_NO_MAGICLINKS,
-        };
+        let how = OpenHow { flags, mode: 0, resolve };
         // Safety: openat2 reads the NUL-terminated path and the open_how struct of the given size.
         let fd = check(unsafe {
             libc::syscall(libc::SYS_openat2, libc::AT_FDCWD, p.as_ptr(), &how as *const OpenHow,
@@ -322,10 +329,9 @@ impl Caller {
             sys::seteuid(self.uid)
         };
         let opened = drop_to_caller().and_then(|_| {
-            let f = OpenOptions::new().read(true).custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC)
-                .open(OsStr::from_bytes(source))?;
+            let f = sys::open_dir_no_magic(source)?; // (a magic link anywhere on the way: refused)
             sys::stat_dot(f.as_raw_fd())?; // search permission on it, too
-            Ok(OwnedFd::from(f))
+            Ok(f)
         });
         // back to root (euid first, then the groups it allows), whatever happened
         let back = sys::seteuid(0).and_then(|_| sys::setegid(0)).and_then(|_| sys::setgroups(&[]));
