@@ -1130,8 +1130,9 @@ impl Cli {
                      cfg.zones.iter().map(|z| z.name.as_str()).collect::<Vec<_>>().join(", "), cfg.apps.len(), config::RELEASE));
         let Some(probe) = probe else { return 0 };
         // (the probes run in the zone: not where zones do not run yet)
-        #[cfg(not(target_os = "linux"))]
-        die(&format!("check --probe {probe}: zones do not run on this system yet (check, list, which and new work)"));
+        if cfg!(not(target_os = "linux")) {
+            die(&format!("check --probe {probe}: zones do not run on this system yet (check, list, which and new work)"));
+        }
         let cfg = self.load_zone(probe, true);
         let z = cfg.zone(probe).expect("checked");
         self.up(probe, true);
