@@ -281,6 +281,16 @@ impl Cli {
         it.filter_map(|e| e.ok()).any(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == lock))
     }
 
+    /// Whether PID holds the flock on the file LOCK (dev, ino), not merely has it open (an
+    /// `appzones up` between its open and its flock): by the descriptor's own fdinfo,
+    /// which lists the locks held through it.
+    fn holds_lock(pid: &str, lock: (u64, u64)) -> bool {
+        let Ok(it) = std::fs::read_dir(format!("/proc/{pid}/fd")) else { return false };
+        it.filter_map(|e| e.ok()).filter(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == lock))
+            .any(|e| std::fs::read_to_string(format!("/proc/{pid}/fdinfo/{}", e.file_name().to_string_lossy()))
+                .is_ok_and(|t| t.lines().any(|l| l.starts_with("lock:") && l.contains("FLOCK"))))
+    }
+
     fn is_server(&self, pid: &str, name: &str, lock: Option<(u64, u64)>) -> bool {
         // Safety: getuid has no preconditions.
         let uid = unsafe { libc::getuid() };
@@ -288,7 +298,7 @@ impl Cli {
             return false;
         }
         if let Some(l) = lock.or_else(|| self.lock_id(name)) {
-            if Self::holds(pid, l) {
+            if Self::holds_lock(pid, l) {
                 return true;
             }
         }
@@ -583,7 +593,7 @@ impl Cli {
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
-            return;
+            die(&format!("zone {name} did not answer within 10 s of its restart; see `appzones logs {name}`"));
         }
         let outside = !self.server_pids(name).is_empty();
         self.stop_zone(name);
@@ -618,7 +628,8 @@ impl Cli {
         }
         let mut failed = 0;
         for n in names {
-            if cmd == "stop" && every && !self.answers(&n) {
+            // (stop --all: only zones something runs; a server whose zone-init does not answer counts)
+            if cmd == "stop" && every && !self.answers(&n) && self.server_pids(&n).is_empty() && !self.unit_runs(&n) {
                 continue;
             }
             self.load_zone(&n, true);
@@ -710,12 +721,14 @@ impl Cli {
                           file chooser", bad.join(", ")));
         }
         if self.answers(name) && self.stale(name, z) {
-            let n = agent::zone_procs(self.rt(), name).map(|p| p.len()).unwrap_or(0);
-            if restart && n == 0 {
+            // (a process list that cannot be had is not an idle zone)
+            let n = agent::zone_procs(self.rt(), name).map(|p| p.len()).ok();
+            let n_text = n.map(|n| n.to_string()).unwrap_or_else(|| "an unknown number of".into());
+            if restart && n == Some(0) {
                 warn(&format!("zones.toml changed for {name}; restarting it (no app runs in it)"));
                 self.restart_zone(name);
             } else if restart {
-                warn(&format!("zones.toml changed for {name}, but {n} process(es) run in it; not restarting \
+                warn(&format!("zones.toml changed for {name}, but {n_text} process(es) run in it; not restarting \
                                (`appzones restart {name}` applies it)"));
             } else {
                 warn(&format!("zones.toml changed for {name}; `appzones restart {name}` (or `appzones run --restart`) \
@@ -1076,20 +1089,35 @@ impl Cli {
         let mid = std::fs::read_to_string("/etc/machine-id").map(|m| m.trim().to_string()).unwrap_or_default();
         probes.push(("machine-id is the zone's".into(), if z.get("machine_id").as_str() == Some("zone") { 0 } else { 1 },
                      format!("[ \"$(cat /etc/machine-id)\" != \"{mid}\" ]")));
+        // network refusals: only where the host itself reaches the target (else the probe
+        // would pass whatever the zone may do: SKIP, said so)
+        let mut skipped: Vec<String> = Vec::new();
         if z.get("network").as_str() == Some("internet") {
             probes.push(("nft flush refused".into(), 1, "nft flush ruleset 2>/dev/null".into()));
-            probes.push(("LAN 192.168.0.0/16 refused".into(), 1, tcp("192.168.1.1", 53)));
-            probes.push(("tailnet 100.64.0.0/10 refused".into(), 1, tcp("100.64.0.1", 8443)));
-            probes.push(("host loopback refused".into(), 1, tcp("127.0.0.1", 22)));
+            for (title, host, port) in [("LAN 192.168.0.0/16 refused", "192.168.1.1", 53), ("tailnet 100.64.0.0/10 refused",
+                                        "100.64.0.1", 8443), ("host loopback refused", "127.0.0.1", 22)] {
+                let addr: std::net::SocketAddr = format!("{host}:{port}").parse().expect("a literal address");
+                if std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok() {
+                    probes.push((title.into(), 1, tcp(host, port)));
+                } else {
+                    skipped.push(format!("{title} (the host does not reach {host}:{port} either)"));
+                }
+            }
         }
         let exe = std::env::current_exe().unwrap_or_else(|e| die(&e.to_string()));
         let mut fails = 0;
         for (title, expect, cmd) in probes {
-            let ok = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", &cmd])
-                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).output()
-                .is_ok_and(|o| o.status.success() == (expect == 0));
+            // the probe says it ran first: a refusal counts only from a probe that ran
+            let script = format!("echo appzones-probe-ran; {cmd}");
+            let o = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", &script])
+                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
+            let ran = o.as_ref().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).lines().next() == Some("appzones-probe-ran"));
+            let ok = ran && o.as_ref().is_ok_and(|o| o.status.success() == (expect == 0));
             fails += i32::from(!ok);
-            out(&format!("{}  {title}", if ok { "PASS" } else { "FAIL" }));
+            out(&format!("{}  {title}{}", if ok { "PASS" } else { "FAIL" }, if ran { "" } else { " (the probe did not run)" }));
+        }
+        for s in skipped {
+            out(&format!("SKIP  {s}"));
         }
         i32::from(fails > 0)
     }
@@ -1129,15 +1157,13 @@ impl Cli {
     fn apps(&self) -> i32 {
         let cfg = self.load_cfg(true);
         let dir = self.launcher();
-        let _ = std::fs::create_dir_all(&dir);
-        if let Ok(it) = std::fs::read_dir(&dir) {
-            for e in it.filter_map(|e| e.ok()) {
-                let n = e.file_name().to_string_lossy().into_owned();
-                if (n.starts_with("appzones-") || n.starts_with("zone-")) && n.ends_with(".desktop") {
-                    let _ = std::fs::remove_file(e.path());
-                }
-            }
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            die(&format!("{}: {e}", sh(&dir)));
         }
+        // the new entries first (each written whole, then renamed into place), the stale ones
+        // removed after: a failed write never leaves launchers missing, and is said
+        let mut written: Vec<String> = Vec::new();
+        let mut failed: Vec<String> = Vec::new();
         let mut n = 0;
         for (aid, a) in &cfg.apps {
             let host_entry = a.get("desktop").and_then(Value::as_str).map(|d| self.find_desktop(d)).unwrap_or_default();
@@ -1163,12 +1189,31 @@ impl Cli {
                         lines.push(format!("{k}={v}"));
                     }
                 }
-                let _ = std::fs::write(dir.join(format!("appzones-{aid}-{zn}.desktop")), lines.join("\n") + "\n");
-                n += 1;
+                let file = format!("appzones-{aid}-{zn}.desktop");
+                let tmp = dir.join(format!(".{file}.new"));
+                match std::fs::write(&tmp, lines.join("\n") + "\n").and_then(|_| std::fs::rename(&tmp, dir.join(&file))) {
+                    Ok(()) => n += 1,
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&tmp);
+                        failed.push(format!("{file}: {e}"));
+                    }
+                }
+                written.push(file);
+            }
+        }
+        if let Ok(it) = std::fs::read_dir(&dir) {
+            for e in it.filter_map(|e| e.ok()) {
+                let f = e.file_name().to_string_lossy().into_owned();
+                if (f.starts_with("appzones-") || f.starts_with("zone-")) && f.ends_with(".desktop") && !written.contains(&f) {
+                    let _ = std::fs::remove_file(e.path());
+                }
             }
         }
         out(&format!("{n} launcher entries in {}", sh(&dir)));
-        0
+        for f in &failed {
+            warn(&format!("not written: {f}"));
+        }
+        i32::from(!failed.is_empty())
     }
 
     fn autostart(&self) -> i32 {
@@ -1853,6 +1898,22 @@ mod tests {
         // a relative path, from the process's cwd
         assert_eq!(server_command(&a(&["python3", "zone.py", "serve", "aa"]), &sh(&here), &here), pair("serve", "aa"));
         let _ = std::fs::remove_dir_all(&here);
+    }
+
+    #[test]
+    fn a_server_holds_the_lock() {
+        // opened is not held: only the process with the flock counts as the zone's server
+        let t = tmp("holds");
+        let path = t.join("z.lock");
+        let f = std::fs::File::create(&path).unwrap();
+        let m = std::fs::metadata(&path).unwrap();
+        let me = std::process::id().to_string();
+        assert!(Cli::holds(&me, (m.dev(), m.ino())));
+        assert!(!Cli::holds_lock(&me, (m.dev(), m.ino())), "open, not locked");
+        assert!(flock_nb(f.as_raw_fd()));
+        assert!(Cli::holds_lock(&me, (m.dev(), m.ino())), "locked");
+        drop(f);
+        let _ = std::fs::remove_dir_all(&t);
     }
 
     #[test]
