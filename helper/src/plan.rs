@@ -209,7 +209,7 @@ impl Host {
 fn find_tool_in(name: &str, over: Option<String>, path: Option<&str>, dirs: &[String]) -> Option<String> {
     over.filter(|v| !v.is_empty())
         .or_else(|| which(name, Some(path.unwrap_or("/bin:/usr/bin"))))
-        .or_else(|| which(name, Some(&dirs.join(":"))))
+        .or_else(|| dirs.iter().find_map(|d| which(&format!("{}/{name}", d.trim_end_matches('/')), None)))
 }
 
 pub fn layout() -> &'static str {

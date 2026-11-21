@@ -47,8 +47,9 @@ build:
 	@mkdir -p build
 	@if [ "$(HELPER_BIN)" != build/appzones-helper ] || [ "$(MOUNT_HELPER_BIN)" != build/appzones-mount-helper ]; then \
 		echo "using $(HELPER_BIN) and $(MOUNT_HELPER_BIN)"; \
-	elif command -v cargo >/dev/null && cargo build --release --locked --quiet --manifest-path helper/Cargo.toml \
-		--target-dir build/cargo; then \
+	elif command -v cargo >/dev/null; then \
+		cargo build --release --locked --quiet --manifest-path helper/Cargo.toml --target-dir build/cargo \
+			|| { echo "cargo build failed (see above)"; exit 1; }; \
 		cp build/cargo/release/appzones-helper build/cargo/release/appzones-mount-helper build/ && \
 		echo "built build/appzones-helper and build/appzones-mount-helper"; \
 	elif [ -f build/appzones-helper ] && [ -f build/appzones-mount-helper ]; then \

@@ -60,6 +60,9 @@ fn out(line: &str) {
 pub struct Cli {
     pub host: Host,
     legacy_config: bool,
+    /// .state.lock, held shared while this command uses the pre-0.6 state directory (no
+    /// move starts under it)
+    state_hold: Option<std::fs::File>,
 }
 
 /// common.server_command: (subcommand, zone) when ARGV is a zone server of any appzones
@@ -87,7 +90,10 @@ fn server_command(argv: &[String], cwd: &str, here: &Path) -> Option<(String, St
         && parent.and_then(Path::parent).and_then(Path::file_name).is_some_and(|n| n == "libexec")
         && sh(&path).starts_with("/nix/store/");
     let own = std::fs::canonicalize(here.join("zone.py")).ok();
-    (own.as_deref() == Some(path.as_path()) || installed).then(|| (rest[0].clone(), rest[1].clone()))
+    // (an appzones from before the lock whose zone.py an upgrade removed, still running it)
+    let removed = !path.exists() && path.is_absolute()
+        && parent.and_then(Path::file_name).is_some_and(|n| n == "appzones" || n == "zones");
+    (own.as_deref() == Some(path.as_path()) || installed || removed).then(|| (rest[0].clone(), rest[1].clone()))
 }
 
 fn proc_argv(pid: &str) -> Option<(Vec<String>, String)> {
@@ -145,7 +151,7 @@ impl Cli {
         let legacy = config::env("CONFIG").filter(|c| !c.is_empty()).is_none()
             && !host.home.join(".config/appzones/zones.toml").symlink_metadata().is_ok()
             && host.home.join(".config/zones/zones.toml").symlink_metadata().is_ok();
-        Cli { host, legacy_config: legacy }
+        Cli { host, legacy_config: legacy, state_hold: None }
     }
 
     fn rt(&self) -> &Path {
@@ -1599,9 +1605,29 @@ impl Cli {
         }
         // no server may start until the move is done (they take it shared first), and none
         // of this version runs when it can be had
-        let state_lock = self.state_lock();
-        if !state_lock.as_ref().is_some_and(|f| flock_nb(std::os::fd::AsRawFd::as_raw_fd(f))) {
-            running.push("a server (.state.lock)".into());
+        let Some(state_lock) = self.state_lock() else {
+            warn(&format!("{}: cannot open it; {} stays where it is", sh(&self.rt().join(".state.lock")), sh(&legacy)));
+            return;
+        };
+        let fd = std::os::fd::AsRawFd::as_raw_fd(&state_lock);
+        let share = |fd: RawFd| loop {
+            // Safety: flock on our own descriptor (blocking: a move holds it only briefly).
+            if unsafe { libc::flock(fd, libc::LOCK_SH) } == 0
+                || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                break;
+            }
+        };
+        if !flock_nb(fd) {
+            // held: by servers (shared), or by another command moving it now (briefly): once
+            // it can be had shared, where the state is is looked at again
+            share(fd);
+            self.state_hold = Some(state_lock);
+            if legacy.symlink_metadata().is_err() && new.is_dir() {
+                self.host.state = new; // moved meanwhile
+            } else {
+                warn(&format!("{} moves to {} once no zone runs (appzones stop --all)", sh(&legacy), sh(&new)));
+            }
+            return;
         }
         // and every server since the lock (0.7), whatever it is written in: a zone lock held
         running.extend(self.locked_zones());
@@ -1609,6 +1635,8 @@ impl Cli {
             .any(|m| m == sh(&legacy) || m.starts_with(&format!("{}/", sh(&legacy))))).unwrap_or(true);
         if !running.is_empty() || mounted {
             warn(&format!("{} moves to {} once no zone runs (appzones stop --all)", sh(&legacy), sh(&new)));
+            share(fd); // (still used here: held shared while this command runs)
+            self.state_hold = Some(state_lock);
             return;
         }
         match std::fs::rename(&legacy, &new) {
@@ -1892,6 +1920,9 @@ mod tests {
             (a(&["python3", &me, "serve"]), None),
             (a(&["python3", "-X", "dev", &me, "serve", "aa"]), pair("serve", "aa")), // an option with a value
             (a(&["python3", "-m", "x", &me, "serve", "aa"]), None),
+            // a removed zone.py of an installed appzones (an upgrade while it ran)
+            (a(&["python3", "/usr/lib/appzones/zone.py", "serve", "dd"]), pair("serve", "dd")),
+            (a(&["python3", "/usr/local/lib/zones/zone.py", "_supervise", "ee"]), pair("_supervise", "ee")),
         ] {
             assert_eq!(server_command(&argv, "/", &here), want, "{argv:?}");
         }

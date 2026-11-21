@@ -59,7 +59,8 @@ later the AppArmor profile (see below). apt also installs the recommended
 `--no-install-recommends` leaves them out. Remove it with `sudo apt purge
 appzones`. Then go on with step 3. The package holds appzones' one binary and its
 mount helper, built to run on glibc 2.17 and later. To build it yourself:
-`nix build .#deb`, or `sh contrib/debian/build-deb.sh OUTDIR` (with cargo).
+`nix build .#deb` (the same binaries), or `sh contrib/debian/build-deb.sh OUTDIR`
+(with cargo: that package needs the build machine's glibc or newer, and says so).
 
 **Or from a checkout** (for any commit):
 

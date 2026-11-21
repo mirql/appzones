@@ -294,13 +294,16 @@ impl Policy {
                 Err(e) => return Err(format!("{}: cannot look at it: {e}", show(&dir))),
             }
             let entries = fs::read_dir(p).map_err(|e| format!("{}: cannot list it: {e}", show(&dir)))?;
+            let mut names = Vec::new();
             for e in entries {
                 let e = e.map_err(|e| format!("{}: cannot list it: {e}", show(&dir)))?;
                 let name = e.file_name().into_vec();
                 if name.starts_with(prefix) {
-                    out.push(join(&dir, &name));
+                    names.push(name);
                 }
             }
+            names.sort(); // (by bytes: the same list on every file system)
+            out.extend(names.iter().map(|n| join(&dir, n)));
         }
         Ok(out)
     }
