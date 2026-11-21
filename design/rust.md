@@ -306,6 +306,10 @@ The maintainer chose option C above as the branch's goal: all of appzones in Rus
 `rust-version`, while `main` stays Python. It comes back to `main` only when it passes
 everything `main` passes.
 
+**Done (2026-11-21):** stages 1 to 4 and a review (#158 to #163) passed everything `main`
+passes, and `rust-version` went into `main` whole. What follows is the plan as it was
+made, then each stage's result.
+
 **The end state**: one Rust binary, `appzones` (the CLI, the server, zone-init,
 zone-wayland, open-link), static where it can be, plus `appzones-mount-helper` on its own
 (glibc, for NSS; unchanged). No Python on the host.

@@ -1,57 +1,41 @@
 # Changelog
 
 The config schema has its own release number (`requires = N` in
-`zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
+`zones.toml`, `RELEASE` in `helper/src/config.rs`), separate from the version.
 
 ## Unreleased
 
-- **Tighter by default** (review of the Rust code; the same gaps were in Python):
-  a zone's D-Bus proxy gives notifications and the tray their own interfaces only,
-  not the whole connection that owns the name (on GNOME, gnome-shell's, with Mutter's
-  RemoteDesktop on it); the never-list adds the live config file wherever it points
-  (and `$APPZONES_CONFIG`, `$APPZONES_STATE`), more files the host runs at login,
-  binds under `/usr` and any path in `/proc`, `/sys`, `/dev`; `env` refuses `LD_*`,
-  `ZONE_*`, `NIX_LD*`, `HYPRLAND_*` and malformed names; `dbus` refuses the portal
-  itself, Mutter, kglobalaccel and other zones' names; the nft deny list covers the
-  same addresses through NAT64; `/etc/environment` is no longer bound into zones.
-  `network = "host"`'s warning says it shares the host's abstract sockets (Xwayland's).
-- More robust: a link opened from a zone no longer holds up the server; replies from
-  zone-init are bounded in size and time; runtime mounts and a zone's teardown no
-  longer race; `appzones shell` never blocks on a stalled zone and restores the
-  terminal on a hangup.
-- Inside a zone: a zone ends with its server also when a zone process stops zone-init
-  (pasta and bwrap die with the server); zone-init's memory for an app's output is
-  bounded (and an app's last lines are kept); a shell, or its client, that stops reading
-  no longer stalls zone-init; a file planted where
-  zone-init writes the zone bus's config cannot block it; slow DNS-over-TCP clients
-  cannot take the slots UDP queries need.
-- `appzones mount`: a mount whose target directory was moved away while it was made is
-  detached again at once; the root helper refuses paths in `/proc`, `/sys`, `/dev` itself.
-- **One binary (rust-version, stage 4 of #157)**: appzones is Rust only. The Python
-  and the C zone-wayland are gone; the Nix package, `make install`, the .deb, the RPM
-  and the AUR package all install `appzones-helper` (with `appzones` running its
-  `cli`) and the mount helper. Building from a checkout needs Rust 1.85 or newer.
-  `make install` puts the binaries in `PREFIX/libexec/appzones` (any `PREFIX` works
-  now); the RPM in `/usr/libexec/appzones` (Fedora's pasta may run only files there),
-  the .deb and the AUR package still in `/usr/lib/appzones`. The sway hook is
-  `appzones _sway-marks` (contrib/sway/appzones-sway starts it).
-- **The commands in Rust (rust-version, stage 3 of #157)**: with the Rust helper,
-  `appzones` is `appzones-helper cli`: every command (`run`, `shell`, `up`, `stop`,
-  `list`, `mount`, `check`, ...) and the internal steps (`serve`, `_netsetup`, `_link`,
-  `_cleanup`, `_autostart`) in Rust, with Python's options, outputs and messages. No
-  Python runs. Without the Rust helper nothing changes.
-
-- **The configuration and the plan in Rust (rust-version, stage 2 of #157)**: with the
-  Rust helper, `appzones serve` hands over to `appzones-helper serve --zone NAME` right
-  after taking the zone's lock: zones.toml is read and checked in Rust (the same errors,
-  warnings, settings and `settings_hash` as Python's, on 944 test configurations and a
-  real config), and the zone's plan is made there (the same plan, files and messages).
-
-- **The server in Rust (rust-version, stage 1 of #157)**: `appzones serve` writes the
-  zone's plan (`plan.json`), then, with the Rust helper, becomes `appzones-helper serve`,
-  which holds the zone (helpers, the pidfd handoff, readiness, autostart, the log and DNS
-  relays, links, linger, cleanup). The same pid, lock and messages; about 930 KB of memory
-  per running zone instead of about 26 MB.
+- **appzones is written in Rust** (#157): one binary, `appzones-helper`, is every command
+  (`appzones` runs its `cli`), the server, zone-init inside a zone and zone-wayland; the
+  root step of `appzones mount` is its own small binary. The Python and the C zone-wayland
+  are gone. The config, the commands and their output, the runtime layout and
+  `settings_hash` are unchanged: Python's answers are kept as golden files that the
+  build checks (937 configurations, zone plans, the never-list). `appzones list` takes
+  about 16 ms instead of 200, and the server holding a zone about 1.5 MB instead of 26.
+- **Installing**: building from a checkout needs Rust 1.85 or newer. `make install` puts
+  the binaries in `PREFIX/libexec/appzones`, and any `PREFIX` works now (a zone gets a
+  read-only copy of the binary). The .deb's binaries run on glibc 2.17 and later; the RPM
+  (binaries in `/usr/libexec/appzones`, where Fedora's pasta may run them) and the AUR
+  package build with their distribution's cargo. The sway hook is `appzones _sway-marks`
+  (`contrib/sway/appzones-sway` starts it). Restart running zones after the update.
+- **Tighter by default**: a zone's D-Bus proxy gives notifications and the tray their own
+  interfaces only, not the whole connection that owns the name (on GNOME, gnome-shell's).
+  The never-list adds the live config file wherever it points (and `$APPZONES_CONFIG`,
+  `$APPZONES_STATE`), more files the host runs at login, binds under `/usr` and any path
+  in `/proc`, `/sys` or `/dev` (also through a symlink: bind and mount sources are opened
+  without following magic links). `env` refuses `LD_*`, `ZONE_*`, `NIX_LD*`, `HYPRLAND_*`
+  and malformed names; `dbus` refuses the portal itself, Mutter, kglobalaccel and other
+  zones' names. The nft deny list covers the same addresses through NAT64.
+  `/etc/environment` is no longer bound into zones. `network = "host"`'s warning says it
+  shares the host's abstract sockets (Xwayland's).
+- **More robust**: a zone ends with its server also when a zone process stops zone-init;
+  zone-init's memory for an app's output is bounded, and a shell (or its client) that
+  stops reading no longer stalls it; DNS over TCP cannot take the slots UDP queries need;
+  links opened from a zone no longer hold up the server; runtime mounts and a zone's
+  teardown no longer race, and a mount whose target was moved while it was made is
+  detached again; `appzones shell` restores the terminal on a hangup; `restart`,
+  `stop --all`, `run --restart`, `check --probe` and `apps` are more careful; a command
+  killed by a signal under `run --wait` exits as with Python (241 for SIGTERM), never 0.
 
 - **openSUSE Leap 16 tested** (`just test-opensuse`, #22): `make install` and the whole
   distro test pass with SELinux enforcing, once pasta may run: on Leap 16
