@@ -66,6 +66,21 @@ pub fn home() -> OsString {
     }
     OsString::from("/")
 }
+/// The real home (Path.home(): $HOME, else the passwd entry), for what the zone binds.
+pub fn home_real() -> Vec<u8> {
+    if let Some(h) = std::env::var_os("HOME") {
+        return py_path(h.as_bytes());
+    }
+    // Safety: getpwuid with our uid; the string is copied before the next call.
+    unsafe {
+        let pw = libc::getpwuid(libc::getuid());
+        if !pw.is_null() && !(*pw).pw_dir.is_null() {
+            return std::ffi::CStr::from_ptr((*pw).pw_dir).to_bytes().to_vec();
+        }
+    }
+    b"/".to_vec()
+}
+
 /// The never-list's context for this user: the home, appzones' code, the host's file
 /// ($APPZONES_DENIED_PATHS overrides it), a custom $XDG_STATE_HOME.
 pub fn policy(code_dir: OsString) -> Policy {
@@ -88,11 +103,11 @@ fn nix_ld_paths() -> (String, String) {
     (shim, lib)
 }
 
-fn host_nix_ld() -> bool {
+/// zonecfg.host_nix_ld: (the shim's real path, the lib dir) when the host runs nix-ld.
+pub fn host_nix_ld() -> Option<(String, String)> {
     let (shim, lib) = nix_ld_paths();
-    let Some(real) = realpath(shim.as_bytes()) else { return false };
-    let real = String::from_utf8_lossy(&real).into_owned();
-    Path::new(&real).exists() && real.contains("nix-ld") && Path::new(&lib).join("ld.so").exists()
+    let real = String::from_utf8_lossy(&realpath(shim.as_bytes())?).into_owned();
+    (Path::new(&real).exists() && real.contains("nix-ld") && Path::new(&lib).join("ld.so").exists()).then_some((real, lib))
 }
 
 fn dbus_denied(name: &str) -> bool {
@@ -695,7 +710,7 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
         if truly("nix_ld") && host_layout() == "fhs" {
             errs.push(format!("{p} nix_ld = true is for NixOS; on this distribution generic Linux binaries run without \
                                it: remove it"));
-        } else if truly("nix_ld") && !host_nix_ld() {
+        } else if truly("nix_ld") && host_nix_ld().is_none() {
             let (shim, lib) = nix_ld_paths();
             errs.push(format!("{p} nix_ld = true, but this host has no nix-ld ({shim} is not its shim, or {lib}/ld.so is \
                                missing): programs.nix-ld.enable = true on the host first"));
@@ -815,6 +830,10 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
 }
 
 /// Python's truth value of a TOML value.
+pub fn truthy(v: &Value) -> bool {
+    value_truthy(v)
+}
+
 fn value_truthy(v: &Value) -> bool {
     match v {
         Value::String(s) => !s.is_empty(),

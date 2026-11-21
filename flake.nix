@@ -76,7 +76,7 @@
                 cp -r --no-preserve=mode $src/src $src/examples $src/contrib . && cd src
                 APPZONES_TEST_HELPER="${
                   self.packages.${pkgs.stdenv.hostPlatform.system}.helper
-                }/bin/appzones-helper" HOME=$TMPDIR python3 -B -m unittest -v test_zonecfg.DifferentialPolicyTest
+                }/bin/appzones-helper" HOME=$TMPDIR python3 -B -m unittest -v test_zonecfg.DifferentialPolicyTest test_zonecfg.DifferentialConfigTest test_zonecfg.DifferentialPlanTest
                 touch $out
               '';
           # appzones on other distributions, in their disk images (offline, ~3 min each)

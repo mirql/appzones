@@ -210,6 +210,21 @@ def supervise(name: str, notify_fd: int | None = None, lock_fd: int | None = Non
             die(f"--notify-fd {notify_fd}: not a pipe or file above 2, open for writing")
         os.set_inheritable(notify_fd, False)  # never into the zone or a helper
     lock = take_lock(name, lock_fd)  # noqa: F841  (held until this process exits)
+    planner = common.rust_helper("plan") if common.HELPER == "rust" and "plan" in common.RUST_HELPERS else None
+    if planner and common.implements(planner, "serve"):
+        # all of `serve` in Rust: the plan made there too (plan.rs), so this process becomes
+        # it at once (the same pid, the lock and the readiness fd kept); a stop in the instant
+        # of the exec waits, blocked, until the runner handles it
+        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
+        argv = [planner, "serve", "--zone", name, "--python", sys.executable, "--code-dir", str(common.HERE),
+                "--lock-fd", str(lock)]
+        os.set_inheritable(lock, True)
+        if notify_fd is not None:
+            os.set_inheritable(notify_fd, True)
+            argv += ["--notify-fd", str(notify_fd)]
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.execv(planner, argv)
     stopped: list[int] = []  # a stop asked for by SIGTERM or SIGINT
 
     def stop_preparing(signum, _frame):  # before any helper runs: unwind (a packages build is killed)
@@ -286,7 +301,7 @@ def make_plan(name: str) -> dict:
         (zdir / "machine-id").write_text(secrets.token_hex(16) + "\n")
     (zrt / "resolv.conf").write_text(net.resolv_conf(s))
     (zrt / "hosts").write_text(f"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 {name}-zone\n")
-    instance = f"zone-{name}-{secrets.randbelow(2**31)}"
+    instance = zonecfg.env("INSTANCE_FOR_TESTS") or f"zone-{name}-{secrets.randbelow(2**31)}"
     (zrt / "flatpak-info").write_text(portals.flatpak_info(z, instance))
     (zrt / "config.sha256").write_text(settings_hash(z) + "\n")
     write_colours(cfg)

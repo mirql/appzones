@@ -2457,6 +2457,164 @@ class AgentProtocolTest(unittest.TestCase):
                     p.wait()
 
 
+PLAN_ZONES = """version = 1
+requires = 6
+[zones.alpha]
+colour = "#a6e3a1"
+links = "zone"
+theme = true
+tmp = "disk"
+devices = ["gpu", "audio", "camera", "usb"]
+camera = "device"
+usb = ["abcd"]
+wayland = "host"
+linger = "10m"
+netbird = true
+autostart_apps = ["web"]
+env = { FOO = "bar", LANG = "de_DE.UTF-8" }
+binds = [{ path = "~/proj" }, { path = "~/data", mode = "ro" }]
+dbus = { talk = ["com.example.Talk"], own = ["com.example.app.Own"] }
+[zones.beta]
+colour = "#89b4fa"
+network = "none"
+dns = "public"
+machine_id = "host"
+userns = false
+home = "~/bhome"
+wayland = "none"
+links = "zone:alpha"
+theme = false
+[zones.gamma]
+colour = "#f38ba8"
+network = "host"
+supervisor = "spawn"
+start_timeout = 45
+bus = "zone"
+[apps.web]
+command = ["firefox", "--new-instance"]
+zones = ["alpha", "beta"]
+args = { alpha = ["-P", "alpha"] }
+"""
+
+FAKE_IP = """#!/bin/sh
+cat <<'J'
+[{"ifname": "lo", "addr_info": [{"local": "127.0.0.1", "prefixlen": 8}, {"local": "::1", "prefixlen": 128}]},
+ {"ifname": "eth0", "addr_info": [{"local": "192.168.1.20", "prefixlen": 24}, {"local": "2001:db8:1::20", "prefixlen": 64},
+                                  {"local": "fe80::1", "prefixlen": 64}, {"local": "203.0.113.7", "prefixlen": 25}]},
+ {"ifname": "wt0", "addr_info": [{"local": "100.70.12.34", "prefixlen": 16}]},
+ {"ifname": "docker0", "addr_info": [{"local": "172.17.0.1", "prefixlen": 16}, {"local": "172.18.0.1", "prefixlen": 16}]}]
+J
+"""
+
+
+def _plan_fixture(t: Path) -> dict:
+    """A fresh fixture under T (its old content removed): a home with theme files, the config,
+    fake helper programs and `ip`, a runtime directory. Returns the environment."""
+    shutil.rmtree(t, ignore_errors=True)
+    home, rt, bin_ = t / "home", t / "rt", t / "bin"
+    for d in ("proj", "data", "bhome", ".ssh", ".config/gtk-3.0", ".icons/Theme/cursors", ".config/fontconfig",
+              ".local/share/fonts", ".local/share/appzones/alpha", ".local/share/appzones/beta",
+              ".local/share/appzones/gamma"):
+        (home / d).mkdir(parents=True, exist_ok=True)
+    (home / ".ssh/id").write_text("secret")
+    (home / ".config/gtk-3.0/settings.ini").write_text("[Settings]\n")
+    (home / ".icons/Theme/index.theme").write_text("[Icon Theme]\n")
+    (home / ".icons/Theme/cursors/x.lock").write_text("skip")
+    (home / ".config/fontconfig/fonts.conf").write_text("<fontconfig/>")
+    (home / ".config/fontconfig/key").symlink_to(home / ".ssh/id")  # never copied
+    (home / ".local/share/fonts/f.ttf").write_bytes(b"\0" * 64)
+    for z in ("alpha", "beta", "gamma"):
+        (home / f".local/share/appzones/{z}/machine-id").write_text("0" * 32 + "\n")
+    (home / ".local/share/appzones/alpha/tmp").mkdir()
+    old = home / ".local/share/appzones/alpha/tmp/old"
+    old.write_text("x")
+    os.utime(old, (time.time() - 40 * 86400, time.time() - 40 * 86400))
+    rt.mkdir(parents=True)
+    (rt / "pipewire-0").write_text("")
+    (rt / "wayland-9").write_text("")
+    bin_.mkdir()
+    for name in ("bwrap", "pasta", "xdg-dbus-proxy", "zone-wayland", "dbus-daemon"):
+        (bin_ / name).write_text("#!/bin/sh\nexit 0\n")
+        (bin_ / name).chmod(0o755)
+    (bin_ / "ip").write_text(FAKE_IP)
+    (bin_ / "ip").chmod(0o755)
+    (t / "zones.toml").write_text(PLAN_ZONES)
+    (t / "denied-paths").write_text("~/Secrets\n")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("APPZONES_", "ZONES_", "XDG_", "WAYLAND", "DBUS"))}
+    env.update(HOME=str(home), USER="alice", XDG_RUNTIME_DIR=str(rt), PATH=f"{bin_}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+               APPZONES_CONFIG=str(t / "zones.toml"), APPZONES_DENIED_PATHS=str(t / "denied-paths"),
+               APPZONES_DBUS_SERVICE_DIRS="", APPZONES_INSTANCE_FOR_TESTS="zone-x-1", APPZONES_NETBIRD_IFACE="wt0",
+               WAYLAND_DISPLAY="wayland-9", DBUS_SESSION_BUS_ADDRESS=f"unix:path={rt}/bus",
+               XDG_CURRENT_DESKTOP="Hyprland", LANG="C.UTF-8", APPZONES_DNS_HOST="192.0.2.53",
+               **{f"APPZONES_BIN_{n}": str(bin_ / n.lower().replace("_", "-"))
+                  for n in ("BWRAP", "PASTA", "XDG_DBUS_PROXY", "ZONE_WAYLAND", "DBUS_DAEMON")})
+    return env
+
+
+def _snapshot(t: Path) -> dict:
+    """Every file, link and directory the plan maker left in the runtime and state dirs."""
+    out = {}
+    for root in (t / "rt", t / "home/.local/share/appzones"):
+        for p in sorted(root.rglob("*")):
+            rel = str(p.relative_to(t))
+            if p.name.startswith(".colours."):
+                continue
+            if p.is_symlink():
+                out[rel] = ("link", os.readlink(p))
+            elif p.is_dir():
+                out[rel] = ("dir", oct(p.stat().st_mode & 0o777))
+            elif p.name == "plan.json":
+                out[rel] = ("plan", json.loads(p.read_text()))
+            else:
+                out[rel] = ("file", oct(p.stat().st_mode & 0o777), p.read_bytes().decode(errors="replace"))
+    return out
+
+
+@unittest.skipUnless(os.environ.get("APPZONES_TEST_HELPER"), "needs $APPZONES_TEST_HELPER (the Rust helper)")
+class DifferentialPlanTest(unittest.TestCase):
+    """A zone's plan made in Rust (helper/src/plan.rs) is make_plan's: for three zones that use
+    most settings, on both layouts and with either zone-init, both write the same plan.json and
+    the same files (resolv.conf, hosts, flatpak-info, config.sha256, nft.rules, the xdg-open
+    shim, the colours, the theme copy, /tmp cleaned), and say the same things."""
+
+    def run_maker(self, t: Path, env: dict, rust: bool, zone: str):
+        helper = os.environ["APPZONES_TEST_HELPER"]
+        if rust:
+            argv = [helper, "plan", zone, "--python", sys.executable, "--code-dir", str(HERE)]
+        else:
+            code = ("import sys; sys.path.insert(0, sys.argv[2]); from appzones import server; "
+                    "print(server.write_plan(server.make_plan(sys.argv[1])))")
+            argv = [sys.executable, "-B", "-c", code, zone, str(HERE)]
+        r = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+        return r.returncode, r.stdout.splitlines(), r.stderr.splitlines(), _snapshot(t)
+
+    def test_same_plans(self):
+        helper = os.environ["APPZONES_TEST_HELPER"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        t = Path(tmp.name).resolve() / "f"
+        compared = 0
+        for layout in ("nixos", "fhs"):
+            for rust_init in (True, False):
+                for zone in ("alpha", "beta", "gamma"):
+                    results = []
+                    for rust in (False, True):
+                        env = _plan_fixture(t)
+                        env["APPZONES_LAYOUT"] = layout
+                        if rust_init:
+                            env.update(APPZONES_HELPER="rust", APPZONES_BIN_APPZONES_HELPER=helper)
+                        results.append(self.run_maker(t, env, rust, zone))
+                    with self.subTest(layout=layout, rust_init=rust_init, zone=zone):
+                        py, rs = results
+                        self.assertEqual(py[0], rs[0], f"exit status; python: {py[2]}, rust: {rs[2]}")
+                        self.assertEqual(py[1], rs[1], "stdout")
+                        self.assertEqual(py[2], rs[2], "stderr")
+                        for k in sorted(set(py[3]) | set(rs[3])):
+                            self.assertEqual(py[3].get(k), rs[3].get(k), k)
+                        compared += 1
+        self.assertEqual(compared, 12)
+
+
 @unittest.skipUnless(os.environ.get("APPZONES_TEST_HELPER"), "needs $APPZONES_TEST_HELPER (the Rust helper)")
 class DifferentialConfigTest(unittest.TestCase):
     """zones.toml in Rust (stage 2, helper/src/config.rs) is zonecfg: for every configuration

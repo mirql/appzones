@@ -32,7 +32,8 @@ pub const PLAN_IF: &str = "\0if:";
 pub const PLAN_END: &str = "\0end";
 pub const PLAN_HOST_WAYLAND: &str = "\0host-wayland";
 const WAYLAND_NO_PROTOCOL: i32 = 3;
-const USAGE: &str = "usage: appzones-helper serve --plan FILE --lock-fd L [--notify-fd N]";
+const USAGE: &str = "usage: appzones-helper serve (--plan FILE | --zone NAME --python EXE --code-dir DIR) --lock-fd L \
+                     [--notify-fd N]";
 
 /// The last stop asked for (SIGTERM or SIGINT), 0 for none.
 static STOP: AtomicI32 = AtomicI32::new(0);
@@ -43,6 +44,11 @@ extern "C" fn on_stop(sig: libc::c_int) {
 
 fn stop() -> i32 {
     STOP.load(Ordering::SeqCst)
+}
+
+/// A stop (SIGTERM, SIGINT) was asked for.
+pub fn stopped() -> bool {
+    stop() != 0
 }
 
 fn say(msg: &str) {
@@ -431,25 +437,39 @@ fn handle_link(listener: &UnixListener, command: &[String]) {
     let _ = conn.write_all(if ok { b"ok\n" } else { b"no\n" });
 }
 
+/// Where the plan comes from: a file `appzones serve` wrote, or made here for a zone.
+enum Source {
+    File(PathBuf),
+    Zone { name: String, python: String, code_dir: PathBuf },
+}
+
 /// The arguments, raw: the plan's path byte for byte, the rest must be text.
-fn parse_args(args: &[std::ffi::OsString]) -> Result<(PathBuf, RawFd, Option<RawFd>), String> {
-    let (mut plan, mut lock, mut notify) = (None, None, None);
+fn parse_args(args: &[std::ffi::OsString]) -> Result<(Source, RawFd, Option<RawFd>), String> {
+    let (mut plan, mut zone, mut python, mut code, mut lock, mut notify) = (None, None, None, None, None, None);
     let mut it = args.iter();
     let fd = |v: &std::ffi::OsString| v.to_str().and_then(|v| v.parse::<RawFd>().ok()).ok_or(USAGE);
     while let Some(a) = it.next() {
         let v = it.next().ok_or(USAGE)?;
         match a.to_str() {
             Some("--plan") => plan = Some(PathBuf::from(v)),
+            Some("--zone") => zone = Some(v.to_str().ok_or(USAGE)?.to_string()),
+            Some("--python") => python = Some(v.to_string_lossy().into_owned()),
+            Some("--code-dir") => code = Some(PathBuf::from(v)),
             Some("--lock-fd") => lock = Some(fd(v)?),
             Some("--notify-fd") => notify = Some(fd(v)?),
             _ => return Err(USAGE.into()),
         }
     }
-    Ok((plan.ok_or(USAGE)?, lock.ok_or(USAGE)?, notify))
+    let source = match (plan, zone, python, code) {
+        (Some(p), None, None, None) => Source::File(p),
+        (None, Some(name), Some(python), Some(code_dir)) => Source::Zone { name, python, code_dir },
+        _ => return Err(USAGE.into()),
+    };
+    Ok((source, lock.ok_or(USAGE)?, notify))
 }
 
 pub fn main(args: &[std::ffi::OsString]) -> u8 {
-    let (plan_path, lock_fd, notify_fd) = match parse_args(args) {
+    let (source, lock_fd, notify_fd) = match parse_args(args) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("{e}");
@@ -477,6 +497,26 @@ pub fn main(args: &[std::ffi::OsString]) -> u8 {
         libc::sigaddset(&mut set, libc::SIGINT);
         libc::sigprocmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut());
     }
+    let plan_path = match source {
+        Source::File(p) => p,
+        Source::Zone { name, python, code_dir } => {
+            // the first part of `appzones serve`, here (plan.rs): a stop while it runs is
+            // not a failure, as before any helper started
+            let host = crate::plan::Host::new(code_dir, python);
+            let made = crate::plan::make_plan(&host, &name);
+            if stop() != 0 {
+                say(&format!("[zone] {name}: stopped while starting"));
+                return if stop() == libc::SIGINT { 0 } else { (128 + stop()) as u8 };
+            }
+            match made.and_then(|p| crate::plan::write_plan(&p)) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("appzones: {e}");
+                    return 1;
+                }
+            }
+        }
+    };
     let plan: Value = match std::fs::read(&plan_path).ok().and_then(|b| serde_json::from_slice(&b).ok()) {
         Some(p) => p,
         None => {
@@ -774,6 +814,10 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
         let o = |a: &[&str]| a.iter().map(std::ffi::OsString::from).collect::<Vec<_>>();
         assert!(parse_args(&o(&["--plan", "/p", "--lock-fd", "4"])).is_ok());
+        assert!(parse_args(&o(&["--zone", "z", "--python", "/py", "--code-dir", "/c", "--lock-fd", "4"])).is_ok());
+        assert!(parse_args(&o(&["--zone", "z", "--lock-fd", "4"])).is_err(), "a zone without python and code dir");
+        assert!(parse_args(&o(&["--zone", "z", "--plan", "/p", "--python", "/py", "--code-dir", "/c", "--lock-fd", "4"]))
+                    .is_err(), "both sources");
         assert_eq!(parse_args(&o(&["--plan", "/p", "--lock-fd", "4", "--notify-fd", "6"])).unwrap().2, Some(6));
         assert!(parse_args(&o(&["--plan", "/p"])).is_err(), "no lock");
         assert!(parse_args(&o(&["--plan", "/p", "--lock-fd", "x"])).is_err());
@@ -781,6 +825,9 @@ mod tests {
         // a plan path that is not UTF-8 stays byte for byte
         let raw = std::ffi::OsString::from_vec(b"/run/caf\xe9/plan.json".to_vec());
         let got = parse_args(&[std::ffi::OsString::from("--plan"), raw.clone(), "--lock-fd".into(), "4".into()]).unwrap();
-        assert_eq!(got.0.as_os_str(), raw.as_os_str());
+        match got.0 {
+            Source::File(p) => assert_eq!(p.as_os_str(), raw.as_os_str()),
+            Source::Zone { .. } => panic!("not a plan file"),
+        }
     }
 }
