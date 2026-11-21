@@ -108,6 +108,28 @@ fn my_pids() -> Vec<(String, u32)> {
         .collect()).unwrap_or_default()
 }
 
+/// The exit status of our child PID (retried on EINTR); None when there is no such child
+/// (fork failed: never waitpid(-1), which would take any child).
+fn wait_child(pid: libc::pid_t) -> Option<i32> {
+    if pid <= 0 {
+        return None;
+    }
+    let mut status = 0;
+    loop {
+        // Safety: waiting for our own child into a local.
+        if unsafe { libc::waitpid(pid, &mut status, 0) } == pid {
+            return Some(status);
+        }
+        if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+            return None;
+        }
+    }
+}
+
+fn exited_ok(status: Option<i32>) -> bool {
+    status.is_some_and(|st| libc::WIFEXITED(st) && libc::WEXITSTATUS(st) == 0)
+}
+
 fn flock_nb(fd: RawFd) -> bool {
     // Safety: flock on a descriptor we own.
     unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) == 0 }
@@ -430,10 +452,7 @@ impl Cli {
         if pid < 0 {
             die(&format!("zone {name}: could not start its server: {}", std::io::Error::last_os_error()));
         }
-        let mut status = 0;
-        // Safety: waiting for our own child.
-        unsafe { libc::waitpid(pid, &mut status, 0) };
-        if !(libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0) {
+        if !exited_ok(wait_child(pid)) {
             die(&format!("zone {name}: could not start its server"));
         }
         (r, since)
@@ -620,10 +639,7 @@ impl Cli {
                 // Safety: the child's end.
                 unsafe { libc::_exit(0) };
             }
-            let mut status = 0;
-            // Safety: waiting for our own child.
-            unsafe { libc::waitpid(pid, &mut status, 0) };
-            if pid < 0 || !(libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0) {
+            if !exited_ok(wait_child(pid)) {
                 failed += 1;
             }
         }
@@ -828,14 +844,22 @@ impl Cli {
             let _ = stdout.flush();
         }
         static WINCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        static HANGUP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         extern "C" fn on_winch(_: libc::c_int) {
             WINCH.store(true, std::sync::atomic::Ordering::SeqCst);
         }
-        // Safety: a handler that only stores to an atomic; termios on our terminal.
+        extern "C" fn on_hangup(_: libc::c_int) {
+            HANGUP.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        // Safety: handlers that only store to an atomic (no SA_RESTART: poll returns, and the
+        // terminal is restored below on a hangup or a TERM); termios on our terminal.
         let old = unsafe {
             let mut sa: libc::sigaction = std::mem::zeroed();
             sa.sa_sigaction = on_winch as extern "C" fn(libc::c_int) as libc::sighandler_t;
             libc::sigaction(libc::SIGWINCH, &sa, std::ptr::null_mut());
+            sa.sa_sigaction = on_hangup as extern "C" fn(libc::c_int) as libc::sighandler_t;
+            libc::sigaction(libc::SIGHUP, &sa, std::ptr::null_mut());
+            libc::sigaction(libc::SIGTERM, &sa, std::ptr::null_mut());
             let mut old: libc::termios = std::mem::zeroed();
             libc::tcgetattr(0, &mut old);
             let mut raw = old;
@@ -845,19 +869,37 @@ impl Cli {
         };
         let sock = s.as_raw_fd();
         let mut buf = vec![0u8; 65536];
+        // typed but not yet taken by zone-init: while there is some, stdin waits and the
+        // socket is written when it can take more (never a blocking write: a zone that stops
+        // reading cannot freeze this client with the terminal raw)
+        let mut pending: Vec<u8> = Vec::new();
         'outer: loop {
+            if HANGUP.load(std::sync::atomic::Ordering::SeqCst) {
+                break 'outer;
+            }
             if WINCH.swap(false, std::sync::atomic::Ordering::SeqCst) {
                 let (c, r) = size();
                 let _ = agent::ask(self.rt(), name, &json!({"op": "resize", "pid": pid, "rows": r, "cols": c}),
                                    Duration::from_secs(1));
             }
-            let mut fds = [libc::pollfd { fd: 0, events: libc::POLLIN, revents: 0 },
-                           libc::pollfd { fd: sock, events: libc::POLLIN, revents: 0 }];
+            let out = if pending.is_empty() { 0 } else { libc::POLLOUT };
+            let mut fds = [libc::pollfd { fd: if pending.is_empty() { 0 } else { -1 }, events: libc::POLLIN, revents: 0 },
+                           libc::pollfd { fd: sock, events: libc::POLLIN | out, revents: 0 }];
             // Safety: poll on stdin and our socket.
             if unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) } < 0 {
-                continue; // EINTR (a resize)
+                continue; // EINTR (a resize, a hangup)
             }
-            if fds[1].revents != 0 {
+            if !pending.is_empty() && fds[1].revents & libc::POLLOUT != 0 {
+                // Safety: a send from our buffer, never blocking.
+                let n = unsafe { libc::send(sock, pending.as_ptr().cast(), pending.len(), libc::MSG_DONTWAIT | libc::MSG_NOSIGNAL) };
+                if n > 0 {
+                    pending.drain(..n as usize);
+                } else if n < 0 && !matches!(std::io::Error::last_os_error().kind(),
+                                             std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted) {
+                    break 'outer;
+                }
+            }
+            if fds[1].revents & !libc::POLLOUT != 0 {
                 let n = (&s).read(&mut buf).unwrap_or(0);
                 if n == 0 {
                     break 'outer;
@@ -871,9 +913,7 @@ impl Cli {
                 if n <= 0 {
                     break 'outer;
                 }
-                if (&s).write_all(&buf[..n as usize]).is_err() {
-                    break 'outer;
-                }
+                pending.extend_from_slice(&buf[..n as usize]);
             }
         }
         // Safety: the terminal as it was.
@@ -1157,9 +1197,11 @@ impl Cli {
                 // Safety: the child's end.
                 unsafe { libc::_exit(0) };
             }
-            let mut status = 0;
-            // Safety: waiting for our own child.
-            unsafe { libc::waitpid(pid, &mut status, 0) };
+            if pid < 0 {
+                self.wait_ready(&n, r, since, true); // (no child: here, then)
+            } else {
+                wait_child(pid);
+            }
         }
         0
     }
@@ -1269,8 +1311,19 @@ impl Cli {
         shared
     }
 
+    /// Zone NAME's mounts lock, taken: `mount` and `umount` hold it from their check to
+    /// their record, the zone's teardown (`_cleanup`) before it detaches them all, so a
+    /// mount is never made after the teardown has run (and mounts.json never loses one).
+    fn mounts_lock(&self, name: &str) -> Option<std::fs::File> {
+        self.mkdir_rt();
+        let f = open_lock(&self.rt().join(format!("{}.mounts.lock", zone_name_ok(name).then_some(name)?))).ok()?;
+        // Safety: flock on our own descriptor; the others hold it only briefly.
+        (unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } == 0).then_some(f)
+    }
+
     fn mount(&self, name: &str, path: &str, ro: bool, as_name: Option<String>) -> i32 {
         self.load_zone(name, true);
+        let _held = self.mounts_lock(name);
         if !self.answers(name) {
             die(&format!("zone {name} is not running; a mount lives only while the zone runs (`appzones up {name}` first)"));
         }
@@ -1324,6 +1377,7 @@ impl Cli {
 
     fn umount(&self, name: &str, nm: &str, lazy: bool) -> i32 {
         self.load_zone(name, true);
+        let _held = self.mounts_lock(name);
         if !self.host_mounts(name).iter().any(|m| m == nm) {
             die(&format!("nothing is mounted at /mnt/host/{nm} in zone {name} (appzones mounts {name})"));
         }
@@ -1607,6 +1661,7 @@ pub fn main(args: &[OsString]) -> i32 {
         "_cleanup" => {
             let n = one();
             let zdir = cli.host.state.join(&n);
+            let _held = cli.mounts_lock(&n);
             match plan::prepare_mnt(&cli.host, &n, &zdir) {
                 Ok(true) => 0,
                 Ok(false) => 1,

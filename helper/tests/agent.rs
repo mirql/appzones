@@ -134,11 +134,11 @@ fn send(s: &UnixStream, data: &[u8], fds: &[RawFd]) -> std::io::Result<()> {
         msg.msg_iov = &mut iov;
         msg.msg_iovlen = 1;
         msg.msg_control = cbuf.as_mut_ptr().cast();
-        msg.msg_controllen = cbuf.len();
+        msg.msg_controllen = cbuf.len() as _;
         let c = libc::CMSG_FIRSTHDR(&msg);
         (*c).cmsg_level = libc::SOL_SOCKET;
         (*c).cmsg_type = libc::SCM_RIGHTS;
-        (*c).cmsg_len = libc::CMSG_LEN(size) as usize;
+        (*c).cmsg_len = libc::CMSG_LEN(size) as _;
         std::ptr::copy_nonoverlapping(fds.as_ptr(), libc::CMSG_DATA(c).cast(), fds.len());
         if libc::sendmsg(s.as_raw_fd(), &msg, 0) < 0 {
             return Err(std::io::Error::last_os_error());

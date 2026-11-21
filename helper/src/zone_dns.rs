@@ -58,7 +58,7 @@ fn connect(path: &str, timeout: Duration) -> Option<UnixStream> {
             return None;
         }
         let s = UnixStream::from_raw_fd(fd); // closes fd on every return below
-        let tv = libc::timeval { tv_sec: timeout.as_secs() as libc::time_t, tv_usec: 0 };
+        let tv = libc::timeval { tv_sec: timeout.as_secs() as _, tv_usec: 0 };
         libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_SNDTIMEO, (&tv as *const libc::timeval).cast(),
                          std::mem::size_of::<libc::timeval>() as libc::socklen_t);
         let mut addr: libc::sockaddr_un = std::mem::zeroed();

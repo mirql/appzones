@@ -30,7 +30,7 @@ const ZONE_HELPER: &str = "/run/appzones-helper";
 pub const RUST_HELPERS: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve", "plan"];
 const SBIN_DIRS: &[&str] = &["/usr/sbin", "/sbin"];
 const FHS_ETC: &[&str] = &["alternatives", "ld.so.cache", "ld.so.conf", "ld.so.conf.d", "services", "protocols",
-    "gai.conf", "ca-certificates", "bash.bashrc", "debian_version", "lsb-release", "environment"];
+    "gai.conf", "ca-certificates", "bash.bashrc", "debian_version", "lsb-release"];
 const ETC: &[&str] = &["static", "fonts", "ssl", "pki", "passwd", "group", "nsswitch.conf", "localtime", "zoneinfo",
     "mime.types", "xdg", "profile", "hosts", "host.conf", "login.defs", "os-release", "pulse", "alsa", "asound.conf",
     "gtk-3.0", "gtk-2.0", "machine-info", "locale.conf", "vconsole.conf", "pipewire", "egl", "vulkan", "inputrc",
@@ -759,7 +759,15 @@ fn nft_rules_for(netbird: bool, iface: &str, addrs: Vec<(String, IpAddr, u8)>) -
         nb6 = collapse(&nbn.iter().copied().filter(|n| n.v6).collect::<Vec<_>>());
     }
     let lan4 = collapse(&nets.iter().copied().filter(|n| !n.v6 && !nb4.contains(n)).collect::<Vec<_>>());
-    let lan6 = collapse(&nets.iter().copied().filter(|n| n.v6 && !nb6.contains(n)).collect::<Vec<_>>());
+    // what is refused over IPv4 is refused through NAT64 too (64:ff9b::/96, RFC 6052): a
+    // NAT64 gateway on the LAN would translate it back
+    let nat64 = |n: &Net| Net { v6: true, addr: (0x64ff9b_u128 << 96) | n.addr, prefix: n.prefix + 96 };
+    let mut lan6_all: Vec<Net> = nets.iter().copied().filter(|n| n.v6 && !nb6.contains(n)).collect();
+    lan6_all.extend(lan4.iter().map(nat64));
+    let lan6 = collapse(&lan6_all);
+    mine6.extend(mine4.iter().map(|a| (0x64ff9b_u128 << 96) | a));
+    mine6.sort();
+    mine6.dedup();
     let join_ips = |v6: bool, x: &[u128]| x.iter().map(|a| show_ip(v6, *a)).collect::<Vec<_>>().join(", ");
     let join_nets = |x: &[Net]| x.iter().map(Net::show).collect::<Vec<_>>().join(", ");
     let mut rules = String::new();
@@ -784,7 +792,10 @@ fn nft_rules_for(netbird: bool, iface: &str, addrs: Vec<(String, IpAddr, u8)>) -
     format!("table inet zone {{\n  chain out {{\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n\
 {rules}    ip daddr {{ 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               \
 192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 }} reject\n    ip6 daddr {{ ::1, ::ffff:0:0/96, \
-fc00::/7, fe80::/10, ff00::/8 }} reject\n  }}\n}}\n")
+fc00::/7, fe80::/10, ff00::/8,\n                \
+::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                \
+64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                \
+64:ff9b::e000:0/99 }} reject\n  }}\n}}\n")
 }
 
 /// net.resolv_conf.
@@ -849,9 +860,17 @@ fn dbus_rules(z: &Zone) -> Vec<String> {
                     "--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Introspectable.*",
                     "--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Peer.*"]);
     r.extend(allowed.iter().map(|p| format!("--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.{p}.*")));
+    // notifications and the tray: their own interfaces at their own paths, never a talk: the
+    // proxy gives a name's rights to the connection that owns it, and on GNOME that is
+    // gnome-shell's, with Mutter's RemoteDesktop (input) on it; on KDE plasmashell's
     r.extend(v(&["--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
-                 "--talk=org.freedesktop.portal.Documents", "--talk=org.freedesktop.Notifications",
-                 "--talk=org.kde.StatusNotifierWatcher"]));
+                 "--talk=org.freedesktop.portal.Documents",
+                 "--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+                 "--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+                 "--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+                 "--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+                 "--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+                 "--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher"]));
     r.push(format!("--own=dev.mirql.zone.{}.*", z.name));
     r.extend(MOZ_APPS.iter().map(|a| format!("--own=org.mozilla.{}.*", moz_remoting_name(&z.name, a))));
     let dbus = z.get("dbus").as_table();
@@ -1384,7 +1403,7 @@ mod tests {
         }
         std::fs::write(t.join("denied-paths"), "").unwrap();
         let policy = Policy { home: h.clone().into(), code_dir: t.join("code").into(),
-                              denied_file: Some(t.join("denied-paths").into()), state_dir: None };
+                              denied_file: Some(t.join("denied-paths").into()), state_dir: None, extra: vec![] };
         (t, h, policy)
     }
 
@@ -1648,9 +1667,15 @@ mod tests {
         for rules in [&plain, &nb] {
             // every host address refused (never the host itself)
             assert!(rules.contains("ip daddr { 100.70.12.34, 100.70.99.1, 203.0.113.7 } reject"), "{rules}");
-            assert!(rules.contains("ip6 daddr { 2001:db8:1::7, fe80::1 } reject"), "{rules}");
-            // a LAN with global IPv6 or public IPv4 too
-            assert!(rules.contains("ip6 daddr { 2001:db8:1::/64 } reject"), "{rules}");
+            // (and through NAT64: 64:ff9b::/96 with the IPv4 address in its last 32 bits)
+            assert!(rules.contains("ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::6446:6301, 64:ff9b::cb00:7107, 2001:db8:1::7, \
+                                    fe80::1 } reject"), "{rules}");
+            // a LAN with global IPv6 or public IPv4 too, the IPv4 one through NAT64 as well
+            assert!(rules.contains("64:ff9b::cb00:7100/120, 2001:db8:1::/64 } reject"), "{rules}");
+            // the private ranges through NAT64, and RFC 8215's local-use NAT64 prefix
+            for n in ["64:ff9b:1::/48", "64:ff9b::a00:0/104", "64:ff9b::c0a8:0/112", "64:ff9b::7f00:0/104"] {
+                assert!(rules.contains(n), "{n}: {rules}");
+            }
             assert!(!rules.contains("127.0.0.1,"), "{rules}");
         }
         assert!(plain.contains("ip daddr { 100.70.0.0/16, 203.0.113.0/24 } reject"), "{plain}");

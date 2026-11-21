@@ -51,13 +51,15 @@ fn receive_pidfd(host: &Host, name: &str, timeout: f64) -> RawFd {
     let path = host.rt.join(name).join("srv.sock");
     let end = Instant::now() + Duration::from_secs_f64(timeout);
     let s = loop {
-        match UnixStream::connect(&path) {
+        // (never a blocking connect: a full queue would wait past the deadline)
+        let left = end.saturating_duration_since(Instant::now()).max(Duration::from_millis(1));
+        match crate::agent::connect_within(&path, left) {
             Ok(s) => break s,
             Err(_) if Instant::now() <= end => std::thread::sleep(Duration::from_millis(50)),
             Err(_) => die(&format!("zone {name}: no pidfd from its server; not starting the zone")),
         }
     };
-    let _ = s.set_read_timeout(Some(Duration::from_secs_f64(timeout)));
+    let _ = s.set_read_timeout(Some(end.saturating_duration_since(Instant::now()).max(Duration::from_millis(1))));
     let bad = || -> ! { die(&format!("zone {name}: no valid pidfd from its server; not starting the zone")) };
     // the peer must be this user
     let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
@@ -228,7 +230,7 @@ mod tests {
         std::fs::write(t.join("denied-paths"), "").unwrap();
         let h = std::fs::canonicalize(&h).unwrap();
         let policy = crate::policy::Policy { home: h.clone().into(), code_dir: t.join("code").into(),
-                                             denied_file: Some(t.join("denied-paths").into()), state_dir: None };
+                                             denied_file: Some(t.join("denied-paths").into()), state_dir: None, extra: vec![] };
         let a = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         let out = pin_binds_by(a(&["bwrap", PIN, "ro", "~/Docs/proj", "/home/x/Docs/proj", "--", "true"]), &policy).unwrap();
         assert_eq!(out[..2], a(&["bwrap", "--ro-bind-fd"]));

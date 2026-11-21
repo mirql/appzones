@@ -91,7 +91,7 @@ fn check_mount_source(args: &[std::ffi::OsString]) -> u8 {
         eprintln!("{USAGE}");
         2
     };
-    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None, state_dir: None };
+    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None, state_dir: None, extra: vec![] };
     let (mut paths, mut list) = (Vec::new(), false);
     let mut it = args.iter();
     while let Some(a) = it.next() {

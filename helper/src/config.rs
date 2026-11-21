@@ -30,13 +30,19 @@ const DBUS_NEVER: &[&str] = &["org.freedesktop.systemd1*", "org.freedesktop.secr
     "org.kde.kdeconnect*", "org.freedesktop.login1*", "org.freedesktop.portal.Flatpak*", "org.kde.klauncher*",
     "org.kde.KWin*", "org.gtk.vfs*", "org.freedesktop.thumbnails*", "org.xfce.Xfconf*",
     "org.freedesktop.FileManager1*", "org.xfce.FileManager*", "org.xfce.Thunar*", "org.xfce.SessionManager*",
-    "org.gnome.SessionManager*", "org.gnome.Shell*", "org.kde.ksmserver*", "org.kde.plasmashell*"];
+    "org.gnome.SessionManager*", "org.gnome.Shell*", "org.kde.ksmserver*", "org.kde.plasmashell*",
+    // the portal itself (zones get it filtered, per method; a talk would beat the filters),
+    // other zones' names, and host-side control
+    "org.freedesktop.portal.Desktop", "dev.mirql.zone*", "org.mozilla.*_zone_*", "org.gnome.Mutter*",
+    "org.kde.kglobalaccel*"];
 const OWN_NEVER: &[&str] = &["org.freedesktop.*", "org.kde.*", "org.gnome.*", "org.xfce.*", "org.a11y.*",
     "com.canonical.*", "org.mozilla.firefox*", "org.mozilla.thunderbird*", "org.mozilla.librewolf*",
     "dev.mirql.zone*", "org.mozilla.*_zone_*"];
 const ENV_NEVER: &[&str] = &["SSH_AUTH_SOCK", "GPG_*", "HYPRLAND_INSTANCE_SIGNATURE", "OPENCODE*", "SOPS_*",
     "*TOKEN*", "*KEY*", "*SECRET*", "*PASSWORD*", "DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY",
-    "XDG_RUNTIME_DIR", "LD_PRELOAD", "LD_LIBRARY_PATH", "DISPLAY", "XAUTHORITY"];
+    "XDG_RUNTIME_DIR", "LD_PRELOAD", "LD_LIBRARY_PATH", "DISPLAY", "XAUTHORITY",
+    // the loader (all of it), glibc's own hooks, appzones' own and the nix-ld settings
+    "LD_*", "GLIBC_TUNABLES", "GCONV_PATH", "ZONE_*", "NIX_LD*", "HYPRLAND_*"];
 
 /// $APPZONES_<name>, or the pre-0.6 $ZONES_<name> (zonecfg.env).
 pub fn env(name: &str) -> Option<String> {
@@ -85,7 +91,8 @@ pub fn home_real() -> Vec<u8> {
 /// ($APPZONES_DENIED_PATHS overrides it), a custom $XDG_STATE_HOME.
 pub fn policy(code_dir: OsString) -> Policy {
     let state = std::env::var_os("XDG_STATE_HOME").filter(|s| s.as_bytes().starts_with(b"/"));
-    Policy { home: home(), code_dir, denied_file: env("DENIED_PATHS").map(OsString::from), state_dir: state }
+    let extra = ["CONFIG", "STATE"].iter().filter_map(|k| env(k)).filter(|v| v.starts_with('/')).map(OsString::from).collect();
+    Policy { home: home(), code_dir, denied_file: env("DENIED_PATHS").map(OsString::from), state_dir: state, extra }
 }
 
 fn host_layout() -> &'static str {
@@ -288,7 +295,7 @@ fn duration_check(v: &Value, lo: i64, hi: i64, empty: bool) -> Option<String> {
 
 /// Python's re.match of ^PATTERN$ allows one trailing newline.
 fn match_dollar(v: &str, ok: impl Fn(&str) -> bool) -> bool {
-    ok(v) || v.strip_suffix('\n').is_some_and(ok)
+    ok(v) // (Python's re.match(...$) also took a trailing newline; never meant)
 }
 
 fn usb_id_ok(x: &str) -> bool {
@@ -332,12 +339,30 @@ impl Ctx {
             "wayland" => enum_check(v, &["zone", "none", "host"]),
             "x11" => enum_check(v, &["none", "own"]),
             "clipboard" => enum_check(v, &["both"]),
-            "autostart_apps" | "packages" => strlist(Some(v)),
+            "autostart_apps" => strlist(Some(v)),
+            "packages" => strlist(Some(v)).or_else(|| {
+                // nixpkgs attribute paths: they go into a Nix expression and a path
+                let ok = |a: &str| a.split('.').all(|p| !p.is_empty() && p.bytes().next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                    && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"_-'".contains(&b)));
+                let bad: Vec<&str> = v.as_array()?.iter().filter_map(str_of).filter(|a| !ok(a)).collect();
+                (!bad.is_empty()).then(|| format!("not nixpkgs attribute names: {}", repr_strs(&bad)))
+            }),
             "machine_id" => enum_check(v, &["zone", "host"]),
             "env" => match v {
                 Value::Table(t) if t.values().all(Value::is_str) => {
+                    let name_ok = |k: &str| k.bytes().next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                        && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+                    let odd: Vec<&str> = t.keys().map(String::as_str).filter(|k| !name_ok(k)).collect();
                     let bad: Vec<&str> = t.keys().map(String::as_str).filter(|k| env_denied(k)).collect();
-                    (!bad.is_empty()).then(|| format!("never passed into a zone: {}", repr_strs(&bad)))
+                    let nul: Vec<&str> = t.iter().filter(|(_, v)| v.as_str().is_some_and(|s| s.contains('\0')
+                        || s == crate::plan::PIN)).map(|(k, _)| k.as_str()).collect();
+                    if !odd.is_empty() {
+                        Some(format!("names are letters, digits and _, not starting with a digit: {}", repr_strs(&odd)))
+                    } else if !nul.is_empty() {
+                        Some(format!("values may not hold a NUL byte or be {}: {}", crate::plan::PIN, repr_strs(&nul)))
+                    } else {
+                        (!bad.is_empty()).then(|| format!("never passed into a zone: {}", repr_strs(&bad)))
+                    }
                 }
                 _ => Some("must be a table of strings".into()),
             },
@@ -590,7 +615,8 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
         }
         if is("network", "host") {
             warnings.push(format!("[zones.{n}] network = \"host\": the zone reaches everything the host reaches, \
-                                   localhost and the tailnet included"));
+                                   localhost and the tailnet included, and the host's abstract sockets (Xwayland's \
+                                   among them: X11 apps of the host can be read and driven)"));
         }
         if is("wayland", "host") {
             warnings.push(format!("[zones.{n}] wayland = \"host\": where the compositor has no security context \
@@ -949,9 +975,32 @@ mod tests {
         assert!(own_denied("org.freedesktop.Notifications"));
         assert!(own_denied("org.mozilla.firefox_zone_work"));
         assert!(!own_denied("com.example.app"));
+        // the portal itself, other zones' names, host-side control
+        for n in ["org.freedesktop.portal.Desktop", "dev.mirql.zone.work", "org.mozilla.firefox_zone_work.x",
+                  "org.gnome.Mutter.RemoteDesktop", "org.kde.kglobalaccel"] {
+            assert!(dbus_denied(n), "{n}");
+        }
+        for n in ["LD_AUDIT", "GLIBC_TUNABLES", "GCONV_PATH", "ZONE_DNS", "NIX_LD_LIBRARY_PATH", "HYPRLAND_CMD"] {
+            assert!(env_denied(n), "{n}");
+        }
         assert!(env_denied("github_token"));
         assert!(env_denied("SSH_AUTH_SOCK"));
         assert!(!env_denied("LANG"));
+    }
+
+    #[test]
+    fn checked_values() {
+        let ctx = Ctx { policy: policy("/nonexistent-code".into()), activatable: std::cell::OnceCell::new() };
+        let t = |text: &str| -> Value { format!("x = {text}").parse::<Table>().unwrap()["x"].clone() };
+        assert!(ctx.check("env", &t("{ \"A=B\" = \"x\" }")).is_some_and(|e| e.contains("letters, digits")));
+        assert!(ctx.check("env", &t("{ \"\" = \"x\" }")).is_some());
+        assert!(ctx.check("env", &t("{ A = \"x\\u0000y\" }")).is_some_and(|e| e.contains("NUL")));
+        assert!(ctx.check("env", &t("{ A = \"--zones-pin\" }")).is_some());
+        assert_eq!(ctx.check("env", &t("{ FOO_1 = \"bar\" }")), None);
+        assert!(ctx.check("packages", &t("[\"hello\", \"python3Packages.requests\"]")).is_none());
+        assert!(ctx.check("packages", &t("[\"a; b\"]")).is_some_and(|e| e.contains("not nixpkgs attribute names")));
+        assert!(ctx.check("packages", &t("[\"../x\"]")).is_some());
+        assert!(ctx.check("usb", &t("[\"abcd\\n\"]")).is_some(), "a trailing newline is not a match");
     }
 
     #[test]

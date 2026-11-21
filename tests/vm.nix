@@ -112,6 +112,42 @@ let
     if package != null then package else pkgs.callPackage ../nix/package.nix { }
   }/libexec/appzones/appzones-helper zone-wayland";
   slowBwrap = pkgs.writeShellScript "slow-bwrap" "sleep 3; exec ${pkgs.bubblewrap}/bin/bwrap \"$@\"";
+  # a notification server that, like gnome-shell, has more on the same connection (here
+  # org.example.Other.Poke, standing in for Mutter's RemoteDesktop): a zone may notify, but
+  # never call the rest through the owner's unique name
+  fakeNotifier = pkgs.writeText "fake-notifier.py" ''
+    import asyncio
+    from dbus_next.aio import MessageBus
+    from dbus_next.service import ServiceInterface, method
+
+    class Notifications(ServiceInterface):
+        def __init__(self):
+            super().__init__("org.freedesktop.Notifications")
+
+        @method()
+        def GetServerInformation(self) -> "ssss":
+            return ["fake", "appzones-test", "1", "1.2"]
+
+    class Other(ServiceInterface):
+        def __init__(self):
+            super().__init__("org.example.Other")
+
+        @method()
+        def Poke(self) -> "s":
+            open("/tmp/poked", "w").write("x")
+            return "poked"
+
+    async def main():
+        bus = await MessageBus().connect()
+        bus.export("/org/freedesktop/Notifications", Notifications())
+        bus.export("/poke", Other())
+        await bus.request_name("org.freedesktop.Notifications")
+        open("/tmp/notifier", "w").write(bus.unique_name)
+        await asyncio.Future()
+
+    asyncio.run(main())
+  '';
+  notifierPython = pkgs.python3.withPackages (ps: [ ps.dbus-next ]);
   linkCatcher = pkgs.writeShellScriptBin "firefox-link-catcher" "printf '%s\\n' \"$1\" > \"$HOME/opened-link\"";
 
   fhsHello = pkgs.buildFHSEnv {
@@ -642,6 +678,23 @@ pkgs.testers.runNixOSTest {
         print(out)
         assert rc != 0 and "AccessDenied" in out, out
         print("PASS  RemoteDesktop portal refused by the proxy")
+        # notifications: only their own interface, not the whole connection that owns the name
+        u("rm -f /tmp/notifier /tmp/poked; systemd-run --user --collect --unit=fake-notifier "
+          "${notifierPython}/bin/python3 ${fakeNotifier}")
+        machine.wait_until_succeeds("test -s /tmp/notifier", timeout=30)
+        owner = machine.succeed("cat /tmp/notifier").strip()
+        ok("ta", "gdbus call --session -d org.freedesktop.Notifications -o /org/freedesktop/Notifications "
+                 "-m org.freedesktop.Notifications.GetServerInformation | grep -q appzones-test",
+           "a notification server answers through the proxy")
+        rc, out = inside("ta", f"gdbus call --session -d {owner} -o /poke -m org.example.Other.Poke")
+        print(out)
+        assert rc != 0 and "AccessDenied" in out, out
+        machine.succeed("test ! -e /tmp/poked")
+        rc, out = inside("ta", "gdbus call --session -d org.freedesktop.Notifications -o /poke -m org.example.Other.Poke")
+        assert rc != 0, out
+        machine.succeed("test ! -e /tmp/poked")
+        u("systemctl --user stop fake-notifier")
+        print("PASS  the notification server's other interfaces (by its name or its unique name) refused")
         # no blanket org.mpris.MediaPlayer2.*: owning implies talking to the host's and other zones' players
         refused("ta", "gdbus call --session -d org.freedesktop.DBus -o /org/freedesktop/DBus "
                       "-m org.freedesktop.DBus.RequestName org.mpris.MediaPlayer2.zoneprobe 4",
