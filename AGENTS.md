@@ -32,8 +32,11 @@
   `// NOSONAR` at the end of its own line. A bare NOSONAR hides every finding on that
   line, so keep such lines small. A maintainer marks the rest false positive in
   SonarQube, again when the line changes.
-- After a release: `just release-rpm VERSION` builds the RPM from the tag, tests it on Fedora, attaches it;
-  the release PR bumps `Version:` in `contrib/fedora/appzones.spec` too.
+- A release PR bumps the version in `nix/package.nix`, `helper/Cargo.toml` and `helper/Cargo.lock`
+  (the package build fails when they differ) and `Version:` in `contrib/fedora/appzones.spec`.
+  The RPM and the AUR package build with their distribution's cargo (crates from crates.io,
+  pinned by Cargo.lock: the build VM needs the network); the .deb has nix/portable.nix's binaries.
+- After a release: `just release-rpm VERSION` builds the RPM from the tag, tests it on Fedora, attaches it.
 - Before an AUR update: `just test-arch` (the package built with makepkg from the checkout, then the
   distro test, in an Arch VM). `just test-fedora` builds and tests the RPM on Fedora, `just test-opensuse` tests `make install` on openSUSE.
 - A release (`just release VERSION`) attaches the `.deb` (built from the tagged commit:
