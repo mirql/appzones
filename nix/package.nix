@@ -25,7 +25,7 @@
 let
   # the package version (helper/Cargo.toml's too); the config schema has its own release
   # number (config::RELEASE, what a zones.toml can require)
-  version = "0.11.3";
+  version = "0.12.0";
   runtimePath = lib.makeBinPath [
     bubblewrap
     passt

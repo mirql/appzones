@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.12.0
+
+appzones is written in Rust now: one binary for every command, the server and what runs in a zone, plus the small root helper of `appzones mount`. The config, the commands and their output stay as they were. The defaults are tighter (D-Bus notifications per interface, a longer never-list) and zones are more robust. Restart running zones after updating. Building from a checkout needs Rust 1.85 or newer; `make install` now puts the binaries in `PREFIX/libexec/appzones`.
+
 - **appzones is written in Rust** (#157): one binary, `appzones-helper`, is every command
   (`appzones` runs its `cli`), the server, zone-init inside a zone and zone-wayland; the
   root step of `appzones mount` is its own small binary. The Python and the C zone-wayland
