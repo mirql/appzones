@@ -152,3 +152,20 @@ pub fn zone_request(rt: &std::path::Path, name: &str, req: &Value) -> Value {
         _ => json!({}),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn readline_keeps_the_rest() {
+        // two replies in one read: the second is not lost (appzones run --wait's exit code)
+        let (mut a, b) = UnixStream::pair().unwrap();
+        a.write_all(b"{\"ok\": true, \"pid\": 7}\n{\"exit\": 0}\n").unwrap();
+        a.shutdown(std::net::Shutdown::Write).unwrap();
+        let (first, rest) = readline(&b, Vec::new()).unwrap();
+        assert_eq!(first, serde_json::json!({"ok": true, "pid": 7}));
+        assert_eq!(readline(&b, rest).unwrap().0, serde_json::json!({"exit": 0}));
+    }
+}

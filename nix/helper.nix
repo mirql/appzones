@@ -26,6 +26,9 @@ rustPlatform.buildRustPackage {
     # what the Python implementation answered, before it was removed (helper/tests/golden)
     "--test"
     "golden"
+    # the commands from the outside, in a temporary home
+    "--test"
+    "cli"
   ];
   APPZONES_GOLDEN = "1";
   stripAllList = [ "bin" ]; # the symbol table too, not only debug info

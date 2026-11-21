@@ -47,7 +47,6 @@ const PORTALS: &[&str] = &["FileChooser", "OpenURI", "Notification", "Settings",
     "Request", "Session", "GlobalShortcuts"];
 const MOZ_APPS: &[&str] = &["firefox", "firefox-esr", "firefox-beta", "firefox-devedition", "firefox-nightly", "librewolf"];
 const XDG_OPEN: &str = "#!/bin/sh\n# zone xdg-open (links = \"{links}\"): http(s) URLs open in zone {target}'s\n# browser through the zone's link socket; anything else goes to the real xdg-open.\ncase \"$1\" in\n  http://*|https://*)\n    exec {open_link} \"$1\" ;;\nesac\nexec {xdg_open} \"$@\"\n";
-const PY_OPEN_LINK: &str = "{python} -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(\"/run/zone/links.sock\"); s.sendall(sys.argv[1].encode()+b\"\\n\"); sys.exit(0 if s.recv(3)==b\"ok\\n\" else 1)'";
 
 pub fn sh(p: &Path) -> String {
     p.to_string_lossy().into_owned()
@@ -87,10 +86,10 @@ pub fn which(name: &str, path: Option<&str>) -> Option<String> {
     path.split(':').filter(|d| !d.is_empty()).map(|d| Path::new(d).join(name)).find(|p| exe(p)).map(|p| sh(&p))
 }
 
-/// The host as appzones sees it (src/appzones/common.py's constants).
+/// The host as appzones sees it.
 pub struct Host {
+    /// appzones' own directory (this binary's): never in a zone
     pub here: PathBuf,
-    pub python: String,
     pub uid: u32,
     pub gid: u32,
     pub user: String,
@@ -99,12 +98,11 @@ pub struct Host {
     pub rt: PathBuf,
     pub state: PathBuf,
     pub config: PathBuf,
-    pub helper: String,
     implements: std::cell::RefCell<Vec<(String, String, bool)>>,
 }
 
 impl Host {
-    pub fn new(here: PathBuf, python: String) -> Host {
+    pub fn new(here: PathBuf) -> Host {
         // Safety: no preconditions.
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
         let home = PathBuf::from(OsString::from_vec(config::home_real()));
@@ -128,8 +126,8 @@ impl Host {
                 if !lexists(&new) && lexists(&old) { old } else { new }
             }
         };
-        Host { rt: host_rt.join("appzones"), here, python, uid, gid, user, home, host_rt, state, config,
-               helper: config::env("HELPER").unwrap_or_default(), implements: Default::default() }
+        Host { rt: host_rt.join("appzones"), here, uid, gid, user, home, host_rt, state, config,
+               implements: Default::default() }
     }
 
     pub fn zrt_in(&self) -> String {
@@ -138,12 +136,9 @@ impl Host {
 
     /// common.find_tool.
     pub fn find_tool(&self, name: &str) -> Option<String> {
-        config::env(&format!("BIN_{}", name.to_uppercase().replace('-', "_"))).filter(|v| !v.is_empty())
-            .or_else(|| which(name, None))
-            .or_else(|| {
-                let dirs: Vec<String> = std::iter::once(sh(&self.here)).chain(SBIN_DIRS.iter().map(|s| s.to_string())).collect();
-                which(name, Some(&dirs.join(":")))
-            })
+        let over = config::env(&format!("BIN_{}", name.to_uppercase().replace('-', "_")));
+        let dirs: Vec<String> = std::iter::once(sh(&self.here)).chain(SBIN_DIRS.iter().map(|s| s.to_string())).collect();
+        find_tool_in(name, over, std::env::var("PATH").ok().as_deref(), &dirs)
     }
 
     pub fn tool(&self, name: &str) -> Result<String, String> {
@@ -160,39 +155,36 @@ impl Host {
         v
     }
 
-    /// common.rust_helper.
-    pub fn rust_helper(&self, command: &str) -> Option<String> {
-        let candidates: Vec<String> = match config::env("BIN_APPZONES_HELPER").filter(|v| !v.is_empty()) {
-            Some(o) if o.contains('/') => vec![o],
-            Some(o) => vec![which(&o, None).unwrap_or(o)],
-            None => {
-                let own = self.here.join("appzones-helper");
-                let mut c = if own.is_file() { vec![sh(&own)] } else { vec![] };
-                c.push(which("appzones-helper", None).unwrap_or_default());
-                c
+    /// The binary that runs in the zone (zone-init, open-link) and beside it (zone-wayland):
+    /// this one, or $APPZONES_BIN_APPZONES_HELPER when it implements COMMAND.
+    pub fn helper_for(&self, command: &str) -> Option<String> {
+        match config::env("BIN_APPZONES_HELPER").filter(|v| !v.is_empty()) {
+            Some(o) => {
+                let o = if o.contains('/') { o } else { which(&o, None).unwrap_or(o) };
+                self.implements(&o, command).then_some(o)
             }
-        };
-        candidates.into_iter().find(|p| !p.is_empty() && self.implements(p, command))
+            None => std::env::current_exe().ok().map(|e| sh(&e)),
+        }
     }
 
-    pub fn zone_helper(&self) -> Option<String> {
-        if self.helper == "rust" { self.rust_helper("zone-init") } else { None }
-    }
-
-    pub fn zone_helper_has(&self, command: &str) -> bool {
-        self.zone_helper().is_some_and(|h| RUST_HELPERS.contains(&command) && self.implements(&h, command))
-    }
-
-    /// common.helper_argv.
+    /// The program for helper NAME: $APPZONES_BIN_<NAME>, else this binary's command NAME
+    /// (zone-wayland), else a tool of that name.
     pub fn helper_argv(&self, name: &str) -> Option<Vec<String>> {
         if let Some(o) = config::env(&format!("BIN_{}", name.to_uppercase().replace('-', "_"))).filter(|v| !v.is_empty()) {
             return Some(vec![o]);
         }
-        if self.helper == "rust" && RUST_HELPERS.contains(&name) {
-            return self.rust_helper(name).map(|p| vec![p, name.into()]);
+        if RUST_HELPERS.contains(&name) {
+            return self.helper_for(name).map(|p| vec![p, name.into()]);
         }
         self.find_tool(name).map(|p| vec![p])
     }
+}
+
+/// A tool: OVERRIDE ($APPZONES_BIN_<NAME>), else on PATH, else in DIRS (appzones' own, the sbins).
+fn find_tool_in(name: &str, over: Option<String>, path: Option<&str>, dirs: &[String]) -> Option<String> {
+    over.filter(|v| !v.is_empty())
+        .or_else(|| which(name, Some(path.unwrap_or("/bin:/usr/bin"))))
+        .or_else(|| which(name, Some(&dirs.join(":"))))
 }
 
 pub fn layout() -> &'static str {
@@ -206,12 +198,18 @@ pub fn layout() -> &'static str {
 
 /// fs.system_binds.
 fn system_binds(layout: &str) -> Vec<String> {
+    system_binds_in(layout, "")
+}
+
+/// system_binds for the system under ROOT ("": this one).
+fn system_binds_in(layout: &str, root: &str) -> Vec<String> {
     if layout == "nixos" {
         return v(&["--ro-bind", "/nix/store", "/nix/store"]);
     }
     let mut a = v(&["--ro-bind", "/usr", "/usr"]);
     for d in ["/bin", "/sbin", "/lib", "/lib64", "/lib32", "/libx32"] {
-        let p = Path::new(d);
+        let full = format!("{root}{d}");
+        let p = Path::new(&full);
         match std::fs::symlink_metadata(p) {
             Ok(m) if m.file_type().is_symlink() => {
                 a.extend([s("--symlink"), std::fs::read_link(p).map(|t| sh(&t)).unwrap_or_default(), s(d)]);
@@ -353,12 +351,17 @@ impl Theme<'_> {
 
 /// fs.copy_theme: the theme files copied into the zone's state; (copy, path inside) to bind.
 fn copy_theme(host: &Host, policy: &Policy, zdir: &Path) -> Vec<(String, String)> {
+    copy_theme_within(&host.home, policy, zdir, [THEME_MAX, THEME_MAX_FILES])
+}
+
+/// copy_theme from HOME, within BUDGET (bytes read, entries visited).
+fn copy_theme_within(home: &Path, policy: &Policy, zdir: &Path, budget: [i64; 2]) -> Vec<(String, String)> {
     let root = zdir.join("theme");
     let _ = std::fs::remove_dir_all(&root);
-    let mut t = Theme { policy, left: [THEME_MAX, THEME_MAX_FILES] };
+    let mut t = Theme { policy, left: budget };
     let mut out = Vec::new();
     for rel in THEME {
-        let src = host.home.join(rel);
+        let src = home.join(rel);
         if !src.exists() {
             continue;
         }
@@ -367,8 +370,7 @@ fn copy_theme(host: &Host, policy: &Policy, zdir: &Path) -> Vec<(String, String)
         let r = if src.is_dir() { t.dir(&src, &dst, &mut BTreeSet::new(), 0) } else { t.file(&src, &dst, true) };
         match r {
             Ok(Err(Budget)) => {
-                warn(&format!("theme: skipping ~/{rel} (over the budget of {} MiB / {THEME_MAX_FILES} files)",
-                              THEME_MAX >> 20));
+                warn(&format!("theme: skipping ~/{rel} (over the budget of {} MiB / {} files)", budget[0] >> 20, budget[1]));
                 if dst.is_dir() { let _ = std::fs::remove_dir_all(&dst); } else { let _ = std::fs::remove_file(&dst); }
                 t.left = before;
                 continue;
@@ -380,7 +382,7 @@ fn copy_theme(host: &Host, policy: &Policy, zdir: &Path) -> Vec<(String, String)
             Ok(Ok(())) => {}
         }
         if dst.exists() {
-            out.push((sh(&dst), sh(&host.home.join(rel))));
+            out.push((sh(&dst), sh(&home.join(rel))));
         }
     }
     out
@@ -418,31 +420,41 @@ fn read_trim(p: &Path) -> String {
 
 /// fs.usb_binds: the USB devices matching IDS, their nodes, sysfs and hidraw nodes.
 fn usb_binds(ids: &[String]) -> (Vec<String>, Vec<String>) {
+    usb_binds_in(ids, "")
+}
+
+/// usb_binds on the system under ROOT ("": this one); the paths given back are without it.
+fn usb_binds_in(ids: &[String], root: &str) -> (Vec<String>, Vec<String>) {
+    let at = |p: &str| format!("{root}{p}");
+    let unroot = |p: String| if root.is_empty() { p } else {
+        let r = rp(root);
+        p.strip_prefix(&r).map(String::from).unwrap_or(p)
+    };
     let want: Vec<(String, Option<String>)> = ids.iter().map(|i| match i.split_once(':') {
         Some((v, p)) => (v.to_string(), Some(p.to_string())),
         None => (i.clone(), None),
     }).collect();
     let (mut a, mut found) = (Vec::new(), Vec::new());
-    let Ok(rd) = std::fs::read_dir("/sys/bus/usb/devices") else { return (a, found) };
+    let Ok(rd) = std::fs::read_dir(at("/sys/bus/usb/devices")) else { return (a, found) };
     let mut entries: Vec<String> = rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
     entries.sort();
-    let hidraws = sorted_glob("/sys/class/hidraw", "hidraw");
+    let hidraws = sorted_glob(&at("/sys/class/hidraw"), "hidraw");
     let mut any_hid = false;
     for e in entries {
-        let d = Path::new("/sys/bus/usb/devices").join(&e);
+        let d = Path::new(&at("/sys/bus/usb/devices")).join(&e);
         let vid = read_trim(&d.join("idVendor")).to_lowercase();
         let pid = read_trim(&d.join("idProduct")).to_lowercase();
         if vid.is_empty() || !want.iter().any(|(wv, wp)| *wv == vid && wp.as_ref().is_none_or(|p| *p == pid)) {
             continue;
         }
-        let real = rp(&sh(&d));
+        let real = unroot(rp(&sh(&d)));
         let (bus, dev, majmin) = (read_trim(&d.join("busnum")), read_trim(&d.join("devnum")), read_trim(&d.join("dev")));
         let (Ok(bn), Ok(dn)) = (bus.parse::<u32>(), dev.parse::<u32>()) else { continue };
         if !bus.bytes().all(|b| b.is_ascii_digit()) || !dev.bytes().all(|b| b.is_ascii_digit()) {
             continue;
         }
         let node = format!("/dev/bus/usb/{bn:03}/{dn:03}");
-        let Ok(st) = std::fs::metadata(&node) else {
+        let Ok(st) = std::fs::metadata(at(&node)) else {
             warn(&format!("usb: {vid}:{pid} ({e}) has no {node}; skipped"));
             continue;
         };
@@ -459,13 +471,13 @@ fn usb_binds(ids: &[String]) -> (Vec<String>, Vec<String>) {
         }
         let mut what = vec![node];
         for h in &hidraws {
-            let hdev = rp(&format!("{h}/device"));
+            let hdev = unroot(rp(&format!("{h}/device")));
             if !hdev.starts_with(&format!("{real}/")) {
                 continue;
             }
             let hn = format!("/dev/{}", Path::new(h).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
             let hmm = read_trim(&Path::new(h).join("dev"));
-            if !Path::new(&hn).exists() {
+            if !Path::new(&at(&hn)).exists() {
                 continue;
             }
             a.extend([s("--dev-bind"), hn.clone(), hn.clone()]);
@@ -721,7 +733,14 @@ fn host_addrs() -> Result<Vec<(String, IpAddr, u8)>, String> {
 
 /// net.nft_rules: the deny list loaded in the zone's own netns.
 fn nft_rules(z: &Zone) -> Result<String, String> {
-    let addrs: Vec<(String, IpAddr, u8)> = host_addrs()?.into_iter().filter(|(_, ip, _)| !ip.is_loopback()).collect();
+    let iface = config::env("NETBIRD_IFACE").filter(|v| !v.is_empty()).unwrap_or_else(|| s("wt0"));
+    Ok(nft_rules_for(crate::config::truthy(z.get("netbird")), &iface, host_addrs()?))
+}
+
+/// The rules for a host with ADDRS (interface, address, prefix); NETBIRD: the networks of
+/// IFACE are accepted (after the host's own addresses are refused).
+fn nft_rules_for(netbird: bool, iface: &str, addrs: Vec<(String, IpAddr, u8)>) -> String {
+    let addrs: Vec<(String, IpAddr, u8)> = addrs.into_iter().filter(|(_, ip, _)| !ip.is_loopback()).collect();
     let mut mine4: Vec<u128> = addrs.iter().filter_map(|(_, ip, _)| match ip { IpAddr::V4(a) => Some(u32::from(*a) as u128), _ => None }).collect();
     let mut mine6: Vec<u128> = addrs.iter().filter_map(|(_, ip, _)| match ip { IpAddr::V6(a) => Some(u128::from(*a)), _ => None }).collect();
     mine4.sort();
@@ -734,8 +753,7 @@ fn nft_rules(z: &Zone) -> Result<String, String> {
     };
     let nets: Vec<Net> = addrs.iter().filter(|(_, ip, _)| !link_local(ip)).map(|(_, ip, p)| Net::of(*ip, *p)).collect();
     let (mut nb4, mut nb6) = (Vec::new(), Vec::new());
-    if crate::config::truthy(z.get("netbird")) {
-        let iface = config::env("NETBIRD_IFACE").filter(|v| !v.is_empty()).unwrap_or_else(|| s("wt0"));
+    if netbird {
         let nbn: Vec<Net> = addrs.iter().filter(|(i, _, _)| *i == iface).map(|(_, ip, p)| Net::of(*ip, *p)).collect();
         nb4 = collapse(&nbn.iter().copied().filter(|n| !n.v6).collect::<Vec<_>>());
         nb6 = collapse(&nbn.iter().copied().filter(|n| n.v6).collect::<Vec<_>>());
@@ -763,20 +781,26 @@ fn nft_rules(z: &Zone) -> Result<String, String> {
     if !lan6.is_empty() {
         rules += &format!("    ip6 daddr {{ {} }} reject\n", join_nets(&lan6));
     }
-    Ok(format!("table inet zone {{\n  chain out {{\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n\
+    format!("table inet zone {{\n  chain out {{\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n\
 {rules}    ip daddr {{ 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               \
 192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 }} reject\n    ip6 daddr {{ ::1, ::ffff:0:0/96, \
-fc00::/7, fe80::/10, ff00::/8 }} reject\n  }}\n}}\n"))
+fc00::/7, fe80::/10, ff00::/8 }} reject\n  }}\n}}\n")
 }
 
 /// net.resolv_conf.
 fn resolv_conf(z: &Zone) -> String {
-    match z.get("network").as_str() {
-        Some("internet") => format!("nameserver {DNS_ADDR}\n"),
-        Some("host") if z.get("dns").as_str() == Some("public") => s("nameserver 1.1.1.1\n"),
-        Some("host") => match config::env("DNS_HOST").filter(|v| !v.is_empty()) {
+    resolv_conf_for(z.get("network").as_str().unwrap_or(""), z.get("dns").as_str().unwrap_or(""),
+                    config::env("DNS_HOST").filter(|v| !v.is_empty()), Path::new("/etc/resolv.conf"))
+}
+
+/// The zone's resolv.conf for NETWORK and DNS; DNS_HOST: $APPZONES_DNS_HOST; HOST_FILE: the host's.
+fn resolv_conf_for(network: &str, dns: &str, dns_host: Option<String>, host_file: &Path) -> String {
+    match network {
+        "internet" => format!("nameserver {DNS_ADDR}\n"),
+        "host" if dns == "public" => s("nameserver 1.1.1.1\n"),
+        "host" => match dns_host {
             Some(d) => format!("nameserver {d}\n"),
-            None => std::fs::read_to_string("/etc/resolv.conf").unwrap_or_default(),
+            None => std::fs::read_to_string(host_file).unwrap_or_default(),
         },
         _ => String::new(),
     }
@@ -784,10 +808,16 @@ fn resolv_conf(z: &Zone) -> String {
 
 /// net.host_resolver.
 fn host_resolver() -> String {
-    if let Some(d) = config::env("DNS_HOST").filter(|v| !v.is_empty()) {
+    host_resolver_for(config::env("DNS_HOST").filter(|v| !v.is_empty()), Path::new("/etc/resolv.conf"))
+}
+
+/// The resolver the zone's DNS asks: $APPZONES_DNS_HOST, else the first nameserver in FILE
+/// if it is an address, else systemd-resolved's.
+fn host_resolver_for(dns_host: Option<String>, file: &Path) -> String {
+    if let Some(d) = dns_host {
         return d;
     }
-    let Ok(text) = std::fs::read_to_string("/etc/resolv.conf") else { return s(DNS_ADDR) };
+    let Ok(text) = std::fs::read_to_string(file) else { return s(DNS_ADDR) };
     for line in crate::policy::split_lines(&text) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 2 && parts[0] == "nameserver" {
@@ -1054,32 +1084,11 @@ fn bwrap_argv(host: &Host, policy: &Policy, z: &Zone, zdir: &Path, zrt: &Path, n
     for (k, val) in env.0 {
         a.extend([s("--setenv"), k, val]);
     }
-    // zone-init: the Rust helper bound into the zone, or the host's Python
-    if host.helper == "rust" {
-        let helper = host.zone_helper().ok_or("appzones was installed with the Rust helper, but there is no \
-            appzones-helper that implements zone-init (`appzones-helper --commands`); reinstall it")?;
-        a.extend([s("--ro-bind"), rp(&helper), s(ZONE_HELPER), s("--"), s(ZONE_HELPER), s("zone-init")]);
-    } else {
-        a.extend([s("--"), rp(&host.python), sh(&host.here.join("zone_init.py"))]);
-    }
+    // zone-init: this binary, bound into the zone read-only
+    let helper = host.helper_for("zone-init").ok_or("$APPZONES_BIN_APPZONES_HELPER does not implement zone-init \
+        (`appzones-helper --commands`)")?;
+    a.extend([s("--ro-bind"), rp(&helper), s(ZONE_HELPER), s("--"), s(ZONE_HELPER), s("zone-init")]);
     Ok(a)
-}
-
-/// server.install_error.
-fn install_error(host: &Host, layout: &str) -> Option<String> {
-    if ["zone-init", "open-link"].iter().all(|c| host.zone_helper_has(c)) {
-        return None;
-    }
-    if host.helper == "rust" && host.zone_helper().is_none() {
-        return Some(s("appzones was installed with the Rust helper, but there is no appzones-helper that implements \
-                       zone-init (`appzones-helper --commands`); reinstall it"));
-    }
-    let seen = if layout == "nixos" { "/nix/store" } else { "/usr" };
-    if rel_to(&rp(&sh(&host.here)), seen) {
-        return None;
-    }
-    Some(format!("appzones runs from {}, which a zone cannot see (it sees {seen}): install it under {seen} \
-                  (`sudo make install`, PREFIX=/usr/local by default; or the Nix package)", sh(&host.here)))
 }
 
 fn write(p: &Path, text: &str) -> Result<(), String> {
@@ -1118,9 +1127,6 @@ pub fn make_plan(host: &Host, name: &str) -> Result<J, String> {
     }
     let z = cfg.zone(name).ok_or_else(|| format!("no zone {} in {}", py_repr(name), sh(&host.config)))?;
     let layout = layout();
-    if let Some(e) = install_error(host, layout) {
-        return Err(e);
-    }
     let policy = config::policy(host.here.as_os_str().to_owned());
     let timeout = config::duration(z.get("start_timeout")).unwrap_or(30.0);
     let zdir = host.state.join(name);
@@ -1158,13 +1164,8 @@ pub fn make_plan(host: &Host, name: &str) -> Result<J, String> {
     if crate::serve::stopped() {
         return Err(s("\0stopped"));
     }
-    // the internal commands (_netsetup, _link, _cleanup): Python's zone.py, or with no Python
-    // (stage 3) this very helper's `cli`
-    let zone_py = if host.python.is_empty() {
-        vec![std::env::current_exe().map(|e| sh(&e)).map_err(|e| format!("own path: {e}"))?, s("cli")]
-    } else {
-        vec![host.python.clone(), sh(&host.here.join("zone.py"))]
-    };
+    // the internal commands (_netsetup, _link, _cleanup): this binary's `cli`
+    let zone_py = vec![std::env::current_exe().map(|e| sh(&e)).map_err(|e| format!("own path: {e}"))?, s("cli")];
     let links_setting = z.get("links").as_str().unwrap_or("portal").to_string();
     let target = match links_setting.as_str() {
         "portal" => None,
@@ -1175,11 +1176,10 @@ pub fn make_plan(host: &Host, name: &str) -> Result<J, String> {
     if let Some(target) = &target {
         std::fs::create_dir(zrt.join("ctl/bin")).map_err(|e| e.to_string())?;
         let xo = zrt.join("ctl/bin/xdg-open");
-        let open_link = if host.zone_helper_has("open-link") {
-            format!("{ZONE_HELPER} open-link")
-        } else {
-            PY_OPEN_LINK.replace("{python}", &rp(&host.python))
-        };
+        if host.helper_for("open-link").is_none() {
+            return Err(s("$APPZONES_BIN_APPZONES_HELPER does not implement open-link (`appzones-helper --commands`)"));
+        }
+        let open_link = format!("{ZONE_HELPER} open-link");
         let real_xdg = if layout == "nixos" { "/run/current-system/sw/bin/xdg-open" } else { "/usr/bin/xdg-open" };
         write(&xo, &XDG_OPEN.replace("{links}", &links_setting).replace("{target}", target)
             .replace("{open_link}", &open_link).replace("{xdg_open}", real_xdg))?;
@@ -1273,20 +1273,27 @@ pub fn make_plan(host: &Host, name: &str) -> Result<J, String> {
 
 /// net.pasta_selinux_problem.
 fn selinux_problem(pasta: &str) -> Option<String> {
-    let enforce = std::fs::read_to_string("/sys/fs/selinux/enforce").ok()?;
+    selinux_problem_in(pasta, Path::new("/sys/fs/selinux"), selinux_label)
+}
+
+/// The SELinux label of the file at PATH.
+fn selinux_label(path: &str) -> Option<String> {
+    let c = std::ffi::CString::new(path.as_bytes()).ok()?;
+    let mut buf = vec![0u8; 256];
+    // Safety: getxattr into our buffer of the given size.
+    let n = unsafe { libc::getxattr(c.as_ptr(), c"security.selinux".as_ptr(), buf.as_mut_ptr().cast(), buf.len()) };
+    (n >= 0).then(|| String::from_utf8_lossy(&buf[..n as usize]).into_owned())
+}
+
+/// selinux_problem with SELinux's files in SELINUX and LABEL_OF for the labels.
+fn selinux_problem_in(pasta: &str, selinux: &Path, label_of: impl Fn(&str) -> Option<String>) -> Option<String> {
+    let enforce = std::fs::read_to_string(selinux.join("enforce")).ok()?;
     if enforce.trim() != "1" {
         return None;
     }
     let pasta = if pasta.contains('/') { pasta.to_string() } else { which(pasta, None).unwrap_or_else(|| pasta.into()) };
     let real = rp(&pasta);
-    let c = std::ffi::CString::new(real.as_bytes()).ok()?;
-    let mut buf = vec![0u8; 256];
-    // Safety: getxattr into our buffer of the given size.
-    let n = unsafe { libc::getxattr(c.as_ptr(), c"security.selinux".as_ptr(), buf.as_mut_ptr().cast(), buf.len()) };
-    if n < 0 {
-        return None;
-    }
-    let label = String::from_utf8_lossy(&buf[..n as usize]).into_owned();
+    let label = label_of(&real)?;
     if !label.contains(":passt_exec_t:") {
         return None;
     }
@@ -1307,7 +1314,7 @@ pub fn write_plan(plan: &J) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// `appzones-helper plan ZONE --python EXE --code-dir DIR`: make and write the plan (as
+/// `appzones-helper plan ZONE [--code-dir DIR]`: make and write the plan (as
 /// `appzones serve`'s first part), print its path.
 /// The directory of this executable (resolved): appzones' code directory, with one binary.
 pub fn exe_dir() -> PathBuf {
@@ -1316,25 +1323,23 @@ pub fn exe_dir() -> PathBuf {
 }
 
 pub fn plan_main(args: &[OsString]) -> u8 {
-    let (mut name, mut python, mut code) = (None, None, None);
+    let (mut name, mut code) = (None, None);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.to_str() {
-            Some("--python") => python = it.next().map(|v| v.to_string_lossy().into_owned()),
             Some("--code-dir") => code = it.next().map(|v| PathBuf::from(v.clone())),
             Some(x) if !x.starts_with("--") && name.is_none() => name = Some(x.to_string()),
             _ => {
-                eprintln!("usage: appzones-helper plan ZONE [--python EXE --code-dir DIR]");
+                eprintln!("usage: appzones-helper plan ZONE [--code-dir DIR]");
                 return 2;
             }
         }
     }
     let Some(name) = name else {
-        eprintln!("usage: appzones-helper plan ZONE [--python EXE --code-dir DIR]");
+        eprintln!("usage: appzones-helper plan ZONE [--code-dir DIR]");
         return 2;
     };
-    // (no Python: the plan's own steps are `appzones-helper cli ...`, the code its directory)
-    let host = Host::new(code.unwrap_or_else(exe_dir), python.unwrap_or_default());
+    let host = Host::new(code.unwrap_or_else(exe_dir));
     match make_plan(&host, &name).and_then(|p| write_plan(&p)) {
         Ok(path) => {
             println!("{}", sh(&path));
@@ -1367,6 +1372,318 @@ mod tests {
     fn net(t: &str) -> Net {
         let (a, p) = t.split_once('/').unwrap();
         Net::of(a.parse().unwrap(), p.parse().unwrap())
+    }
+
+    /// A temporary home with the never-list's usual entries, and its policy.
+    fn home(tag: &str) -> (PathBuf, PathBuf, Policy) {
+        let t = std::env::temp_dir().join(format!("az-plan-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        let h = t.join("home");
+        for d in [".ssh", "Docs", ".config"] {
+            std::fs::create_dir_all(h.join(d)).unwrap();
+        }
+        std::fs::write(t.join("denied-paths"), "").unwrap();
+        let policy = Policy { home: h.clone().into(), code_dir: t.join("code").into(),
+                              denied_file: Some(t.join("denied-paths").into()), state_dir: None };
+        (t, h, policy)
+    }
+
+    fn files_below(d: &Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        if let Ok(it) = std::fs::read_dir(d) {
+            for e in it.flatten() {
+                if e.file_type().unwrap().is_dir() {
+                    out.extend(files_below(&e.path()));
+                } else {
+                    out.push(e.path());
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn theme_copy_refuses_never_list_links() {
+        // a link planted in a theme directory never copies a never-list file into a zone
+        let (t, h, policy) = home("links");
+        std::fs::write(h.join(".ssh/id_test"), "SECRET").unwrap();
+        let icons = h.join(".icons/theme");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::write(icons.join("index.theme"), "[Icon Theme]\n").unwrap();
+        std::os::unix::fs::symlink(h.join(".ssh/id_test"), icons.join("evil.png")).unwrap();
+        std::os::unix::fs::symlink(h.join(".ssh"), icons.join("evil-dir")).unwrap();
+        std::os::unix::fs::symlink(h.join(".ssh/id_test"), h.join(".gtkrc-2.0")).unwrap();
+        let zdir = t.join("zone-state");
+        let pairs = copy_theme_within(&h, &policy, &zdir, [THEME_MAX, THEME_MAX_FILES]);
+        let copied = files_below(&zdir.join("theme"));
+        assert_eq!(copied.iter().map(|p| p.file_name().unwrap().to_str().unwrap()).collect::<Vec<_>>(), ["index.theme"]);
+        assert!(!copied.iter().any(|p| std::fs::read_to_string(p).unwrap().contains("SECRET")));
+        assert_eq!(pairs.iter().map(|(_, d)| d.clone()).collect::<Vec<_>>(), [sh(&h.join(".icons"))]);
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn theme_budgets() {
+        // over the byte budget (bytes read) or the entry budget (every entry visited): skipped whole
+        let (t, h, policy) = home("budgets");
+        std::fs::create_dir_all(h.join(".icons/big")).unwrap();
+        std::fs::write(h.join(".icons/big/blob"), vec![b'x'; 4096]).unwrap();
+        for i in 0..30 {
+            std::fs::create_dir_all(h.join(format!(".local/share/fonts/empty{i}"))).unwrap();
+        }
+        std::fs::write(h.join(".gtkrc-2.0"), "gtk-theme-name = \"Adwaita\"\n").unwrap();
+        let zdir = t.join("zone-state");
+        let pairs = copy_theme_within(&h, &policy, &zdir, [1024, 20]);
+        assert_eq!(pairs.iter().map(|(_, d)| d.clone()).collect::<Vec<_>>(), [sh(&h.join(".gtkrc-2.0"))]);
+        assert!(!zdir.join("theme/.icons").exists());
+        assert!(!zdir.join("theme/.local/share/fonts").exists());
+        // the entry budget counts files once: the "t" entry and 9 files are exactly 10
+        let _ = std::fs::remove_dir_all(h.join(".icons"));
+        let _ = std::fs::remove_dir_all(h.join(".local"));
+        let _ = std::fs::remove_file(h.join(".gtkrc-2.0"));
+        std::fs::create_dir_all(h.join(".icons/t")).unwrap();
+        for i in 0..9 {
+            std::fs::write(h.join(format!(".icons/t/f{i}")), "x").unwrap();
+        }
+        let pairs = copy_theme_within(&h, &policy, &zdir, [THEME_MAX, 10]);
+        assert_eq!(pairs.iter().map(|(_, d)| d.clone()).collect::<Vec<_>>(), [sh(&h.join(".icons"))]);
+        assert_eq!(std::fs::read_dir(zdir.join("theme/.icons/t")).unwrap().count(), 9);
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn unlinked_descriptor_never_passes() {
+        // a file replaced after it was opened: its descriptor path ends in " (deleted)"
+        use std::os::fd::AsRawFd;
+        let (t, h, _) = home("unlinked");
+        let secret = h.join(".gitconfig");
+        std::fs::write(&secret, "SECRET").unwrap();
+        let f = std::fs::File::open(&secret).unwrap();
+        assert!(fd_path(f.as_raw_fd()).is_some());
+        std::fs::write(h.join(".gitconfig.new"), "new").unwrap();
+        std::fs::rename(h.join(".gitconfig.new"), &secret).unwrap(); // an atomic save
+        assert_eq!(fd_path(f.as_raw_fd()), None);
+        // an O_PATH descriptor of a directory removed after it was opened
+        let d = h.join("Docs/gone");
+        std::fs::create_dir(&d).unwrap();
+        let g = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_PATH).open(&d).unwrap();
+        std::fs::remove_dir(&d).unwrap();
+        assert_eq!(fd_path(g.as_raw_fd()), None);
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn usb() {
+        // a fake sysfs: only the matching device, its hidraw, never the others
+        let root = std::env::temp_dir().join(format!("az-usb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let devs = root.join("sys/devices/pci0/usb5");
+        let usbdev = |name: &str, vid: &str, pid: &str, bus: &str, dev: &str, hid: &str| {
+            let d = devs.join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            // no "dev" (MAJ:MIN): the fake nodes are plain files, which the rdev check would refuse
+            for (k, v) in [("idVendor", vid), ("idProduct", pid), ("busnum", bus), ("devnum", dev), ("product", name)] {
+                std::fs::write(d.join(k), format!("{v}\n")).unwrap();
+            }
+            std::fs::create_dir_all(root.join("sys/bus/usb/devices")).unwrap();
+            std::os::unix::fs::symlink(&d, root.join("sys/bus/usb/devices").join(name)).unwrap();
+            let node = root.join(format!("dev/bus/usb/{:03}/{:03}", bus.parse::<u32>().unwrap(), dev.parse::<u32>().unwrap()));
+            std::fs::create_dir_all(node.parent().unwrap()).unwrap();
+            std::fs::write(&node, "").unwrap();
+            let h = d.join(format!("{name}:1.0/0003:{}:{}.0001", vid.to_uppercase(), pid.to_uppercase()));
+            std::fs::create_dir_all(&h).unwrap();
+            let c = root.join("sys/class/hidraw").join(hid);
+            std::fs::create_dir_all(&c).unwrap();
+            std::os::unix::fs::symlink(&h, c.join("device")).unwrap();
+            std::fs::write(c.join("dev"), format!("243:{}\n", &hid[hid.len() - 1..])).unwrap();
+            std::fs::write(root.join("dev").join(hid), "").unwrap();
+        };
+        usbdev("5-1", "abcd", "1234", "5", "2", "hidraw1");
+        usbdev("5-2", "1050", "0407", "5", "3", "hidraw2"); // a YubiKey: never
+        std::os::unix::fs::symlink(&devs, root.join("sys/bus/usb/devices/usb5")).unwrap(); // the root hub
+        let r = sh(&root);
+        let ids = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let (a, found) = usb_binds_in(&ids(&["abcd"]), &r);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].contains("abcd:1234"));
+        let triples: Vec<Vec<String>> = a.chunks(3).map(|c| c.to_vec()).collect();
+        let has = |x: [&str; 3]| triples.contains(&v(&x));
+        let real = "/sys/devices/pci0/usb5/5-1";
+        assert!(has(["--dev-bind", "/dev/bus/usb/005/002", "/dev/bus/usb/005/002"]), "{a:?}");
+        assert!(has(["--ro-bind", real, real]), "{a:?}");
+        assert!(has(["--dev-bind", "/dev/hidraw1", "/dev/hidraw1"]), "{a:?}");
+        assert!(has(["--ro-bind-try", "/sys/bus/usb", "/sys/bus/usb"]), "{a:?}");
+        assert!(has(["--ro-bind-try", "/run/udev/data/c243:1", "/run/udev/data/c243:1"]), "{a:?}");
+        let flat = a.join(" ");
+        for never in ["/dev/bus/usb/005/003", "/dev/hidraw2", "5-2", "/dev/uinput"] {
+            assert!(!flat.contains(never), "{never} in {flat}");
+        }
+        assert!(!has(["--dev-bind", "/dev/bus/usb", "/dev/bus/usb"]));
+        // vendor:product must match both; nothing matching: nothing bound
+        assert_eq!(usb_binds_in(&ids(&["abcd:1234"]), &r).1, found);
+        assert_eq!(usb_binds_in(&ids(&["abcd:0001"]), &r), (vec![], vec![]));
+        assert_eq!(usb_binds_in(&ids(&["dead"]), &r), (vec![], vec![]));
+        // a node that is not the device sysfs names (another took its number): skipped
+        std::fs::write(devs.join("5-1/dev"), "189:513\n").unwrap();
+        assert_eq!(usb_binds_in(&ids(&["abcd"]), &r), (vec![], vec![]));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn layouts() {
+        let t = std::env::temp_dir().join(format!("az-layout-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        assert_eq!(system_binds_in("nixos", "/x"), v(&["--ro-bind", "/nix/store", "/nix/store"]));
+        let merged = t.join("root"); // a merged-/usr system, and a separate /sbin
+        for d in ["usr/bin", "usr/lib", "sbin"] {
+            std::fs::create_dir_all(merged.join(d)).unwrap();
+        }
+        std::os::unix::fs::symlink("usr/bin", merged.join("bin")).unwrap();
+        std::os::unix::fs::symlink("usr/lib", merged.join("lib")).unwrap();
+        assert_eq!(system_binds_in("fhs", &sh(&merged)),
+                   v(&["--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--ro-bind", "/sbin", "/sbin",
+                       "--symlink", "usr/lib", "/lib"]));
+        let unmerged = t.join("unmerged"); // /bin and /sbin real directories
+        for d in ["usr/bin", "bin", "sbin", "lib", "lib64"] {
+            std::fs::create_dir_all(unmerged.join(d)).unwrap();
+        }
+        assert_eq!(system_binds_in("fhs", &sh(&unmerged)),
+                   v(&["--ro-bind", "/usr", "/usr", "--ro-bind", "/bin", "/bin", "--ro-bind", "/sbin", "/sbin",
+                       "--ro-bind", "/lib", "/lib", "--ro-bind", "/lib64", "/lib64"]));
+        let (path, data, tz) = system_env("fhs", "alice");
+        assert_eq!(path, "/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/bin:/sbin");
+        assert_eq!((data.as_str(), tz.as_str()), ("/usr/local/share:/usr/share", "/usr/share/zoneinfo"));
+        assert!(system_env("nixos", "alice").0.ends_with("/run/current-system/sw/bin"));
+        // the xdg-open shim: a shell every layout has, and the real xdg-open filled in
+        let shim = XDG_OPEN.replace("{xdg_open}", "/usr/bin/xdg-open");
+        assert!(shim.starts_with("#!/bin/sh\n"));
+        assert!(shim.contains("exec /usr/bin/xdg-open \"$@\""));
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn tool_lookup() {
+        // on PATH, then in appzones' own directory and the sbins (nft on Debian); the override wins
+        let t = std::env::temp_dir().join(format!("az-tools-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        let (path, sbin, other) = (t.join("path"), t.join("sbin"), t.join("other-sbin"));
+        let make = |d: &Path, name: &str| {
+            std::fs::create_dir_all(d).unwrap();
+            let f = d.join(name);
+            std::fs::write(&f, "#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap();
+            sh(&f)
+        };
+        let dirs = vec![sh(&sbin), sh(&other)];
+        let p = Some(sh(&path));
+        let in_sbin = make(&sbin, "nft");
+        std::fs::create_dir_all(&path).unwrap();
+        assert_eq!(find_tool_in("nft", None, p.as_deref(), &dirs), Some(in_sbin)); // not on PATH: the sbin
+        let on_path = make(&path, "nft");
+        assert_eq!(find_tool_in("nft", None, p.as_deref(), &dirs), Some(on_path.clone())); // PATH first
+        let over = make(&other, "my-nft");
+        assert_eq!(find_tool_in("nft", Some(over.clone()), p.as_deref(), &dirs), Some(over)); // the override
+        assert_eq!(find_tool_in("nft", Some(String::new()), p.as_deref(), &dirs), Some(on_path)); // empty: unset
+        assert_eq!(find_tool_in("pasta", None, p.as_deref(), &dirs), None);
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn pasta_selinux() {
+        // pasta linked to passt (labelled passt_exec_t) under enforcing SELinux is named, with the fix
+        let t = std::env::temp_dir().join(format!("az-selinux-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(t.join("selinux")).unwrap();
+        std::fs::write(t.join("passt"), "").unwrap();
+        std::os::unix::fs::symlink("passt", t.join("pasta")).unwrap();
+        let passt = rp(&sh(&t.join("passt")));
+        let pasta = sh(&t.join("pasta"));
+        for (enforce, label, want) in [("1", "system_u:object_r:passt_exec_t:s0\0", true),
+                                       ("0", "system_u:object_r:passt_exec_t:s0\0", false),
+                                       ("1", "system_u:object_r:pasta_exec_t:s0\0", false)] {
+            std::fs::write(t.join("selinux/enforce"), enforce).unwrap();
+            let got = selinux_problem_in(&pasta, &t.join("selinux"), |p| (p == passt).then(|| label.to_string()));
+            assert_eq!(got.is_some(), want, "{enforce} {label}: {got:?}");
+            if want {
+                assert!(got.unwrap().contains("semanage permissive -a passt_t"));
+            }
+        }
+        // no SELinux
+        assert!(selinux_problem_in(&pasta, &t.join("none"), |_| Some("x:passt_exec_t:y".into())).is_none());
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn colours_written_at_once() {
+        // eight writers at once: no error, the whole file, no temporary file left
+        let (t, _, _) = home("colours");
+        let rt = t.join("rt");
+        let cfg = || config::load_text("version = 1\n[zones.tt]\ncolour = \"#112233\"\n", "zones.toml", t.join("code").into());
+        let writers: Vec<_> = (0..8).map(|_| {
+            let rt = rt.clone();
+            let cfg = cfg();
+            std::thread::spawn(move || {
+                let mut host = Host::new(PathBuf::from("/"));
+                host.rt = rt;
+                (0..50).map(|_| write_colours(&host, &cfg)).collect::<Result<Vec<_>, _>>()
+            })
+        }).collect();
+        for w in writers {
+            w.join().unwrap().unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(rt.join("colours")).unwrap(), "tt #112233\n");
+        let names: Vec<_> = std::fs::read_dir(&rt).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, ["colours"]);
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn nft() {
+        let a = |i: &str, x: &str, p: u8| (i.to_string(), x.parse::<IpAddr>().unwrap(), p);
+        let addrs = vec![a("lo", "127.0.0.1", 8), a("lo", "::1", 128), a("eth0", "203.0.113.7", 24),
+                         a("eth0", "2001:db8:1::7", 64), a("eth0", "fe80::1", 64), a("wt0", "100.70.12.34", 16),
+                         a("wt0", "100.70.99.1", 16)];
+        let plain = nft_rules_for(false, "wt0", addrs.clone());
+        let nb = nft_rules_for(true, "wt0", addrs.clone());
+        for rules in [&plain, &nb] {
+            // every host address refused (never the host itself)
+            assert!(rules.contains("ip daddr { 100.70.12.34, 100.70.99.1, 203.0.113.7 } reject"), "{rules}");
+            assert!(rules.contains("ip6 daddr { 2001:db8:1::7, fe80::1 } reject"), "{rules}");
+            // a LAN with global IPv6 or public IPv4 too
+            assert!(rules.contains("ip6 daddr { 2001:db8:1::/64 } reject"), "{rules}");
+            assert!(!rules.contains("127.0.0.1,"), "{rules}");
+        }
+        assert!(plain.contains("ip daddr { 100.70.0.0/16, 203.0.113.0/24 } reject"), "{plain}");
+        assert!(!plain.contains("} accept"), "{plain}");
+        // netbird: the host's addresses refused first, then the mesh accepted, then the LAN refused
+        let at = |x: &str| nb.find(x).unwrap_or_else(|| panic!("{x} not in {nb}"));
+        assert!(at("100.70.99.1, 203.0.113.7 } reject") < at("ip daddr { 100.70.0.0/16 } accept"));
+        assert!(at("ip daddr { 100.70.0.0/16 } accept") < at("ip daddr { 203.0.113.0/24 } reject"));
+        // no NetBird interface: nothing accepted
+        let without: Vec<_> = addrs.into_iter().filter(|x| x.0 != "wt0").collect();
+        assert!(!nft_rules_for(true, "wt0", without).contains("} accept"));
+    }
+
+    #[test]
+    fn resolvers() {
+        let dir = std::env::temp_dir().join(format!("az-resolv-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("resolv.conf");
+        std::fs::write(&rc, "# generated\nsearch lan\nnameserver 127.0.0.1\nnameserver 192.0.2.53\n").unwrap();
+        assert_eq!(host_resolver_for(None, &rc), "127.0.0.1");
+        std::fs::write(&rc, "nameserver fe80::1%eth0\n").unwrap();
+        assert_eq!(host_resolver_for(None, &rc), "fe80::1%eth0");
+        std::fs::write(&rc, "nameserver not-an-ip\n").unwrap();
+        assert_eq!(host_resolver_for(None, &rc), "127.0.0.53");
+        assert_eq!(host_resolver_for(None, &dir.join("none")), "127.0.0.53");
+        assert_eq!(host_resolver_for(Some("192.0.2.1".into()), &rc), "192.0.2.1");
+        // the zone's resolv.conf
+        assert_eq!(resolv_conf_for("internet", "public", None, &rc), "nameserver 127.0.0.53\n");
+        assert_eq!(resolv_conf_for("host", "public", None, &rc), "nameserver 1.1.1.1\n");
+        assert_eq!(resolv_conf_for("none", "host", None, &rc), "");
+        assert_eq!(resolv_conf_for("host", "host", Some("192.0.2.53".into()), &rc), "nameserver 192.0.2.53\n");
+        assert_eq!(resolv_conf_for("host", "host", None, &rc), "nameserver not-an-ip\n"); // the host's own
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
