@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::{CString, OsStr, OsString};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -28,6 +28,12 @@ const MOZ_APPS: &[&str] = &["firefox", "firefox-esr", "firefox-beta", "firefox-d
 const ENV_ALLOW: &[&str] = &["TERM", "COLUMNS", "LINES", "LANG", "LC_ALL", "MOZ_HEADLESS", "NO_AT_BRIDGE"];
 const SHELL: &[&str] = &["/bin/bash", "-i"]; // NixOS zones have /bin too (the system's sw/bin)
 const TAIL: usize = 20;
+/// An app's output line, at most (longer: cut there, so a line without an end, or a huge
+/// one, cannot grow zone-init's memory); a tail entry keeps at most TAIL_TEXT of it.
+const MAX_LINE: usize = 4096;
+const TAIL_TEXT: usize = 1024;
+/// Bytes from a shell's client not yet taken by its pty (at most one read of them).
+const SHELL_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const FINISHED: usize = 64;
 // names the zone's own bus does not offer: they would start inside the zone, where they cannot work
 const ZBUS_SKIP: &[&str] = &["org.freedesktop.portal.", "org.freedesktop.impl.portal.", "org.freedesktop.Flatpak",
@@ -245,6 +251,10 @@ struct Output {
 struct Shell {
     conn: UnixStream,
     master: OwnedFd,
+    /// what the client sent that the pty did not take yet: while there is some, the
+    /// connection is not read and the pty is written when it can take more (never a
+    /// blocking write: a shell that stops reading cannot stall the agent)
+    pending: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -478,10 +488,11 @@ impl Init {
         };
         set_nonblocking(master.as_raw_fd(), true);
         reply(&mut conn, &json!({"ok": true, "pid": pid}));
-        if !rest.is_empty() {
-            write_all_fd(master.as_raw_fd(), &rest);
-        }
-        self.shells.insert(pid, Shell { conn, master });
+        // a client that stops reading ends its shell, never the agent's loop
+        let _ = conn.set_write_timeout(Some(SHELL_WRITE_TIMEOUT));
+        let mut sh = Shell { conn, master, pending: rest };
+        sh.write_pending();
+        self.shells.insert(pid, sh);
         log(&format!("shell pid {pid}"));
     }
 
@@ -528,7 +539,13 @@ impl Init {
         }
         out.part.extend_from_slice(&buf[..n as usize]);
         // whole lines out, the unfinished rest kept: one pass over the buffer
-        let Some(last) = out.part.iter().rposition(|&b| b == b'\n') else { return true };
+        let Some(last) = out.part.iter().rposition(|&b| b == b'\n') else {
+            if out.part.len() > MAX_LINE {
+                let part = std::mem::take(&mut out.part); // a line without an end: out as it is
+                self.line(pid, &label, &part);
+            }
+            return true;
+        };
         let rest = out.part.split_off(last + 1);
         let done = std::mem::replace(&mut out.part, rest);
         for l in done[..last].split(|&b| b == b'\n') {
@@ -538,12 +555,17 @@ impl Init {
     }
 
     fn line(&mut self, pid: i32, label: &str, raw: &[u8]) {
+        let raw = &raw[..raw.len().min(MAX_LINE)];
         let text = String::from_utf8_lossy(raw).trim_end_matches('\r').to_string();
-        let tail = self.tails.entry(pid).or_default();
-        if tail.len() == TAIL {
-            tail.pop_front();
+        // a tail only while the app runs (output of its children after it exited is logged,
+        // never kept)
+        if self.running.contains(&pid) {
+            let tail = self.tails.entry(pid).or_default();
+            if tail.len() == TAIL {
+                tail.pop_front();
+            }
+            tail.push_back(text.chars().take(TAIL_TEXT).collect());
         }
-        tail.push_back(text.clone());
         let mut out = std::io::stdout().lock();
         let _ = writeln!(out, "[{label} {pid}] {text}");
         let _ = out.flush();
@@ -593,9 +615,9 @@ impl Init {
                 reply(&mut conn, &json!({"exit": code}));
             }
             if let Some(mut sh) = self.shells.remove(&pid) {
-                // what the shell wrote last
+                // what the shell wrote last (bounded: the client's write timeout, 64 reads)
                 let mut buf = [0u8; 65536];
-                loop {
+                for _ in 0..64 {
                     // Safety: read from the pty master the shells table owned.
                     let n = unsafe { libc::read(sh.master.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
                     if n <= 0 || sh.conn.write_all(&buf[..n as usize]).is_err() {
@@ -616,10 +638,15 @@ impl Init {
         };
         let Some(sh) = self.shells.get_mut(&pid) else { return };
         let mut buf = [0u8; 65536];
-        let done = if from_conn {
+        let done = if from_conn && !sh.pending.is_empty() {
+            !sh.write_pending() // (the pty can take more: the poll said so)
+        } else if from_conn {
             match sh.conn.read(&mut buf) {
                 Ok(0) | Err(_) => true,
-                Ok(n) => !write_all_fd(sh.master.as_raw_fd(), &buf[..n]),
+                Ok(n) => {
+                    sh.pending.extend_from_slice(&buf[..n]);
+                    !sh.write_pending()
+                }
             }
         } else {
             // Safety: read from the pty master the shells table owns.
@@ -647,8 +674,14 @@ impl Init {
         let dir = self.zbus_dir();
         let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir);
         let _ = std::fs::remove_file(format!("{dir}/bus"));
-        std::fs::write(format!("{dir}/session.conf"), ZBUS_CONF.replace("{dir}", &dir))
-            .map_err(|e| format!("zone bus: {dir}: {}", errno_text(&e)))?;
+        // a new file, never what is there: the zone's apps can write this directory, and an
+        // entry they made (a FIFO, a link) would block or redirect the write
+        let conf = format!("{dir}/session.conf");
+        let _ = std::fs::remove_file(&conf);
+        std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC).open(&conf)
+            .and_then(|mut f| f.write_all(ZBUS_CONF.replace("{dir}", &dir).as_bytes()))
+            .map_err(|e| format!("zone bus: {conf}: {}", errno_text(&e)))?;
         self.service_links(&dir);
         let (r, w) = pipe().map_err(|e| format!("zone bus: {}", errno_text(&e)))?;
         let wfd = w.as_raw_fd();
@@ -765,21 +798,23 @@ fn alive(pid: i32) -> bool {
 }
 
 /// All of DATA to FD, waiting while the pty is full; false on an error.
-fn write_all_fd(fd: RawFd, mut data: &[u8]) -> bool {
-    while !data.is_empty() {
-        // Safety: write from our slice to a descriptor we hold.
-        let n = unsafe { libc::write(fd, data.as_ptr().cast(), data.len()) };
-        if n > 0 {
-            data = &data[n as usize..];
-        } else if n < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock {
-            let mut p = libc::pollfd { fd, events: libc::POLLOUT, revents: 0 };
-            // Safety: poll on one descriptor.
-            unsafe { libc::poll(&mut p, 1, 1000) };
-        } else {
-            return false;
+impl Shell {
+    /// As much of PENDING as the pty takes now; false when it is gone.
+    fn write_pending(&mut self) -> bool {
+        while !self.pending.is_empty() {
+            // Safety: write from our buffer to the pty master we own (non-blocking).
+            let n = unsafe { libc::write(self.master.as_raw_fd(), self.pending.as_ptr().cast(), self.pending.len()) };
+            if n > 0 {
+                self.pending.drain(..n as usize);
+            } else if n < 0 && matches!(std::io::Error::last_os_error().kind(),
+                                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted) {
+                return true; // full: the rest when the poll says it can take more
+            } else {
+                return false;
+            }
         }
+        true
     }
-    true
 }
 
 fn which(name: &str, path: &str) -> Option<String> {
@@ -976,7 +1011,12 @@ pub fn main(_args: &[String]) -> u8 {
             tags.push(Tag::Out(*fd));
         }
         for (pid, sh) in &init.shells {
-            fds.push(libc::pollfd { fd: sh.conn.as_raw_fd(), events: libc::POLLIN, revents: 0 });
+            // input: from the client, or (while some waits) into the pty when it can take it
+            fds.push(if sh.pending.is_empty() {
+                libc::pollfd { fd: sh.conn.as_raw_fd(), events: libc::POLLIN, revents: 0 }
+            } else {
+                libc::pollfd { fd: sh.master.as_raw_fd(), events: libc::POLLOUT, revents: 0 }
+            });
             tags.push(Tag::ShellIn(*pid));
             fds.push(libc::pollfd { fd: sh.master.as_raw_fd(), events: libc::POLLIN, revents: 0 });
             tags.push(Tag::ShellOut(*pid));

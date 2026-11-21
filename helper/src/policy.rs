@@ -43,7 +43,7 @@ pub const MOUNT_NEVER_INSIDE: &[&str] = &["/proc", "/sys", "/dev", "/run", "/etc
     "/usr"];
 /// Never named by a bind at all, even when the path would resolve elsewhere: /proc/PID/root
 /// and its kind resolve into another process's mount namespace (another zone's files).
-const NEVER_NAMED: &[&str] = &["/proc", "/sys", "/dev"];
+pub const NEVER_NAMED: &[&str] = &["/proc", "/sys", "/dev"];
 /// More symlinks than this on one path: a loop, or as good as one. Refused.
 const MAX_LINKS: usize = 256;
 

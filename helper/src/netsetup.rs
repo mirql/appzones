@@ -210,6 +210,16 @@ pub fn main(host: &Host, rules: &str, info: &str, name: &str, argv: Vec<String>)
     }
     let argv = pin_binds(argv, host.here.as_os_str().to_owned());
     let Some(first) = argv.first() else { die("nothing to run") };
+    // bwrap gets SIGKILL when its parent (pasta, or the server) dies: the zone ends with
+    // its server however zone-init fares (this survives the exec)
+    // Safety: prctl and getppid, no memory involved.
+    unsafe {
+        let parent = libc::getppid();
+        libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
+        if libc::getppid() != parent {
+            die("the zone's parent ended while it started");
+        }
+    }
     let err = std::os::unix::process::CommandExt::exec(std::process::Command::new(first).args(&argv[1..]));
     die(&format!("{first}: {err}"))
 }

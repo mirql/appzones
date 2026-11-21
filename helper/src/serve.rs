@@ -707,6 +707,20 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
     }
     let mut cmd = spawn(&argv);
     cmd.env("ZONE_START_TIMEOUT", format!("{timeout_s:?}"));
+    // the zone dies with this server, from outside it: pasta (or bwrap) gets SIGKILL, and
+    // _netsetup passes the same on to bwrap (a zone process can stop zone-init, whose
+    // pidfd watch is the other way the zone ends)
+    let server = std::process::id() as libc::pid_t;
+    // Safety: between fork and exec only async-signal-safe calls (prctl, getppid, _exit).
+    unsafe {
+        cmd.pre_exec(move || {
+            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
+            if libc::getppid() != server {
+                libc::_exit(1);
+            }
+            Ok(())
+        });
+    }
     if log_sock.is_some() {
         cmd.env("ZONE_LOG_SOCK", zrt.join("log.sock"));
     }

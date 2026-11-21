@@ -19,6 +19,13 @@ The config schema has its own release number (`requires = N` in
   zone-init are bounded in size and time; runtime mounts and a zone's teardown no
   longer race; `appzones shell` never blocks on a stalled zone and restores the
   terminal on a hangup.
+- Inside a zone: a zone ends with its server also when a zone process stops zone-init
+  (pasta and bwrap die with the server); zone-init's memory for an app's output is
+  bounded; a shell that stops reading no longer stalls zone-init; a file planted where
+  zone-init writes the zone bus's config cannot block it; slow DNS-over-TCP clients
+  cannot take the slots UDP queries need.
+- `appzones mount`: a mount whose target directory was moved away while it was made is
+  detached again at once; the root helper refuses paths in `/proc`, `/sys`, `/dev` itself.
 - **One binary (rust-version, stage 4 of #157)**: appzones is Rust only. The Python
   and the C zone-wayland are gone; the Nix package, `make install`, the .deb, the RPM
   and the AUR package all install `appzones-helper` (with `appzones` running its

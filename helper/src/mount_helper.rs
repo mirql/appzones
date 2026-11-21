@@ -344,6 +344,11 @@ fn do_mount(c: &Caller, zone: &str, name: &str, source: &[u8], ro: bool) -> u8 {
     if !source.starts_with(b"/") {
         die(format!("{}: must be an absolute path", show(source)));
     }
+    // never named (as the CLI refuses it too): /proc/PID/root and its kind reach into other
+    // mount namespaces, whose paths read back as this one's
+    if let Some(d) = policy::NEVER_NAMED.iter().find(|d| source == d.as_bytes() || source.starts_with(format!("{d}/").as_bytes())) {
+        die(format!("refused: {}: is inside {d}, which never enters a zone", show(source)));
+    }
     let target = [mnt.as_slice(), b"/", name.as_bytes()].concat();
     let _pfd = c.open_owned(&mnt);
     if mount_points().contains(&target) {
@@ -366,6 +371,14 @@ fn do_mount(c: &Caller, zone: &str, name: &str, source: &[u8], ro: bool) -> u8 {
     let attrs = sys::MOUNT_ATTR_NOSUID | sys::MOUNT_ATTR_NODEV | if ro { sys::MOUNT_ATTR_RDONLY } else { 0 };
     sys::mount_setattr(tree.as_raw_fd(), attrs).unwrap_or_else(|e| die(format!("mount_setattr: {}", strerror(&e))));
     sys::move_mount(tree.as_raw_fd(), tfd.as_raw_fd()).unwrap_or_else(|e| die(format!("move_mount: {}", strerror(&e))));
+    // where it went: the target directory as it is now (the caller can rename it, or a
+    // directory above it, between the check and the mount); anywhere else, undone at once
+    let landed = fd_path(tree.as_raw_fd());
+    if landed != target {
+        let undo = sys::umount2(format!("/proc/self/fd/{}", tree.as_raw_fd()).as_bytes(), libc::MNT_DETACH);
+        die(format!("{}: moved while it was mounted (to {}); {}", show(&target), show(&landed),
+                    if undo.is_ok() { "detached again" } else { "COULD NOT DETACH IT: umount it by hand" }));
+    }
     // mounted: from here nothing may fail (a closed stdout is not a failure)
     let _ = writeln!(std::io::stdout(), "mounted {} at {} ({})", show(&real), show(&target), if ro { "ro" } else { "rw" });
     0
@@ -398,7 +411,7 @@ fn do_umount(c: &Caller, zone: &str, name: &str, lazy: bool) -> u8 {
     let rc = umount_one(pfd.as_raw_fd(), &target, name.as_bytes(), lazy);
     if rc == 0 {
         let note = if lazy { " (lazily: files still open keep it until they close)" } else { "" };
-        println!("unmounted {}{note}", show(&target));
+        let _ = writeln!(std::io::stdout(), "unmounted {}{note}", show(&target)); // (a closed stdout: not a failure)
     }
     rc
 }

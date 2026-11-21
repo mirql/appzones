@@ -960,8 +960,14 @@ pkgs.testers.runNixOSTest {
             and 'bus = "zone"' in out, out
         print("PASS  on the host bus Thunar exits; appzones run reports status, output and the bus hint")
 
+        # a FIFO planted where zone-init writes the zone bus's config: it must neither block
+        # zone-init nor be used (a new file is made)
+        ok("ta", "rm -f /run/user/1000/zone-bus/session.conf; mkdir -p /run/user/1000/zone-bus && "
+                 "mkfifo /run/user/1000/zone-bus/session.conf", "a FIFO planted at zone-bus/session.conf")
         u("appzones run ta thunar")
         w1 = wait_windows("ta", "thunar", 1)
+        ok("ta", "test -f /run/user/1000/zone-bus/session.conf && ! test -p /run/user/1000/zone-bus/session.conf",
+           "zone-init made its own session.conf (the FIFO did not block it)")
         pid = w1[0]["pid"]
         out = u("appzones logs ta")
         assert "zone bus up" in out and "(bus zone)" in out, out
@@ -1161,16 +1167,25 @@ pkgs.testers.runNixOSTest {
 
     with subtest("crash containment: kill -9 of the server leaves nothing behind"):
         appz = machine.succeed("readlink -f $(command -v appzones)").strip()
-        for z, when in [("td", "running"), ("tb", "running"), ("td", "starting"), ("tb", "starting")]:
+        for z, when in [("td", "running"), ("tb", "running"), ("td", "starting"), ("tb", "starting"), ("td", "stuck")]:
             unit = f"crash-{z}-{when}"
             u(f"rm -f /tmp/{z}-ready")
             # KillMode=process: systemd cleans up nothing; what stays is what the zone left
             slow = "-E APPZONES_BIN_BWRAP=${slowBwrap} " if when == "starting" else ""
             u(f"systemd-run --user --collect --unit={unit} -p KillMode=process {slow}/bin/sh -c "
               + shlex.quote(f"exec {appz} serve {z} --notify-fd 3 3>/tmp/{z}-ready"))
-            if when == "running":
+            if when in ("running", "stuck"):
                 machine.wait_until_succeeds(f"test -s /tmp/{z}-ready", timeout=90)
                 u(f"appzones ping {z}")
+            if when == "stuck":
+                # a zone process stops zone-init (same uid: it may): the zone still ends with
+                # its server, from outside (pasta and bwrap die with it)
+                init = machine.succeed(f"for p in $(pgrep -u alice -x zone-init); do tr '\\0' '\\n' </proc/$p/environ "
+                                       f"| grep -qx ZONE={z} && echo $p; done").split()
+                assert len(init) == 1, init
+                # (from the host here: stopped from inside, `run --wait` would wait for its reply)
+                machine.succeed(f"kill -STOP {init[0]}")
+                assert "T" in machine.succeed(f"ps -o stat= -p {init[0]}"), "zone-init is not stopped"
             pid = "0"
             for _ in range(200):  # a live server, as early as possible
                 pid = u(f"systemctl --user show {unit} -p MainPID --value").strip()
