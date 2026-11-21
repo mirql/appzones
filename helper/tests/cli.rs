@@ -114,6 +114,7 @@ fn version_and_help() {
 }
 
 #[test]
+#[cfg(target_os = "linux")] // (starts or serves a zone: Linux so far)
 fn serve_arguments() {
     let b = Box_::new("serve-args", Some(TWO));
     let (rc, _, err) = b.run(&["serve", "aa", "--notify-fd", "9", "--lock-fd", "9"]);
@@ -143,6 +144,7 @@ fn hold_lock(path: &Path) -> fs::File {
 }
 
 #[test]
+#[cfg(target_os = "linux")] // (starts or serves a zone: Linux so far)
 fn one_server_per_zone() {
     let b = Box_::new("lock", Some(TWO));
     let rt = b.t.join("rt/appzones");
@@ -187,6 +189,7 @@ fn one_server_per_zone() {
 }
 
 #[test]
+#[cfg(target_os = "linux")] // (starts or serves a zone: Linux so far)
 fn supervisor_setting() {
     let b = Box_::new("supervisor", Some(TWO));
     let (rc, _, err) = b.cmd(&["up", "aa"]).env("APPZONES_SUPERVISOR", "runit").output().map(out).unwrap();
@@ -195,6 +198,7 @@ fn supervisor_setting() {
 }
 
 #[test]
+#[cfg(target_os = "linux")] // (starts or serves a zone: Linux so far)
 fn a_failed_start_shows_its_log() {
     // no `ip` on PATH: the server fails while it plans the zone
     let b = Box_::new("failed", Some(TWO));
@@ -219,6 +223,7 @@ fn a_failed_start_shows_its_log() {
 }
 
 #[test]
+#[cfg(target_os = "linux")] // (starts or serves a zone: Linux so far)
 fn each_zone() {
     let b = Box_::new("each", Some(TWO));
     // one zone that fails does not keep the others from being tried; the result says so
@@ -429,6 +434,7 @@ fn active_on_sway() {
 }
 
 #[test]
+#[cfg(target_os = "linux")] // (starts or serves a zone: Linux so far)
 fn plan_never_for_a_running_zone() {
     // the standalone plan replaces a zone's runtime directory: refused while its lock is held
     let b = Box_::new("plan-lock", Some(TWO));
@@ -447,4 +453,20 @@ fn empty_denied_paths_override() {
     let b = Box_::new("denied-empty", Some(TWO));
     let (rc, so, err) = b.cmd(&["check"]).env("APPZONES_DENIED_PATHS", "").output().map(out).unwrap();
     assert_eq!(rc, 0, "{so}{err}");
+}
+
+#[test]
+#[cfg(not(target_os = "linux"))]
+fn zones_do_not_run_here_yet() {
+    // where zones are not built yet (macOS), what would start one says so; the rest works
+    let b = Box_::new("not-yet", Some(TWO));
+    for cmd in [&["up", "aa"][..], &["run", "aa", "--", "true"], &["shell", "aa"], &["serve", "aa"],
+                &["mount", "aa", "/tmp"], &["apps"]] {
+        let (rc, _, err) = b.run(cmd);
+        assert_eq!(rc, 1, "{cmd:?}");
+        assert!(err.contains("zones do not run on this system yet"), "{cmd:?}: {err}");
+    }
+    let (rc, so, err) = b.run(&["check"]);
+    assert_eq!(rc, 0, "{so}{err}");
+    assert!(so.starts_with("ok: "), "{so}");
 }

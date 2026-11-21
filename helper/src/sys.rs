@@ -115,7 +115,7 @@ pub fn fd_path(fd: RawFd) -> Option<Vec<u8>> {
             let held = (libc::fstat(fd, &mut st) == 0).then_some((st.st_dev as u64, st.st_ino as u64, st.st_nlink as u64));
             (rc, held)
         };
-        let Some((dev, ino, links)) = held.filter(|_| rc != -1) else { return None };
+        let (dev, ino, links) = held.filter(|_| rc != -1)?;
         let n = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
         buf.truncate(n);
         let at = std::fs::symlink_metadata(std::ffi::OsStr::from_bytes(&buf)).ok()?;
