@@ -129,10 +129,13 @@ if [ $rust = yes ]; then
   # the part of appzones serve that holds the zone: the Rust runner, no Python in memory for it
   srv=$(fuser /run/user/1000/appzones/off.lock 2>/dev/null | tr -s ' ' '\n' | grep -m1 '[0-9]')
   scmd=$(tr '\0' ' ' </proc/$srv/cmdline)
-  # (Rust makes the plan too: `serve --zone`, with no Python left in the server)
-  case "$scmd" in *"appzones-helper serve --zone off "*) ;; *) fail "zone off's server is not the Rust server: $scmd";; esac
+  # all of appzones in Rust: the CLI's `serve` (or, from Python, `serve --zone`)
+  case "$scmd" in *"appzones-helper cli serve off "*|*"appzones-helper serve --zone off "*) ;;
+    *) fail "zone off's server is not the Rust server: $scmd";; esac
+  # and no Python for any appzones command: the wrapper runs the helper
+  grep -q 'appzones-helper cli' "$prefix/bin/appzones" || fail "appzones is not the Rust command line: $(cat $prefix/bin/appzones)"
   rss=$(awk '/^VmRSS/{print $2}' /proc/$srv/status)
-  pass "the Rust runner holds the zone ($rss kB RSS)"
+  pass "the Rust runner holds the zone ($rss kB RSS), and appzones is the Rust command line"
   case " $mflags " in *" MOUNT_HELPER_BIN="*)
     [ "$(head -c 4 $prefix/lib/appzones/appzones-mount-helper | od -An -c | tr -d ' ')" = '177ELF' ] \
       || fail "the mount helper is not the Rust one"

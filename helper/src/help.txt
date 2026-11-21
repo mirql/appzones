@@ -1,0 +1,56 @@
+appzones: app zones on this host (appzones, https://github.com/mirql/appzones).
+
+    appzones list [--json]                 zones: state, network, dns, devices, apps running, colour
+                                           (--json: one object per zone, for scripts and bars)
+    appzones which ZONE                    every setting in effect and where it came from
+    appzones run [--restart] [--bus B] ZONE APP [ARGS...]
+    appzones run [--restart] [--bus B] [--wait] ZONE -- CMD [ARGS...]
+                                           start the zone if needed, launch inside it.
+                                           --restart: if zones.toml changed for ZONE and no
+                                           app runs in it, restart it first.
+                                           --bus host|zone|none: the session bus the app gets
+                                           (default: the app's `bus` in [apps], also for
+                                           `-- CMD` when CMD is a declared app's command;
+                                           else the zone's `bus`).
+                                           --wait: CMD gets this stdin/stdout/stderr (pipes
+                                           or files, never a tty) and its exit code is ours.
+                                           Without --wait, `run` watches the app for a few
+                                           seconds ($APPZONES_RUN_CHECK, 0: not at all) and, if
+                                           it exits with an error, prints its last output.
+    appzones shell ZONE                    an interactive shell inside (pty in the zone)
+    appzones ps ZONE | logs ZONE [-f]      processes in the zone | its journal (-f: follow)
+    appzones up|stop|restart ZONE|--all
+    appzones new NAME [-y]                 print a safe zone block; append it to zones.toml with -y
+    appzones check [--probe ZONE]          validate zones.toml; --probe also runs isolation probes in ZONE
+    appzones --version | -V                the package version and the config release, for bug reports
+    appzones apps                          (re)write launcher entries "App (zone)" from [apps]
+    appzones active [--follow] [--json]    "[zone]" for the focused window on Hyprland or sway (for bars;
+                                           --json: Waybar custom-module JSON)
+    appzones mount ZONE HOST-DIR [--ro] [--as NAME]
+                                           HOST-DIR appears at /mnt/host/NAME in the running
+                                           zone (NAME: the folder's name), until umount or
+                                           the zone stops; same never-list as binds
+    appzones umount ZONE NAME [--lazy]     remove it; busy: lists what holds it (--lazy:
+                                           detach now, open files keep it until they close)
+    appzones mounts ZONE                   what is mounted in the zone
+    appzones serve ZONE [--notify-fd N] [--lock-fd N]
+                                           the zone itself, in the foreground: builds it, holds it,
+                                           exits when it ends (SIGTERM/SIGINT: stop). For a process
+                                           manager or a terminal; appzones@ZONE.service runs it.
+                                           Ready: sd_notify READY=1 ($NOTIFY_SOCKET), and with
+                                           --notify-fd N a newline on fd N (s6 style). One server
+                                           per zone: a second one exits 75 ("already served");
+                                           --lock-fd N: the zone's lock, taken by a caller
+
+Internal (systemd and the supervisor):
+    appzones _netsetup RULES INFO ZONE -- CMD
+                                           load nft RULES in this netns, open INFO as fd 3, make
+                                           ZONE's agent socket (for zone-init: $ZONE_CTL_FD), take
+                                           its server's pidfd ($ZONE_SERVER_FD), exec CMD
+    appzones _autostart                    write launcher entries, start zones with autostart = true
+    appzones _link ZONE URL                open URL in ZONE's browser (a zone's link, from its server)
+    appzones _cleanup ZONE                 detach ZONE's runtime mounts (its server, when it ends)
+
+Config: ~/.config/appzones/zones.toml ($APPZONES_CONFIG). State: ~/.local/share/appzones.
+Before 0.6: ~/.config/zones and ~/.local/share/zones (read, and moved; see migrate_state).
+Docs: https://mirql.github.io/appzones/ (docs/ in the repo).

@@ -49,23 +49,23 @@ const MOZ_APPS: &[&str] = &["firefox", "firefox-esr", "firefox-beta", "firefox-d
 const XDG_OPEN: &str = "#!/bin/sh\n# zone xdg-open (links = \"{links}\"): http(s) URLs open in zone {target}'s\n# browser through the zone's link socket; anything else goes to the real xdg-open.\ncase \"$1\" in\n  http://*|https://*)\n    exec {open_link} \"$1\" ;;\nesac\nexec {xdg_open} \"$@\"\n";
 const PY_OPEN_LINK: &str = "{python} -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(\"/run/zone/links.sock\"); s.sendall(sys.argv[1].encode()+b\"\\n\"); sys.exit(0 if s.recv(3)==b\"ok\\n\" else 1)'";
 
-fn sh(p: &Path) -> String {
+pub fn sh(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
-fn rp(p: &str) -> String {
+pub fn rp(p: &str) -> String {
     realpath(p.as_bytes()).map(|r| String::from_utf8_lossy(&r).into_owned()).unwrap_or_else(|| p.to_string())
 }
 
-fn lexists(p: &Path) -> bool {
+pub fn lexists(p: &Path) -> bool {
     std::fs::symlink_metadata(p).is_ok()
 }
 
-fn warn(msg: &str) {
+pub fn warn(msg: &str) {
     eprintln!("appzones: {msg}");
 }
 
-fn say(msg: &str) {
+pub fn say(msg: &str) {
     let mut out = std::io::stdout().lock();
     let _ = writeln!(out, "{msg}");
     let _ = out.flush();
@@ -132,7 +132,7 @@ impl Host {
                helper: config::env("HELPER").unwrap_or_default(), implements: Default::default() }
     }
 
-    fn zrt_in(&self) -> String {
+    pub fn zrt_in(&self) -> String {
         format!("/run/user/{}", self.uid)
     }
 
@@ -146,11 +146,11 @@ impl Host {
             })
     }
 
-    fn tool(&self, name: &str) -> Result<String, String> {
+    pub fn tool(&self, name: &str) -> Result<String, String> {
         self.find_tool(name).ok_or_else(|| format!("{name} not found on PATH, {}", SBIN_DIRS.join(", ")))
     }
 
-    fn implements(&self, helper: &str, command: &str) -> bool {
+    pub fn implements(&self, helper: &str, command: &str) -> bool {
         if let Some((_, _, v)) = self.implements.borrow().iter().find(|(h, c, _)| h == helper && c == command) {
             return *v;
         }
@@ -161,7 +161,7 @@ impl Host {
     }
 
     /// common.rust_helper.
-    fn rust_helper(&self, command: &str) -> Option<String> {
+    pub fn rust_helper(&self, command: &str) -> Option<String> {
         let candidates: Vec<String> = match config::env("BIN_APPZONES_HELPER").filter(|v| !v.is_empty()) {
             Some(o) if o.contains('/') => vec![o],
             Some(o) => vec![which(&o, None).unwrap_or(o)],
@@ -175,16 +175,16 @@ impl Host {
         candidates.into_iter().find(|p| !p.is_empty() && self.implements(p, command))
     }
 
-    fn zone_helper(&self) -> Option<String> {
+    pub fn zone_helper(&self) -> Option<String> {
         if self.helper == "rust" { self.rust_helper("zone-init") } else { None }
     }
 
-    fn zone_helper_has(&self, command: &str) -> bool {
+    pub fn zone_helper_has(&self, command: &str) -> bool {
         self.zone_helper().is_some_and(|h| RUST_HELPERS.contains(&command) && self.implements(&h, command))
     }
 
     /// common.helper_argv.
-    fn helper_argv(&self, name: &str) -> Option<Vec<String>> {
+    pub fn helper_argv(&self, name: &str) -> Option<Vec<String>> {
         if let Some(o) = config::env(&format!("BIN_{}", name.to_uppercase().replace('-', "_"))).filter(|v| !v.is_empty()) {
             return Some(vec![o]);
         }
@@ -195,7 +195,7 @@ impl Host {
     }
 }
 
-fn layout() -> &'static str {
+pub fn layout() -> &'static str {
     match config::env("LAYOUT").as_deref() {
         Some("nixos") => "nixos",
         Some("fhs") => "fhs",
@@ -572,7 +572,7 @@ fn prepare_tmp(zdir: &Path) -> Result<(), String> {
 }
 
 /// fs.host_mounts: the names mounted under STATE/ZONE/mnt.
-fn host_mounts(host: &Host, zone: &str) -> Vec<String> {
+pub fn host_mounts(host: &Host, zone: &str) -> Vec<String> {
     let pre = format!("{}/", sh(&host.state.join(zone).join("mnt")));
     let mut out: Vec<String> = Vec::new();
     for line in std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default().lines() {
@@ -588,7 +588,7 @@ fn host_mounts(host: &Host, zone: &str) -> Vec<String> {
 }
 
 /// fs.prepare_mnt: no runtime mount outlives a zone run; false when some are left.
-fn prepare_mnt(host: &Host, zone: &str, zdir: &Path) -> Result<bool, String> {
+pub fn prepare_mnt(host: &Host, zone: &str, zdir: &Path) -> Result<bool, String> {
     let mnt = zdir.join("mnt");
     mkdir_mode(&mnt, 0o700).map_err(|e| format!("{}: {e}", sh(&mnt)))?;
     std::fs::set_permissions(&mnt, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
@@ -1093,7 +1093,7 @@ fn random_hex(n: usize) -> String {
 }
 
 /// server.write_colours: "NAME #rrggbb" lines, replaced atomically.
-fn write_colours(host: &Host, cfg: &Config) -> Result<(), String> {
+pub fn write_colours(host: &Host, cfg: &Config) -> Result<(), String> {
     std::fs::create_dir_all(&host.rt).map_err(|e| e.to_string())?;
     let tmp = host.rt.join(format!(".colours.{}", random_hex(4)));
     let text: String = cfg.zones.iter().map(|z| format!("{} {}\n", z.name, z.get("colour").as_str().unwrap_or(""))).collect();
@@ -1158,7 +1158,13 @@ pub fn make_plan(host: &Host, name: &str) -> Result<J, String> {
     if crate::serve::stopped() {
         return Err(s("\0stopped"));
     }
-    let zone_py = vec![host.python.clone(), sh(&host.here.join("zone.py"))];
+    // the internal commands (_netsetup, _link, _cleanup): Python's zone.py, or with no Python
+    // (stage 3) this very helper's `cli`
+    let zone_py = if host.python.is_empty() {
+        vec![std::env::current_exe().map(|e| sh(&e)).map_err(|e| format!("own path: {e}"))?, s("cli")]
+    } else {
+        vec![host.python.clone(), sh(&host.here.join("zone.py"))]
+    };
     let links_setting = z.get("links").as_str().unwrap_or("portal").to_string();
     let target = match links_setting.as_str() {
         "portal" => None,

@@ -338,7 +338,7 @@ impl Policy {
     }
 
     /// zonecfg.kind_error: only directories and regular files are bound.
-    fn kind_error(meta: &fs::Metadata, raw: &str) -> Option<String> {
+    pub fn kind_error(meta: &fs::Metadata, raw: &str) -> Option<String> {
         let t = meta.file_type();
         if t.is_dir() || t.is_file() {
             return None;

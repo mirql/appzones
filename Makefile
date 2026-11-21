@@ -116,7 +116,12 @@ install: all preflight
 	fi
 	[ ! -f build/zone-wayland ] || install -m 755 build/zone-wayland $(DESTDIR)$(LIBDIR)/zone-wayland
 	[ ! -f $(HELPER_BIN) ] || install -m 755 $(HELPER_BIN) $(DESTDIR)$(LIBDIR)/appzones-helper
-	printf '#!/bin/sh\n%sexec %s -B %s/zone.py "$$@"\n' "$(if $(filter rust,$(HELPER)),APPZONES_HELPER=rust export APPZONES_HELPER; ,)" "$(PYTHON)" "$(LIBDIR)" > build/appzones
+	@# with the Rust helper, `appzones` is the helper's own command line (no Python runs)
+	if [ "$(HELPER)" = rust ]; then \
+		printf '#!/bin/sh\nAPPZONES_HELPER=rust export APPZONES_HELPER; exec %s/appzones-helper cli "$$@"\n' "$(LIBDIR)" > build/appzones; \
+	else \
+		printf '#!/bin/sh\nexec %s -B %s/zone.py "$$@"\n' "$(PYTHON)" "$(LIBDIR)" > build/appzones; \
+	fi
 	install -m 755 build/appzones $(DESTDIR)$(BINDIR)/appzones
 	install -m 644 examples/zones.toml $(DESTDIR)$(DATADIR)/zones.example.toml
 	install -m 644 examples/minimal.toml $(DESTDIR)$(DATADIR)/zones.minimal.toml

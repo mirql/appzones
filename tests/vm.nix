@@ -106,6 +106,9 @@ let
 
   # a "browser" for tz's links (links = "zone"): the server picks a declared app whose
   # command names firefox; this one writes the link it gets into the zone's home
+  # a bwrap that waits before it starts: a zone held "starting" for a moment, whatever the
+  # server is written in (the crash test kills its server then)
+  slowBwrap = pkgs.writeShellScript "slow-bwrap" "sleep 3; exec ${pkgs.bubblewrap}/bin/bwrap \"$@\"";
   linkCatcher = pkgs.writeShellScriptBin "firefox-link-catcher" "printf '%s\\n' \"$1\" > \"$HOME/opened-link\"";
 
   fhsHello = pkgs.buildFHSEnv {
@@ -964,15 +967,22 @@ pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ps ta | grep -q contentproc"), timeout=120)
         # one line per content process: "SECCOMP-MODE USERNS". The probe's own
         # bash also has "-contentproc" in its command line: skipped by name.
-        out = ok("ta", "for p in $(pgrep -f -- '-contentproc' | grep -v -x $$); do "
-                       "[ \"$(cat /proc/$p/comm)\" = bash ] && continue; "
-                       "echo $(awk '/^Seccomp:/{print $2}' /proc/$p/status) $(readlink /proc/$p/ns/user); done; "
-                       "echo self $(readlink /proc/self/ns/user)",
-                 "content processes listed")
+        # content processes come and go while Firefox starts, and take their seccomp filter
+        # a moment after they appear: asked again until one is sandboxed (or 60 s)
+        probe = ("for p in $(pgrep -f -- '-contentproc' | grep -v -x $$); do "
+                 "[ \"$(cat /proc/$p/comm 2>/dev/null)\" = bash ] && continue; "
+                 "echo $(awk '/^Seccomp:/{print $2}' /proc/$p/status 2>/dev/null) $(readlink /proc/$p/ns/user); done; "
+                 "echo self $(readlink /proc/self/ns/user)")
+        sandboxed, out = [], ""
+        for _ in range(120):
+            out = ok("ta", probe, "content processes listed") if not out else inside("ta", probe)[1]
+            selfns = [l.split()[1] for l in out.splitlines() if l.startswith("self ")][0]
+            procs = [l.split() for l in out.splitlines() if l.split()[:1] in (["0"], ["1"], ["2"])]
+            sandboxed = [p for p in procs if len(p) > 1 and p[0] == "2" and p[1] != selfns]
+            if sandboxed:
+                break
+            time.sleep(0.5)
         print(out)
-        selfns = [l.split()[1] for l in out.splitlines() if l.startswith("self ")][0]
-        procs = [l.split() for l in out.splitlines() if l.split()[:1] in (["0"], ["1"], ["2"])]
-        sandboxed = [p for p in procs if p[0] == "2" and p[1] != selfns]
         assert len(sandboxed) >= 1, f"no content process under seccomp in its own user namespace: {out}"
         print("PASS  content processes under seccomp in their own user namespace")
 
@@ -1093,7 +1103,8 @@ pkgs.testers.runNixOSTest {
             unit = f"crash-{z}-{when}"
             u(f"rm -f /tmp/{z}-ready")
             # KillMode=process: systemd cleans up nothing; what stays is what the zone left
-            u(f"systemd-run --user --collect --unit={unit} -p KillMode=process /bin/sh -c "
+            slow = "-E APPZONES_BIN_BWRAP=${slowBwrap} " if when == "starting" else ""
+            u(f"systemd-run --user --collect --unit={unit} -p KillMode=process {slow}/bin/sh -c "
               + shlex.quote(f"exec {appz} serve {z} --notify-fd 3 3>/tmp/{z}-ready"))
             if when == "running":
                 machine.wait_until_succeeds(f"test -s /tmp/{z}-ready", timeout=90)

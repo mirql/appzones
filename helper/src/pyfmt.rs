@@ -81,6 +81,61 @@ fn json_str(s: &str, out: &mut String) {
 
 /// json.dumps(v, sort_keys=True) with Python's defaults (", " and ": ", ensure_ascii).
 pub fn json_dumps(v: &Value, out: &mut String) {
+    json_dumps_by(v, out, true)
+}
+
+/// json.dumps(v) of a TOML value, keys in their own order.
+pub fn json_dumps_unsorted(v: &Value) -> String {
+    let mut out = String::new();
+    json_dumps_by(v, &mut out, false);
+    out
+}
+
+/// json.dumps(v) of a JSON value as Python writes it (", ", ": ", ensure_ascii, keys in order).
+pub fn py_json(v: &serde_json::Value) -> String {
+    let mut out = String::new();
+    py_json_into(v, &mut out);
+    out
+}
+
+fn py_json_into(v: &serde_json::Value, out: &mut String) {
+    use serde_json::Value as J;
+    match v {
+        J::Null => out.push_str("null"),
+        J::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        J::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
+            (Some(i), _, _) => out.push_str(&i.to_string()),
+            (_, Some(u), _) => out.push_str(&u.to_string()),
+            (_, _, Some(f)) => out.push_str(&float_repr(f)),
+            _ => out.push_str(&n.to_string()),
+        },
+        J::String(s) => json_str(s, out),
+        J::Array(a) => {
+            out.push('[');
+            for (i, x) in a.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                py_json_into(x, out);
+            }
+            out.push(']');
+        }
+        J::Object(m) => {
+            out.push('{');
+            for (i, (k, x)) in m.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                json_str(k, out);
+                out.push_str(": ");
+                py_json_into(x, out);
+            }
+            out.push('}');
+        }
+    }
+}
+
+fn json_dumps_by(v: &Value, out: &mut String, sort: bool) {
     match v {
         Value::String(s) => json_str(s, out),
         Value::Integer(i) => out.push_str(&i.to_string()),
@@ -95,13 +150,15 @@ pub fn json_dumps(v: &Value, out: &mut String) {
                 if i > 0 {
                     out.push_str(", ");
                 }
-                json_dumps(x, out);
+                json_dumps_by(x, out, sort);
             }
             out.push(']');
         }
         Value::Table(t) => {
             let mut keys: Vec<&String> = t.keys().collect();
-            keys.sort(); // code point order, as Python's sort of str
+            if sort {
+                keys.sort(); // code point order, as Python's sort of str
+            }
             out.push('{');
             for (i, k) in keys.into_iter().enumerate() {
                 if i > 0 {
@@ -109,7 +166,7 @@ pub fn json_dumps(v: &Value, out: &mut String) {
                 }
                 json_str(k, out);
                 out.push_str(": ");
-                json_dumps(&t[k], out);
+                json_dumps_by(&t[k], out, sort);
             }
             out.push('}');
         }

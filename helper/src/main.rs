@@ -11,8 +11,12 @@
 
 use std::process::ExitCode;
 
+mod active;
+mod agent;
+mod cli;
 mod config;
 mod host_dns;
+mod netsetup;
 mod open_link;
 mod plan;
 mod policy;
@@ -26,7 +30,7 @@ const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-way
                      serve --plan FILE --lock-fd L [--notify-fd N] | --version | --commands";
 
 /// The commands this build implements (`--commands`).
-const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve", "plan"];
+const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve", "plan", "cli"];
 
 fn main() -> ExitCode {
     // never a panic on an argument that is not UTF-8 (std::env::args would): lossy here,
@@ -37,6 +41,10 @@ fn main() -> ExitCode {
     }
     if raw.first().map(|a| a == "config-json").unwrap_or(false) {
         return ExitCode::from(config::config_json_main(&raw[1..])); // the differential test's view
+    }
+    if raw.first().map(|a| a == "cli").unwrap_or(false) {
+        // `appzones` itself (its wrapper runs this when installed with the Rust helper)
+        return ExitCode::from(cli::main(&raw[1..]).clamp(0, 255) as u8);
     }
     if raw.first().map(|a| a == "plan").unwrap_or(false) {
         return ExitCode::from(plan::plan_main(&raw[1..])); // a zone's plan, as appzones serve's first part
