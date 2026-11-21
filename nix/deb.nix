@@ -20,5 +20,8 @@ pkgs.runCommand "appzones-deb"
     SOURCE_DATE_EPOCH=${toString epoch} HELPER_BIN=${portable}/bin/appzones-helper \
       MOUNT_HELPER_BIN=${portable}/bin/appzones-mount-helper sh tree/contrib/debian/build-deb.sh $out
     dpkg-deb --info $out/*.deb
-    dpkg-deb --contents $out/*.deb
+    dpkg-deb --contents $out/*.deb > contents
+    cat contents
+    # ./ is the system's /: 0755, never mktemp's 0700
+    head -1 contents | grep -q '^drwxr-xr-x root/root .* \./$'
   ''
