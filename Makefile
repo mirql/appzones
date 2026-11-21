@@ -66,6 +66,8 @@ preflight: build
 	@# absolute and canonical (no . or .. or //), so the sudo rule's checks see where it really is
 	@case "$(PREFIX)" in /*) ;; *) echo "PREFIX must be an absolute path (not $(PREFIX))"; exit 1;; esac
 	@[ "$(PREFIX)" = "$(abspath $(PREFIX))" ] || { echo "PREFIX must be a plain path, without . or .. ($(PREFIX))"; exit 1; }
+	@case "$(LIBDIR)" in /*) ;; *) echo "LIBDIR must be an absolute path (not $(LIBDIR))"; exit 1;; esac
+	@[ "$(LIBDIR)" = "$(abspath $(LIBDIR))" ] || { echo "LIBDIR must be a plain path, without . or .. ($(LIBDIR))"; exit 1; }
 	@[ "$(USE_APPARMOR)" != yes ] || { command -v bwrap >/dev/null && command -v pasta >/dev/null; } \
 		|| { echo "install bubblewrap and passt first: the AppArmor profile names them (or APPARMOR=no)"; exit 1; }
 
@@ -93,9 +95,10 @@ install: all preflight
 		done && \
 		echo "systemd user units in $(UNITDIR) (each user: systemctl --user daemon-reload)"; \
 	fi
-	@# the sudo rule names a file root runs: outside /usr only when that file and every
-	@# directory above it belong to root and nobody else can write them (a real install)
-	@if [ "$(SUDOERS)" = yes ] && case "$(PREFIX)" in /usr|/usr/*) false;; esac; then \
+	@# the sudo rule names a file root runs (in LIBDIR): outside /usr only when that file and
+	@# every directory above it belong to root and nobody else can write them (a real install).
+	@# (/usr/local is root:staff 2775 on Debian; staff is root's equal there already)
+	@if [ "$(SUDOERS)" = yes ] && case "$(LIBDIR)" in /usr|/usr/*) false;; esac; then \
 		safe=no; \
 		if [ -z "$(DESTDIR)" ]; then \
 			safe=yes; d="$(LIBDIR)/appzones-mount-helper"; \

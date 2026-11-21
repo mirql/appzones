@@ -535,6 +535,13 @@ pkgs.testers.runNixOSTest {
         print(u("systemctl --user status appzones@ta.service --no-pager -n 20"))
         u("systemctl --user is-active appzones@ta.service")
         print(u("appzones list"))
+        # what the sway hook names a window by (sway before 1.11): the zone's processes in
+        # its unit's cgroup, as the host sees it
+        pid = u("systemctl --user show appzones@ta.service -p MainPID --value").strip()
+        init = machine.succeed(f"pgrep -u alice -x zone-init -s $(ps -o sid= -p {pid}) || pgrep -u alice -x zone-init").split()
+        cg = [machine.succeed(f"cat /proc/{p}/cgroup").strip() for p in init]
+        assert any("/appzones.slice/appzones@ta.service" in c for c in cg), cg
+        print("PASS  the zone's processes are in appzones.slice/appzones@ta.service (the sway hook's cgroup rule)")
 
     with subtest("filesystem and process isolation"):
         ok("ta", "touch ~/probe && test -w ~", "zone home writable")

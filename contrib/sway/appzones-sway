@@ -21,9 +21,13 @@
 # Sway has no per-window border colour; marks show in the title bar with `show_marks yes`.
 #
 # The work is `appzones _sway-marks` (helper/src/active.rs); this file only finds it:
-# the appzones installed with it (PREFIX/share/appzones/contrib/sway -> PREFIX/bin),
-# else the one on $PATH.
-here=$(dirname "$(readlink -f "$0")")
-own="$here/../../../../bin/appzones"
-[ -x "$own" ] && exec "$own" _sway-marks
+# the appzones installed with it (PREFIX/share/appzones/contrib/sway -> PREFIX/bin), else
+# the one on $PATH. Only from an installed layout: run from a checkout, the same relative
+# path could name any file (~/bin/appzones), which nothing vouches for.
+here=$(dirname "$(readlink -f "$0")") || exit 1
+case "$here" in
+  */share/appzones/contrib/sway)
+    own="${here%/share/appzones/contrib/sway}/bin/appzones"
+    [ -x "$own" ] && exec "$own" _sway-marks ;;
+esac
 exec appzones _sway-marks

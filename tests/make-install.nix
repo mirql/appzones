@@ -47,6 +47,11 @@ pkgs.runCommand "appzones-make-install"
     make DESTDIR=$PWD/stage3 PREFIX=/opt/appzones APPARMOR=no SYSTEMD=no $bins install > opt.log
     grep -q "no sudo rule" opt.log
     [ -x stage3/opt/appzones/libexec/appzones/appzones-helper ] && [ ! -e stage3/etc/sudoers.d/appzones ]
+    # the check is on where the mount helper goes (LIBDIR), whatever PREFIX says
+    make DESTDIR=$PWD/stage5 PREFIX=/usr LIBDIR=/home/alice/az APPARMOR=no SYSTEMD=no $bins install > lib.log
+    grep -q "no sudo rule" lib.log && [ ! -e stage5/etc/sudoers.d/appzones ]
+    # and LIBDIR is a plain absolute path
+    if make DESTDIR=$PWD/stage6 LIBDIR=lib/az $bins install >/dev/null 2>&1; then echo "a relative LIBDIR accepted"; exit 1; fi
     # PREFIX=/usr (a distribution package): the units where systemd looks for them; LIBDIR its choice
     make DESTDIR=$PWD/stage2 PREFIX=/usr LIBDIR=/usr/lib/appzones SYSTEMD=yes SUDOERS=yes MOUNT_USERS=%appzones \
       APPARMOR=no $bins install >/dev/null

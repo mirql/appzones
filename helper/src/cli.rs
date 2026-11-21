@@ -273,16 +273,17 @@ impl Cli {
         proc_argv(pid).and_then(|(a, c)| server_command(&a, &c, &self.host.here)).is_some_and(|(_, z)| z == name)
     }
 
-    /// The zones whose lock someone holds now (a server runs them).
+    /// The zones whose lock file a process of this user holds open (a server runs them, or
+    /// a client is starting one): by the processes' descriptors, never by taking the lock,
+    /// which would make a server starting in that instant give up.
     fn locked_zones(&self) -> Vec<String> {
         let Ok(it) = std::fs::read_dir(self.rt()) else { return vec![] };
         it.filter_map(|e| e.ok()).filter_map(|e| {
             let n = e.file_name().to_string_lossy().into_owned();
             let zone = n.strip_suffix(".lock").filter(|z| zone_name_ok(z))?.to_string();
-            let f = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
-                .open(e.path()).ok()?;
-            // taken and given back at once (closing the file releases it), or held by a server
-            (!flock_nb(std::os::fd::AsRawFd::as_raw_fd(&f))).then_some(zone)
+            let m = std::fs::symlink_metadata(e.path()).ok().filter(|m| m.is_file())?;
+            let lock = (m.dev(), m.ino());
+            my_pids().iter().any(|(p, _)| Self::holds(p, lock)).then_some(zone)
         }).collect()
     }
 
@@ -1458,8 +1459,6 @@ impl Cli {
         }
         let mut running: Vec<String> = my_pids().into_iter().filter_map(|(p, _)| proc_argv(&p))
             .filter(|(a, c)| server_command(a, c, &self.host.here).is_some()).map(|(a, _)| a.join(" ")).collect();
-        // and every server since the lock (0.7), whatever it is written in: a zone lock held
-        running.extend(self.locked_zones());
         if running.iter().any(|r| r.contains("/libexec/zones/")) {
             warn("zones started by appzones before 0.6 are running and this version does not see them: `appzones stop \
                   --all`, then start them again");
@@ -1476,6 +1475,8 @@ impl Cli {
             }
             return;
         }
+        // and every server since the lock (0.7), whatever it is written in: a zone lock held
+        running.extend(self.locked_zones());
         let mounted = std::fs::read_to_string("/proc/self/mountinfo").map(|t| t.lines().filter_map(|l| l.split_whitespace().nth(4))
             .any(|m| m == sh(&legacy) || m.starts_with(&format!("{}/", sh(&legacy))))).unwrap_or(true);
         if !running.is_empty() || mounted {

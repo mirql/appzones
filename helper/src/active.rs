@@ -264,7 +264,9 @@ pub fn sway_hook() -> i32 {
             }
         }
         for w in &open {
-            mark(&mut cmds, w)?;
+            if let Err(e) = mark(&mut cmds, w) {
+                eprintln!("appzones-sway: marking a window: {e}");
+            }
         }
         loop {
             let ev = match recv(&mut events) {
@@ -274,7 +276,10 @@ pub fn sway_hook() -> i32 {
             };
             if ev.get("change").and_then(Value::as_str) == Some("new") {
                 if let Some(c) = ev.get("container").filter(|c| c.is_object()) {
-                    mark(&mut cmds, c)?;
+                    // one window's failure is not the others': logged, and the hook goes on
+                    if let Err(e) = mark(&mut cmds, c) {
+                        eprintln!("appzones-sway: marking a window: {e}");
+                    }
                 }
             }
         }
