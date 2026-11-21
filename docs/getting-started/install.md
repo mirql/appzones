@@ -265,8 +265,9 @@ appzones builds on macOS (Apple silicon), but zones do not run there yet: `appzo
 check`, `list`, `which` and `new` work, and `up`, `run`, `shell`, `restart`, `serve`,
 `mount`, `apps` and `check --probe` say that zones do not run on this system yet. The
 plan (macOS's own sandbox, Seatbelt) is in `design/macos.md` in the repository. To build
-it: `nix develop` (or Rust 1.85 or newer), then `cd helper && cargo build --release`;
-the command is `helper/target/release/appzones-helper cli` (as `appzones`).
+it, in the checkout: `nix develop` (or Rust 1.85 or newer), then
+`cargo build --release --manifest-path helper/Cargo.toml`; the command is then
+`helper/target/release/appzones-helper cli` (as `appzones`), from the checkout.
 
 ## Requirements
 
