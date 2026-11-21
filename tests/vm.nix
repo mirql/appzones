@@ -112,6 +112,42 @@ let
     if package != null then package else pkgs.callPackage ../nix/package.nix { }
   }/libexec/appzones/appzones-helper zone-wayland";
   slowBwrap = pkgs.writeShellScript "slow-bwrap" "sleep 3; exec ${pkgs.bubblewrap}/bin/bwrap \"$@\"";
+  # a notification server that, like gnome-shell, has more on the same connection (here
+  # org.example.Other.Poke, standing in for Mutter's RemoteDesktop): a zone may notify, but
+  # never call the rest through the owner's unique name
+  fakeNotifier = pkgs.writeText "fake-notifier.py" ''
+    import asyncio
+    from dbus_next.aio import MessageBus
+    from dbus_next.service import ServiceInterface, method
+
+    class Notifications(ServiceInterface):
+        def __init__(self):
+            super().__init__("org.freedesktop.Notifications")
+
+        @method()
+        def GetServerInformation(self) -> "ssss":
+            return ["fake", "appzones-test", "1", "1.2"]
+
+    class Other(ServiceInterface):
+        def __init__(self):
+            super().__init__("org.example.Other")
+
+        @method()
+        def Poke(self) -> "s":
+            open("/tmp/poked", "w").write("x")
+            return "poked"
+
+    async def main():
+        bus = await MessageBus().connect()
+        bus.export("/org/freedesktop/Notifications", Notifications())
+        bus.export("/poke", Other())
+        await bus.request_name("org.freedesktop.Notifications")
+        open("/tmp/notifier", "w").write(bus.unique_name)
+        await asyncio.Future()
+
+    asyncio.run(main())
+  '';
+  notifierPython = pkgs.python3.withPackages (ps: [ ps.dbus-next ]);
   linkCatcher = pkgs.writeShellScriptBin "firefox-link-catcher" "printf '%s\\n' \"$1\" > \"$HOME/opened-link\"";
 
   fhsHello = pkgs.buildFHSEnv {
@@ -642,6 +678,23 @@ pkgs.testers.runNixOSTest {
         print(out)
         assert rc != 0 and "AccessDenied" in out, out
         print("PASS  RemoteDesktop portal refused by the proxy")
+        # notifications: only their own interface, not the whole connection that owns the name
+        u("rm -f /tmp/notifier /tmp/poked; systemd-run --user --collect --unit=fake-notifier "
+          "${notifierPython}/bin/python3 ${fakeNotifier}")
+        machine.wait_until_succeeds("test -s /tmp/notifier", timeout=30)
+        owner = machine.succeed("cat /tmp/notifier").strip()
+        ok("ta", "gdbus call --session -d org.freedesktop.Notifications -o /org/freedesktop/Notifications "
+                 "-m org.freedesktop.Notifications.GetServerInformation | grep -q appzones-test",
+           "a notification server answers through the proxy")
+        rc, out = inside("ta", f"gdbus call --session -d {owner} -o /poke -m org.example.Other.Poke")
+        print(out)
+        assert rc != 0 and "AccessDenied" in out, out
+        machine.succeed("test ! -e /tmp/poked")
+        rc, out = inside("ta", "gdbus call --session -d org.freedesktop.Notifications -o /poke -m org.example.Other.Poke")
+        assert rc != 0, out
+        machine.succeed("test ! -e /tmp/poked")
+        u("systemctl --user stop fake-notifier")
+        print("PASS  the notification server's other interfaces (by its name or its unique name) refused")
         # no blanket org.mpris.MediaPlayer2.*: owning implies talking to the host's and other zones' players
         refused("ta", "gdbus call --session -d org.freedesktop.DBus -o /org/freedesktop/DBus "
                       "-m org.freedesktop.DBus.RequestName org.mpris.MediaPlayer2.zoneprobe 4",
@@ -907,8 +960,14 @@ pkgs.testers.runNixOSTest {
             and 'bus = "zone"' in out, out
         print("PASS  on the host bus Thunar exits; appzones run reports status, output and the bus hint")
 
+        # a FIFO planted where zone-init writes the zone bus's config: it must neither block
+        # zone-init nor be used (a new file is made)
+        ok("ta", "rm -f /run/user/1000/zone-bus/session.conf; mkdir -p /run/user/1000/zone-bus && "
+                 "mkfifo /run/user/1000/zone-bus/session.conf", "a FIFO planted at zone-bus/session.conf")
         u("appzones run ta thunar")
         w1 = wait_windows("ta", "thunar", 1)
+        ok("ta", "test -f /run/user/1000/zone-bus/session.conf && ! test -p /run/user/1000/zone-bus/session.conf",
+           "zone-init made its own session.conf (the FIFO did not block it)")
         pid = w1[0]["pid"]
         out = u("appzones logs ta")
         assert "zone bus up" in out and "(bus zone)" in out, out
@@ -1108,16 +1167,25 @@ pkgs.testers.runNixOSTest {
 
     with subtest("crash containment: kill -9 of the server leaves nothing behind"):
         appz = machine.succeed("readlink -f $(command -v appzones)").strip()
-        for z, when in [("td", "running"), ("tb", "running"), ("td", "starting"), ("tb", "starting")]:
+        for z, when in [("td", "running"), ("tb", "running"), ("td", "starting"), ("tb", "starting"), ("td", "stuck")]:
             unit = f"crash-{z}-{when}"
             u(f"rm -f /tmp/{z}-ready")
             # KillMode=process: systemd cleans up nothing; what stays is what the zone left
             slow = "-E APPZONES_BIN_BWRAP=${slowBwrap} " if when == "starting" else ""
             u(f"systemd-run --user --collect --unit={unit} -p KillMode=process {slow}/bin/sh -c "
               + shlex.quote(f"exec {appz} serve {z} --notify-fd 3 3>/tmp/{z}-ready"))
-            if when == "running":
+            if when in ("running", "stuck"):
                 machine.wait_until_succeeds(f"test -s /tmp/{z}-ready", timeout=90)
                 u(f"appzones ping {z}")
+            if when == "stuck":
+                # a zone process stops zone-init (same uid: it may): the zone still ends with
+                # its server, from outside (pasta and bwrap die with it)
+                init = machine.succeed(f"for p in $(pgrep -u alice -x zone-init); do tr '\\0' '\\n' </proc/$p/environ "
+                                       f"| grep -qx ZONE={z} && echo $p; done").split()
+                assert len(init) == 1, init
+                # (from the host here: stopped from inside, `run --wait` would wait for its reply)
+                machine.succeed(f"kill -STOP {init[0]}")
+                assert "T" in machine.succeed(f"ps -o stat= -p {init[0]}"), "zone-init is not stopped"
             pid = "0"
             for _ in range(200):  # a live server, as early as possible
                 pid = u(f"systemctl --user show {unit} -p MainPID --value").strip()

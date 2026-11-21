@@ -40,7 +40,7 @@ pub fn request(rt: &std::path::Path, name: &str, req: &Value, fds: &[RawFd], tim
 
 /// A connection within T: a full queue (a stalled zone-init) is waited for that long, never
 /// forever (a blocking connect would wait for zone-init to accept).
-fn connect_within(path: &std::path::Path, t: Duration) -> Result<UnixStream, String> {
+pub fn connect_within(path: &std::path::Path, t: Duration) -> Result<UnixStream, String> {
     use std::os::unix::ffi::OsStrExt;
     let bytes = path.as_os_str().as_bytes();
     let end = std::time::Instant::now() + t;
@@ -81,7 +81,17 @@ fn connect_within(path: &std::path::Path, t: Duration) -> Result<UnixStream, Str
     }
 }
 
+/// The most descriptors one request passes (the control buffer below holds them).
+const MAX_FDS: usize = 8;
+/// The longest reply line read (a ps of a busy zone is far below it).
+const MAX_REPLY: usize = 8 << 20;
+
+/// DATA with FDS (SCM_RIGHTS) on S, all of it: what sendmsg did not take goes after it,
+/// without the descriptors again.
 fn send_with_fds(s: &UnixStream, data: &[u8], fds: &[RawFd]) -> std::io::Result<()> {
+    if fds.is_empty() || fds.len() > MAX_FDS {
+        return Err(std::io::Error::other(format!("{} descriptors in one request (1 to {MAX_FDS})", fds.len())));
+    }
     let mut iov = libc::iovec { iov_base: data.as_ptr() as *mut _, iov_len: data.len() };
     let mut cmsg = vec![0u64; 8];
     let len = std::mem::size_of_val(fds) as u32;
@@ -97,9 +107,18 @@ fn send_with_fds(s: &UnixStream, data: &[u8], fds: &[RawFd]) -> std::io::Result<
         (*c).cmsg_type = libc::SCM_RIGHTS;
         (*c).cmsg_len = libc::CMSG_LEN(len) as _;
         std::ptr::copy_nonoverlapping(fds.as_ptr(), libc::CMSG_DATA(c).cast::<RawFd>(), fds.len());
-        libc::sendmsg(s.as_raw_fd(), &msg, libc::MSG_NOSIGNAL)
+        loop {
+            let n = libc::sendmsg(s.as_raw_fd(), &msg, libc::MSG_NOSIGNAL);
+            if n >= 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                break n;
+            }
+        }
     };
-    if n < 0 { Err(std::io::Error::last_os_error()) } else { Ok(()) }
+    if n < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let mut w = s;
+    w.write_all(&data[n as usize..])
 }
 
 /// One JSON line from S; it and the bytes after it (pass them back as BUF for the next).
@@ -111,6 +130,9 @@ pub fn readline(mut s: &UnixStream, mut buf: Vec<u8>) -> Result<(Value, Vec<u8>)
             break;
         }
         buf.extend_from_slice(&chunk[..n]);
+        if buf.len() > MAX_REPLY && !buf.contains(&b'\n') {
+            return Err(format!("a reply longer than {} MiB", MAX_REPLY >> 20));
+        }
     }
     let (line, rest) = match buf.iter().position(|b| *b == b'\n') {
         Some(i) => (buf[..i].to_vec(), buf[i + 1..].to_vec()),

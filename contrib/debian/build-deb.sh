@@ -2,7 +2,7 @@
 # The .deb of appzones (amd64), from this checkout: `sh contrib/debian/build-deb.sh OUTDIR`.
 # Its two binaries: HELPER_BIN and MOUNT_HELPER_BIN when set (`nix build .#deb` gives
 # nix/portable.nix's, which run on glibc 2.17 and later), else built here with cargo (they
-# then need this machine's glibc or newer). Needs make and dpkg-deb.
+# then need this machine's glibc or newer, and the package says so). Needs make, readelf and dpkg-deb.
 set -eu
 out=$(realpath "${1:?usage: build-deb.sh OUTDIR}")
 cd "$(dirname "$0")/../.."
@@ -23,13 +23,17 @@ install -d -m 755 "$root/DEBIAN"
 install -m 755 contrib/debian/postinst contrib/debian/postrm "$root/DEBIAN/"
 echo /etc/sudoers.d/appzones > "$root/DEBIAN/conffiles"
 size=$(du -sk "$root" | cut -f1)
+# libc6: the newest glibc symbol version the binaries use (2.17 for nix/portable.nix's; a
+# cargo build here needs this machine's), never less than 2.17
+glibc=$(readelf -V "$root/usr/lib/appzones/appzones-helper" "$root/usr/lib/appzones/appzones-mount-helper" 2>/dev/null \
+  | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | { cat; echo 2.17; } | sort -V | tail -1)
 cat > "$root/DEBIAN/control" <<CONTROL
 Package: appzones
 Version: $version-1
 Architecture: amd64
 Maintainer: Askar Amirov <59274133+askaramirov@users.noreply.github.com>
 Installed-Size: $size
-Depends: bubblewrap, passt, nftables, iproute2, passwd, libc6 (>= 2.17)
+Depends: bubblewrap, passt, nftables, iproute2, passwd, libc6 (>= $glibc)
 Recommends: sudo, xdg-dbus-proxy, dbus
 Suggests: apparmor
 Section: admin

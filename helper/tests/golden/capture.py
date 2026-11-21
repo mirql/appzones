@@ -52,6 +52,7 @@ def tree(root: Path) -> list:
                 out.append({"path": rel, "special": "socket" if p.is_socket() else "fifo"})
             elif p.is_file():
                 data = p.read_bytes().replace(str(root).encode(), b"{T}")
+                os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))  # (reading it must not make it "used")
                 out.append({"path": rel, "mode": st.st_mode & 0o7777, "age": round(now - st.st_mtime),
                             "data": base64.b64encode(data).decode()})
         dirs[:] = [d for d in dirs if not (Path(dirpath) / d).is_symlink()]
@@ -120,7 +121,9 @@ def capture_config() -> list:
     T.CONFIG_DIFF["helper"] = "capture"
     try:
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(T.ZonecfgTest)
-        unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
+        log = io.StringIO()
+        if not unittest.TextTestRunner(stream=log, verbosity=0).run(suite).wasSuccessful():
+            sys.exit("the Python suite failed; nothing captured:\n" + log.getvalue())
     finally:
         T._diff_load_text = real_hook
         T.CONFIG_DIFF["helper"] = None

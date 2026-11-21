@@ -29,6 +29,9 @@ rustPlatform.buildRustPackage {
     # the commands from the outside, in a temporary home
     "--test"
     "cli"
+    # the agent protocol of zone-init
+    "--test"
+    "agent"
   ];
   APPZONES_GOLDEN = "1";
   stripAllList = [ "bin" ]; # the symbol table too, not only debug info

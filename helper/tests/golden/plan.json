@@ -246,7 +246,7 @@
 "appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
 "appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
 "appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
-"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)",
 "appzones: theme: not copying {T}/home/.config/fontconfig/key (it resolves to a path that never enters a zone)",
 "appzones: usb: no device matches abcd now; the zone starts without one (plug it in, then `appzones restart alpha`)"
 ],
@@ -298,7 +298,7 @@
 "rt/appzones/alpha/nft.rules": [
 "file",
 "0o644",
-"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16 } accept\n    ip daddr { 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } reject\n  }\n}\n"
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16 } accept\n    ip daddr { 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
 ],
 "rt/appzones/alpha/plan.json": [
 "plan",
@@ -370,8 +370,12 @@
 "--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Camera.*",
 "--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
 "--talk=org.freedesktop.portal.Documents",
-"--talk=org.freedesktop.Notifications",
-"--talk=org.kde.StatusNotifierWatcher",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
 "--own=dev.mirql.zone.alpha.*",
 "--own=org.mozilla.firefox_zone_alpha.*",
 "--own=org.mozilla.firefox_esr_zone_alpha.*",
@@ -1012,7 +1016,7 @@
 "appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
 "appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
 "appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
-"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included"
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)"
 ],
 "files": {
 "rt/.flatpak": [
@@ -1062,7 +1066,7 @@
 "rt/appzones/beta/nft.rules": [
 "file",
 "0o644",
-"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } reject\n  }\n}\n"
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::6446:0/112, 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
 ],
 "rt/appzones/beta/plan.json": [
 "plan",
@@ -1126,8 +1130,12 @@
 "--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
 "--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
 "--talk=org.freedesktop.portal.Documents",
-"--talk=org.freedesktop.Notifications",
-"--talk=org.kde.StatusNotifierWatcher",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
 "--own=dev.mirql.zone.beta.*",
 "--own=org.mozilla.firefox_zone_beta.*",
 "--own=org.mozilla.firefox_esr_zone_beta.*",
@@ -1635,7 +1643,7 @@
 "appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
 "appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
 "appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
-"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)",
 "appzones: theme: not copying {T}/home/.config/fontconfig/key (it resolves to a path that never enters a zone)"
 ],
 "files": {
@@ -1682,7 +1690,7 @@
 "rt/appzones/gamma/nft.rules": [
 "file",
 "0o644",
-"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } reject\n  }\n}\n"
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::6446:0/112, 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
 ],
 "rt/appzones/gamma/plan.json": [
 "plan",
@@ -1751,8 +1759,12 @@
 "--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
 "--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
 "--talk=org.freedesktop.portal.Documents",
-"--talk=org.freedesktop.Notifications",
-"--talk=org.kde.StatusNotifierWatcher",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
 "--own=dev.mirql.zone.gamma.*",
 "--own=org.mozilla.firefox_zone_gamma.*",
 "--own=org.mozilla.firefox_esr_zone_gamma.*",
@@ -2321,7 +2333,7 @@
 "appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
 "appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
 "appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
-"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)",
 "appzones: theme: not copying {T}/home/.config/fontconfig/key (it resolves to a path that never enters a zone)",
 "appzones: usb: no device matches abcd now; the zone starts without one (plug it in, then `appzones restart alpha`)"
 ],
@@ -2373,7 +2385,7 @@
 "rt/appzones/alpha/nft.rules": [
 "file",
 "0o644",
-"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16 } accept\n    ip daddr { 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } reject\n  }\n}\n"
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16 } accept\n    ip daddr { 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
 ],
 "rt/appzones/alpha/plan.json": [
 "plan",
@@ -2448,8 +2460,12 @@
 "--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Camera.*",
 "--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
 "--talk=org.freedesktop.portal.Documents",
-"--talk=org.freedesktop.Notifications",
-"--talk=org.kde.StatusNotifierWatcher",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
 "--own=dev.mirql.zone.alpha.*",
 "--own=org.mozilla.firefox_zone_alpha.*",
 "--own=org.mozilla.firefox_esr_zone_alpha.*",
@@ -3087,7 +3103,7 @@
 "appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
 "appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
 "appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
-"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included"
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)"
 ],
 "files": {
 "rt/.flatpak": [
@@ -3137,7 +3153,7 @@
 "rt/appzones/beta/nft.rules": [
 "file",
 "0o644",
-"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } reject\n  }\n}\n"
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::6446:0/112, 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
 ],
 "rt/appzones/beta/plan.json": [
 "plan",
@@ -3204,8 +3220,12 @@
 "--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
 "--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
 "--talk=org.freedesktop.portal.Documents",
-"--talk=org.freedesktop.Notifications",
-"--talk=org.kde.StatusNotifierWatcher",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
 "--own=dev.mirql.zone.beta.*",
 "--own=org.mozilla.firefox_zone_beta.*",
 "--own=org.mozilla.firefox_esr_zone_beta.*",
@@ -3710,7 +3730,7 @@
 "appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
 "appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
 "appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
-"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)",
 "appzones: theme: not copying {T}/home/.config/fontconfig/key (it resolves to a path that never enters a zone)"
 ],
 "files": {
@@ -3757,7 +3777,7 @@
 "rt/appzones/gamma/nft.rules": [
 "file",
 "0o644",
-"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } reject\n  }\n}\n"
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::6446:0/112, 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
 ],
 "rt/appzones/gamma/plan.json": [
 "plan",
@@ -3829,8 +3849,12 @@
 "--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
 "--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
 "--talk=org.freedesktop.portal.Documents",
-"--talk=org.freedesktop.Notifications",
-"--talk=org.kde.StatusNotifierWatcher",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
 "--own=dev.mirql.zone.gamma.*",
 "--own=org.mozilla.firefox_zone_gamma.*",
 "--own=org.mozilla.firefox_esr_zone_gamma.*",

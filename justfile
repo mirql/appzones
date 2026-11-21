@@ -10,7 +10,7 @@ test:
 
 # Validate a zones.toml (default: the example)
 check file="examples/zones.toml":
-    cd helper && cargo run --release -q --bin appzones-helper -- cli check "$(realpath ../{{file}})"
+    cd helper && APPZONES_CONFIG="$(realpath ../{{file}})" cargo run --release -q --bin appzones-helper -- cli check
 
 # Build the package (every Rust test runs in its build, the golden files' too)
 build:

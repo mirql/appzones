@@ -48,7 +48,9 @@ fn main() -> ExitCode {
     }
     if raw.first().map(|a| a == "cli").unwrap_or(false) {
         // `appzones` itself (its wrapper runs this when installed with the Rust helper)
-        return ExitCode::from(cli::main(&raw[1..]).clamp(0, 255) as u8);
+        // the low byte, as an exit status is (Python's sys.exit(-15) is 241: killed by
+        // SIGTERM), never a negative clamped to success
+        return ExitCode::from((cli::main(&raw[1..]) & 0xff) as u8);
     }
     if raw.first().map(|a| a == "plan").unwrap_or(false) {
         return ExitCode::from(plan::plan_main(&raw[1..])); // a zone's plan, as appzones serve's first part
@@ -91,7 +93,7 @@ fn check_mount_source(args: &[std::ffi::OsString]) -> u8 {
         eprintln!("{USAGE}");
         2
     };
-    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None, state_dir: None };
+    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None, state_dir: None, extra: vec![] };
     let (mut paths, mut list) = (Vec::new(), false);
     let mut it = args.iter();
     while let Some(a) = it.next() {

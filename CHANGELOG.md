@@ -5,6 +5,28 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **Tighter by default** (review of the Rust code; the same gaps were in Python):
+  a zone's D-Bus proxy gives notifications and the tray their own interfaces only,
+  not the whole connection that owns the name (on GNOME, gnome-shell's, with Mutter's
+  RemoteDesktop on it); the never-list adds the live config file wherever it points
+  (and `$APPZONES_CONFIG`, `$APPZONES_STATE`), more files the host runs at login,
+  binds under `/usr` and any path in `/proc`, `/sys`, `/dev`; `env` refuses `LD_*`,
+  `ZONE_*`, `NIX_LD*`, `HYPRLAND_*` and malformed names; `dbus` refuses the portal
+  itself, Mutter, kglobalaccel and other zones' names; the nft deny list covers the
+  same addresses through NAT64; `/etc/environment` is no longer bound into zones.
+  `network = "host"`'s warning says it shares the host's abstract sockets (Xwayland's).
+- More robust: a link opened from a zone no longer holds up the server; replies from
+  zone-init are bounded in size and time; runtime mounts and a zone's teardown no
+  longer race; `appzones shell` never blocks on a stalled zone and restores the
+  terminal on a hangup.
+- Inside a zone: a zone ends with its server also when a zone process stops zone-init
+  (pasta and bwrap die with the server); zone-init's memory for an app's output is
+  bounded (and an app's last lines are kept); a shell, or its client, that stops reading
+  no longer stalls zone-init; a file planted where
+  zone-init writes the zone bus's config cannot block it; slow DNS-over-TCP clients
+  cannot take the slots UDP queries need.
+- `appzones mount`: a mount whose target directory was moved away while it was made is
+  detached again at once; the root helper refuses paths in `/proc`, `/sys`, `/dev` itself.
 - **One binary (rust-version, stage 4 of #157)**: appzones is Rust only. The Python
   and the C zone-wayland are gone; the Nix package, `make install`, the .deb, the RPM
   and the AUR package all install `appzones-helper` (with `appzones` running its

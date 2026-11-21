@@ -11,7 +11,7 @@
 //! linger, and ends with it: helpers stopped, the zone's runtime mounts detached.
 
 use std::collections::HashSet;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::os::unix::net::{UnixDatagram, UnixListener, UnixStream};
@@ -205,9 +205,18 @@ fn send_fd(sock: &UnixStream, data: &[u8], fd: RawFd) -> std::io::Result<()> {
         (*c).cmsg_type = libc::SCM_RIGHTS;
         (*c).cmsg_len = libc::CMSG_LEN(std::mem::size_of::<RawFd>() as u32) as _;
         std::ptr::write_unaligned(libc::CMSG_DATA(c).cast::<RawFd>(), fd);
-        libc::sendmsg(sock.as_raw_fd(), &msg, libc::MSG_NOSIGNAL)
+        loop {
+            let n = libc::sendmsg(sock.as_raw_fd(), &msg, libc::MSG_NOSIGNAL);
+            if n >= 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                break n;
+            }
+        }
     };
-    if n < 0 { Err(std::io::Error::last_os_error()) } else { Ok(()) }
+    if n < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let mut w = sock;
+    w.write_all(&data[n as usize..]) // (the rest, without the descriptor again)
 }
 
 /// One request to zone-init (the agent protocol, a JSON line each way); None when it does
@@ -217,8 +226,25 @@ fn agent(zrt: &Path, req: &Value, timeout: Duration) -> Option<Value> {
     s.set_read_timeout(Some(timeout)).ok()?;
     s.set_write_timeout(Some(timeout)).ok()?;
     s.write_all(format!("{req}\n").as_bytes()).ok()?;
-    let mut line = String::new();
-    BufReader::new(s).read_line(&mut line).ok()?;
+    // one line, within TIMEOUT in all and 8 MiB: a zone-init that drips bytes or never ends
+    // its line does not hold the server
+    let end = Instant::now() + timeout;
+    let mut buf = Vec::new();
+    while !buf.contains(&b'\n') {
+        let left = end.saturating_duration_since(Instant::now());
+        if left.is_zero() || buf.len() > 8 << 20 {
+            return None;
+        }
+        s.set_read_timeout(Some(left)).ok()?;
+        let mut chunk = [0u8; 65536];
+        match s.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return None,
+        }
+    }
+    let line = String::from_utf8_lossy(&buf[..buf.iter().position(|b| *b == b'\n').unwrap_or(buf.len())]).into_owned();
     if line.trim().is_empty() {
         return Some(json!({}));
     }
@@ -422,8 +448,29 @@ fn relay_output(listener: UnixListener, timeout: Duration, done: mpsc::Sender<()
 }
 
 /// One link from the zone's link socket: COMMAND + [url] opens it (`appzones _link`).
+/// Links being opened now: each in its own thread, so the server goes on supervising (and
+/// stops when asked) while a browser takes its time; at most this many at once.
+static LINKS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+const MAX_LINKS: usize = 4;
+
 fn handle_link(listener: &UnixListener, command: &[String]) {
+    use std::sync::atomic::Ordering;
     let Ok((mut conn, _)) = listener.accept() else { return };
+    if LINKS.fetch_add(1, Ordering::SeqCst) >= MAX_LINKS {
+        LINKS.fetch_sub(1, Ordering::SeqCst);
+        let _ = conn.set_nonblocking(false);
+        let _ = conn.set_write_timeout(Some(Duration::from_secs(1)));
+        let _ = conn.write_all(b"no\n");
+        return;
+    }
+    let command = command.to_vec();
+    std::thread::spawn(move || {
+        open_link(conn, &command);
+        LINKS.fetch_sub(1, Ordering::SeqCst);
+    });
+}
+
+fn open_link(mut conn: UnixStream, command: &[String]) {
     let _ = conn.set_nonblocking(false);
     let _ = conn.set_read_timeout(Some(Duration::from_secs(2)));
     let mut buf = vec![0u8; 8192];
@@ -660,6 +707,20 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
     }
     let mut cmd = spawn(&argv);
     cmd.env("ZONE_START_TIMEOUT", format!("{timeout_s:?}"));
+    // the zone dies with this server, from outside it: pasta (or bwrap) gets SIGKILL, and
+    // _netsetup passes the same on to bwrap (a zone process can stop zone-init, whose
+    // pidfd watch is the other way the zone ends)
+    let server = std::process::id() as libc::pid_t;
+    // Safety: between fork and exec only async-signal-safe calls (prctl, getppid, _exit).
+    unsafe {
+        cmd.pre_exec(move || {
+            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
+            if libc::getppid() != server {
+                libc::_exit(1);
+            }
+            Ok(())
+        });
+    }
     if log_sock.is_some() {
         cmd.env("ZONE_LOG_SOCK", zrt.join("log.sock"));
     }
@@ -780,6 +841,7 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader};
 
     fn v(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| s.to_string()).collect()

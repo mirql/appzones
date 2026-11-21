@@ -28,6 +28,19 @@ fn enabled() -> bool {
     true
 }
 
+/// APPZONES_GOLDEN_WRITE=DIR: write this helper's answers there, as golden files, instead
+/// of comparing (helper/tests/golden/update.nix; then review the diff before copying them).
+fn write_to() -> Option<PathBuf> {
+    std::env::var_os("APPZONES_GOLDEN_WRITE").map(PathBuf::from)
+}
+
+fn write_golden(name: &str, v: &Value) {
+    let dir = write_to().unwrap();
+    fs::create_dir_all(&dir).unwrap();
+    let text = if name == "config.json" { serde_json::to_string(v).unwrap() } else { serde_json::to_string_pretty(v).unwrap() };
+    fs::write(dir.join(name), text + "\n").unwrap();
+}
+
 fn golden(name: &str) -> Value {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(name);
     serde_json::from_slice(&fs::read(&p).unwrap()).unwrap()
@@ -137,11 +150,12 @@ fn same_configs() {
     if !enabled() {
         return;
     }
-    let g = golden("config.json");
-    let trees = g["trees"].as_array().unwrap();
-    let cases = g["cases"].as_array().unwrap();
+    let mut g = golden("config.json");
+    let trees = g["trees"].as_array().unwrap().clone();
+    let cases = g["cases"].as_array().unwrap().clone();
     let mut diffs = Vec::new();
-    for case in cases {
+    let mut new_wants = Vec::new();
+    for case in &cases {
         let tmp = Tmp::new("config");
         let t = tmp.0.to_str().unwrap();
         let tree = match &case["tree"] {
@@ -161,10 +175,17 @@ fn same_configs() {
             Ok(v) => subst(&v, &[(t, "{T}")]),
             Err(_) => {
                 diffs.push(format!("{text}\n  no JSON: {}", String::from_utf8_lossy(&out.stderr)));
+                new_wants.push(case["want"].clone());
                 continue;
             }
         };
         let want = &case["want"];
+        // (a parse error, and an integer beyond 64 bits, keep Python's answer: the accepted
+        // differences; anything else is this helper's answer now)
+        let accepted = case["parsed"] == Value::Bool(false)
+            || (!want["errors"].as_array().unwrap().is_empty() && got["errors"].as_array().unwrap().len() == 1
+                && got["errors"][0].as_str().unwrap().contains("number too large"));
+        new_wants.push(if accepted { want.clone() } else { got.clone() });
         if case["parsed"] == Value::Bool(false) {
             // the TOML parsers word their errors apart: both refuse it, naming the file
             let e = got["errors"].as_array().unwrap();
@@ -182,6 +203,17 @@ fn same_configs() {
         if &got != want && !too_large {
             diffs.push(format!("{text}\n  python: {want}\n  rust:   {got}"));
         }
+    }
+    if write_to().is_some() {
+        // (never a golden file with an old answer kept for a case that gave none)
+        let missing: Vec<&String> = diffs.iter().filter(|d| d.contains("\n  no JSON: ")).collect();
+        assert!(missing.is_empty(), "{} configurations gave no JSON, nothing written:\n{}", missing.len(),
+                missing.iter().take(3).map(|d| d.as_str()).collect::<Vec<_>>().join("\n"));
+        for (c, w) in g["cases"].as_array_mut().unwrap().iter_mut().zip(new_wants) {
+            c["want"] = w;
+        }
+        write_golden("config.json", &g);
+        return;
     }
     for d in diffs.iter().take(5) {
         eprintln!("--- differs:\n{d}");
@@ -210,8 +242,8 @@ fn snapshot(t: &Path) -> serde_json::Map<String, Value> {
         for p in all {
             let rel = p.strip_prefix(t).unwrap().to_str().unwrap().to_string();
             let name = p.file_name().unwrap().to_str().unwrap();
-            if name.starts_with(".colours.") {
-                continue;
+            if name.starts_with(".colours.") || (name.ends_with(".lock") && rel.matches('/').count() == 2) {
+                continue; // (a zone's lock: the plan command takes it, as the server does)
             }
             let md = fs::symlink_metadata(&p).unwrap();
             let mode = format!("0o{:o}", md.permissions().mode() & 0o777);
@@ -235,9 +267,10 @@ fn same_plans() {
     if !enabled() {
         return;
     }
-    let cases = golden("plan.json");
+    let mut cases = golden("plan.json");
     let path = std::env::var("PATH").unwrap_or_default();
     let mut n = 0;
+    let mut news = Vec::new();
     for case in cases.as_array().unwrap() {
         let tmp = Tmp::new("plan");
         let t = tmp.0.join("f");
@@ -260,6 +293,10 @@ fn same_plans() {
             "files": snapshot(&t),
         });
         let got = subst(&got, &[(HELPER, "{HELPER}"), (&path, "{PATH}"), (ts, "{T}")]);
+        if write_to().is_some() {
+            news.push(got);
+            continue;
+        }
         let want = &case["want"];
         let what = format!("{} {}", case["layout"], zone);
         assert_eq!(got["rc"], want["rc"], "{what}: exit status; stderr {}", got["stderr"]);
@@ -274,6 +311,13 @@ fn same_plans() {
         }
         n += 1;
     }
+    if write_to().is_some() {
+        for (c, w) in cases.as_array_mut().unwrap().iter_mut().zip(news) {
+            c["want"] = w;
+        }
+        write_golden("plan.json", &cases);
+        return;
+    }
     assert_eq!(n, 6);
 }
 
@@ -282,7 +326,7 @@ fn same_policy() {
     if !enabled() {
         return;
     }
-    let g = golden("policy.json");
+    let mut g = golden("policy.json");
     let tmp = Tmp::new("policy");
     let t = tmp.0.to_str().unwrap();
     build(&tmp.0, &g["tree"]);
@@ -294,6 +338,12 @@ fn same_policy() {
     let text = String::from_utf8(out.stdout).unwrap();
     let lines: Vec<Value> = text.trim_end_matches('\n').split('\n')
         .map(|l| subst(&serde_json::from_str(l).unwrap(), &[(t, "{T}")])).collect();
+    if write_to().is_some() {
+        g["denied"] = lines[0].clone();
+        g["want"] = Value::Array(lines[1..].to_vec());
+        write_golden("policy.json", &g);
+        return;
+    }
     assert_eq!(lines[0], g["denied"], "the never-list");
     let want = g["want"].as_array().unwrap();
     assert_eq!(lines.len() - 1, want.len());

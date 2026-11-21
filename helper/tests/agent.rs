@@ -134,11 +134,11 @@ fn send(s: &UnixStream, data: &[u8], fds: &[RawFd]) -> std::io::Result<()> {
         msg.msg_iov = &mut iov;
         msg.msg_iovlen = 1;
         msg.msg_control = cbuf.as_mut_ptr().cast();
-        msg.msg_controllen = cbuf.len();
+        msg.msg_controllen = cbuf.len() as _;
         let c = libc::CMSG_FIRSTHDR(&msg);
         (*c).cmsg_level = libc::SOL_SOCKET;
         (*c).cmsg_type = libc::SCM_RIGHTS;
-        (*c).cmsg_len = libc::CMSG_LEN(size) as usize;
+        (*c).cmsg_len = libc::CMSG_LEN(size) as _;
         std::ptr::copy_nonoverlapping(fds.as_ptr(), libc::CMSG_DATA(c).cast(), fds.len());
         if libc::sendmsg(s.as_raw_fd(), &msg, 0) < 0 {
             return Err(std::io::Error::last_os_error());
@@ -304,6 +304,49 @@ fn shell() {
     let _ = s.read_to_end(&mut out);
     let out = String::from_utf8_lossy(&out);
     assert!(out.contains("30 100") && out.contains("shell-dumb-ok"), "{out}");
+}
+
+#[test]
+fn output_is_bounded() {
+    // an app's output without line ends, or with huge lines, keeps zone-init's memory
+    // bounded: each tail entry at most 1 KiB, and the last lines still there
+    let z = Init::new("bounded");
+    let r = z.request(json!({"op": "run", "argv": ["sh", "-c", "head -c 3000000 /dev/zero | tr '\\0' a; echo; echo done"]}));
+    let pid = r["pid"].as_i64().unwrap_or_else(|| panic!("{r}"));
+    let mut st = json!({});
+    for _ in 0..200 {
+        st = z.request(json!({"op": "status", "pid": pid}));
+        if st["running"] == json!(false) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(st["running"], json!(false), "{st}");
+    let tail = st["tail"].as_array().unwrap();
+    assert!(tail.iter().all(|t| t.as_str().unwrap().chars().count() <= 1024));
+    assert_eq!(tail.last(), Some(&json!("done")), "{st}");
+}
+
+#[test]
+fn shell_that_never_reads() {
+    // a shell that stops reading its input (and a client that never reads the echo) cannot
+    // stall zone-init: it still answers
+    let z = Init::new("noread");
+    let mut s = z.connect(&json!({"op": "shell", "rows": 24, "cols": 80, "term": "dumb", "argv": ["sh", "-c", "sleep 30"]}), &[]);
+    let mut first = Vec::new();
+    while !first.ends_with(b"\n") {
+        let mut c = [0u8; 1];
+        assert_eq!(s.read(&mut c).unwrap(), 1);
+        first.push(c[0]);
+    }
+    let mut w = s.try_clone().unwrap();
+    std::thread::spawn(move || {
+        let _ = w.write_all(&vec![b'x'; 2 << 20]);
+    });
+    std::thread::sleep(Duration::from_secs(1));
+    let t0 = Instant::now();
+    assert_eq!(z.request(json!({"op": "ping"}))["ok"], json!(true));
+    assert!(t0.elapsed() < Duration::from_secs(3), "{:?}", t0.elapsed());
 }
 
 #[test]

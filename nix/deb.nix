@@ -12,6 +12,7 @@ pkgs.runCommand "appzones-deb"
     nativeBuildInputs = [
       pkgs.dpkg
       pkgs.gnumake
+      pkgs.binutils # readelf: the glibc the binaries need
     ];
     src = pkgs.lib.cleanSource ../.;
   }

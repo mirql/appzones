@@ -30,7 +30,7 @@ const ZONE_HELPER: &str = "/run/appzones-helper";
 pub const RUST_HELPERS: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve", "plan"];
 const SBIN_DIRS: &[&str] = &["/usr/sbin", "/sbin"];
 const FHS_ETC: &[&str] = &["alternatives", "ld.so.cache", "ld.so.conf", "ld.so.conf.d", "services", "protocols",
-    "gai.conf", "ca-certificates", "bash.bashrc", "debian_version", "lsb-release", "environment"];
+    "gai.conf", "ca-certificates", "bash.bashrc", "debian_version", "lsb-release"];
 const ETC: &[&str] = &["static", "fonts", "ssl", "pki", "passwd", "group", "nsswitch.conf", "localtime", "zoneinfo",
     "mime.types", "xdg", "profile", "hosts", "host.conf", "login.defs", "os-release", "pulse", "alsa", "asound.conf",
     "gtk-3.0", "gtk-2.0", "machine-info", "locale.conf", "vconsole.conf", "pipewire", "egl", "vulkan", "inputrc",
@@ -71,6 +71,47 @@ pub fn say(msg: &str) {
 }
 
 /// shutil.which: NAME (a path when it has a slash) on PATH, an executable file.
+/// CMD's output (stdout and stderr captured), waited for at most TIMEOUT (None: as long as
+/// it takes) and, with STOPPABLE, only until the server is asked to stop. A child that runs
+/// past either is killed and reaped: None.
+pub fn output_within(cmd: &mut Command, timeout: Option<std::time::Duration>, stoppable: bool) -> Option<std::process::Output> {
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().ok()?;
+    let (mut so, mut se) = (child.stdout.take()?, child.stderr.take()?);
+    // the output in threads that report through channels: a descendant that keeps a pipe
+    // open after the command exited holds only its reader, never this caller past the deadline
+    let (otx, orx) = std::sync::mpsc::channel();
+    let (etx, erx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || { let mut b = Vec::new(); let _ = so.read_to_end(&mut b); let _ = otx.send(b); });
+    std::thread::spawn(move || { let mut b = Vec::new(); let _ = se.read_to_end(&mut b); let _ = etx.send(b); });
+    let end = timeout.map(|t| std::time::Instant::now() + t);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) if end.is_some_and(|e| std::time::Instant::now() > e) || (stoppable && crate::serve::stopped()) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            Err(_) => return None,
+        }
+    };
+    let collect = |rx: &std::sync::mpsc::Receiver<Vec<u8>>| loop {
+        let left = end.map(|e| e.saturating_duration_since(std::time::Instant::now()));
+        if left.is_some_and(|l| l.is_zero()) || (stoppable && crate::serve::stopped()) {
+            return None;
+        }
+        match rx.recv_timeout(left.unwrap_or(std::time::Duration::from_secs(1)).min(std::time::Duration::from_millis(200))) {
+            Ok(b) => return Some(b),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(_) => return None,
+        }
+    };
+    let stdout = collect(&orx)?;
+    let stderr = collect(&erx)?;
+    Some(std::process::Output { status, stdout, stderr })
+}
+
 pub fn which(name: &str, path: Option<&str>) -> Option<String> {
     let exe = |p: &Path| {
         std::fs::metadata(p).is_ok_and(|m| m.is_file())
@@ -149,8 +190,9 @@ impl Host {
         if let Some((_, _, v)) = self.implements.borrow().iter().find(|(h, c, _)| h == helper && c == command) {
             return *v;
         }
-        let v = Command::new(helper).arg("--commands").stdin(Stdio::null()).stderr(Stdio::null()).output()
-            .is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).split_whitespace().any(|c| c == command));
+        // (5 s: a helper that hangs is one that does not implement it)
+        let v = output_within(Command::new(helper).arg("--commands"), Some(std::time::Duration::from_secs(5)), false)
+            .is_some_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).split_whitespace().any(|c| c == command));
         self.implements.borrow_mut().push((helper.into(), command.into(), v));
         v
     }
@@ -184,7 +226,7 @@ impl Host {
 fn find_tool_in(name: &str, over: Option<String>, path: Option<&str>, dirs: &[String]) -> Option<String> {
     over.filter(|v| !v.is_empty())
         .or_else(|| which(name, Some(path.unwrap_or("/bin:/usr/bin"))))
-        .or_else(|| which(name, Some(&dirs.join(":"))))
+        .or_else(|| dirs.iter().find_map(|d| which(&format!("{}/{name}", d.trim_end_matches('/')), None)))
 }
 
 pub fn layout() -> &'static str {
@@ -239,17 +281,15 @@ fn system_env(layout: &str, user: &str) -> (String, String, String) {
      s("/usr/share/zoneinfo"))
 }
 
-/// One path is P itself or inside D (Path.is_relative_to), both normalized.
-fn rel_to(p: &str, d: &str) -> bool {
-    p == d || d == "/" || p.strip_prefix(d).is_some_and(|r| r.starts_with('/'))
-}
 
 /// zonecfg.theme_source_error.
-fn theme_source_error(policy: &Policy, real: &str) -> Option<String> {
-    let home_real = rp(&policy.home.to_string_lossy());
-    if !rel_to(real, &home_real) {
-        if let Some(d) = THEME_NEVER_INSIDE.iter().find(|d| rel_to(real, d)) {
-            return Some(format!("{real} is inside {d}"));
+fn theme_source_error(policy: &Policy, real: &[u8]) -> Option<String> {
+    use crate::policy::{inside, realpath, same};
+    let shown = String::from_utf8_lossy(real).into_owned(); // (only for what is said)
+    let Some(home_real) = realpath(policy.home.as_bytes()) else { return Some(format!("{shown}: the home cannot be resolved")) };
+    if !(same(real, &home_real) || inside(real, &home_real)) {
+        if let Some(d) = THEME_NEVER_INSIDE.iter().find(|d| same(real, d.as_bytes()) || inside(real, d.as_bytes())) {
+            return Some(format!("{shown} is inside {d}"));
         }
     }
     let denied = match policy.denied_paths() {
@@ -257,20 +297,24 @@ fn theme_source_error(policy: &Policy, real: &str) -> Option<String> {
         Err(e) => return Some(e),
     };
     for d in denied {
-        let shown = String::from_utf8_lossy(&d).into_owned();
-        let dr = rp(&shown);
-        if rel_to(real, &dr) {
-            return Some(format!("{real} is inside {shown}, which never enters a zone"));
+        // compared as bytes, resolved as they are (a name that is not UTF-8 too); an entry
+        // that cannot be resolved refuses
+        let Some(dr) = realpath(&d) else {
+            return Some(format!("{}: cannot be resolved, which never enters a zone", String::from_utf8_lossy(&d)));
+        };
+        if same(real, &dr) || inside(real, &dr) {
+            return Some(format!("{shown} is inside {}, which never enters a zone", String::from_utf8_lossy(&d)));
         }
     }
     None
 }
 
-/// zonecfg.fd_path: the path of an open descriptor, None when unlinked or not absolute.
-fn fd_path(fd: i32) -> Option<String> {
+
+/// fd_path as the kernel gives it, byte for byte.
+fn fd_path_bytes(fd: i32) -> Option<Vec<u8>> {
     let t = std::fs::read_link(format!("/proc/self/fd/{fd}")).ok()?;
-    let t = sh(&t);
-    (!t.ends_with(" (deleted)") && t.starts_with('/')).then_some(t)
+    let t = t.as_os_str().as_bytes().to_vec();
+    (!t.ends_with(b" (deleted)") && t.starts_with(b"/")).then_some(t)
 }
 
 struct Budget;
@@ -287,7 +331,7 @@ impl Theme<'_> {
             return Ok(Ok(())); // dangling link, no permission: skip quietly
         };
         let ok = f.metadata().is_ok_and(|m| m.is_file())
-            && fd_path(f.as_raw_fd()).is_some_and(|r| theme_source_error(self.policy, &r).is_none());
+            && fd_path_bytes(f.as_raw_fd()).is_some_and(|r| theme_source_error(self.policy, &r).is_none());
         if !ok {
             warn(&format!("theme: not copying {} (it resolves to a path that never enters a zone)", sh(src)));
             return Ok(Ok(()));
@@ -318,8 +362,9 @@ impl Theme<'_> {
         Ok(Ok(()))
     }
 
-    fn dir(&mut self, src: &Path, dst: &Path, seen: &mut BTreeSet<String>, depth: usize) -> Result<Result<(), Budget>, std::io::Error> {
-        let real = rp(&sh(src));
+    fn dir(&mut self, src: &Path, dst: &Path, seen: &mut BTreeSet<Vec<u8>>, depth: usize) -> Result<Result<(), Budget>, std::io::Error> {
+        // (a directory that cannot be resolved is not copied)
+        let Some(real) = crate::policy::realpath(src.as_os_str().as_bytes()) else { return Ok(Ok(())) };
         if depth > 12 || seen.contains(&real) || theme_source_error(self.policy, &real).is_some() {
             return Ok(Ok(()));
         }
@@ -518,10 +563,15 @@ fn package_paths(z: &Zone, zdir: &Path) -> Vec<String> {
         let link = roots.join(&attr);
         let expr = format!("(import (builtins.getFlake \"nixpkgs\").outPath {{ system = builtins.currentSystem; \
                             config.allowUnfree = true; }}).{attr}");
-        let r = Command::new("nix").args(["build", "--impure", "--out-link"]).arg(&link).args(["--expr", &expr])
-            .stdin(Stdio::null()).output();
+        if crate::serve::stopped() {
+            break; // asked to stop: no more builds (make_plan returns the stop)
+        }
+        // (as long as it takes, but never past a stop: the build is ended then)
+        let r = output_within(Command::new("nix").args(["build", "--impure", "--out-link"]).arg(&link).args(["--expr", &expr]),
+                              None, true).ok_or("stopped");
         match r {
             Ok(o) if o.status.success() => out.push(format!("{}/bin", rp(&sh(&link)))),
+            Err(_) if crate::serve::stopped() => break,
             Ok(o) => {
                 let err = String::from_utf8_lossy(&o.stderr);
                 let last: Vec<&str> = err.trim().lines().last().into_iter().collect();
@@ -759,7 +809,15 @@ fn nft_rules_for(netbird: bool, iface: &str, addrs: Vec<(String, IpAddr, u8)>) -
         nb6 = collapse(&nbn.iter().copied().filter(|n| n.v6).collect::<Vec<_>>());
     }
     let lan4 = collapse(&nets.iter().copied().filter(|n| !n.v6 && !nb4.contains(n)).collect::<Vec<_>>());
-    let lan6 = collapse(&nets.iter().copied().filter(|n| n.v6 && !nb6.contains(n)).collect::<Vec<_>>());
+    // what is refused over IPv4 is refused through NAT64 too (64:ff9b::/96, RFC 6052): a
+    // NAT64 gateway on the LAN would translate it back
+    let nat64 = |n: &Net| Net { v6: true, addr: (0x64ff9b_u128 << 96) | n.addr, prefix: n.prefix + 96 };
+    let mut lan6_all: Vec<Net> = nets.iter().copied().filter(|n| n.v6 && !nb6.contains(n)).collect();
+    lan6_all.extend(lan4.iter().map(nat64));
+    let lan6 = collapse(&lan6_all);
+    mine6.extend(mine4.iter().map(|a| (0x64ff9b_u128 << 96) | a));
+    mine6.sort();
+    mine6.dedup();
     let join_ips = |v6: bool, x: &[u128]| x.iter().map(|a| show_ip(v6, *a)).collect::<Vec<_>>().join(", ");
     let join_nets = |x: &[Net]| x.iter().map(Net::show).collect::<Vec<_>>().join(", ");
     let mut rules = String::new();
@@ -784,7 +842,10 @@ fn nft_rules_for(netbird: bool, iface: &str, addrs: Vec<(String, IpAddr, u8)>) -
     format!("table inet zone {{\n  chain out {{\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n\
 {rules}    ip daddr {{ 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               \
 192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 }} reject\n    ip6 daddr {{ ::1, ::ffff:0:0/96, \
-fc00::/7, fe80::/10, ff00::/8 }} reject\n  }}\n}}\n")
+fc00::/7, fe80::/10, ff00::/8,\n                \
+::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                \
+64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                \
+64:ff9b::e000:0/99 }} reject\n  }}\n}}\n")
 }
 
 /// net.resolv_conf.
@@ -849,9 +910,17 @@ fn dbus_rules(z: &Zone) -> Vec<String> {
                     "--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Introspectable.*",
                     "--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Peer.*"]);
     r.extend(allowed.iter().map(|p| format!("--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.{p}.*")));
+    // notifications and the tray: their own interfaces at their own paths, never a talk: the
+    // proxy gives a name's rights to the connection that owns it, and on GNOME that is
+    // gnome-shell's, with Mutter's RemoteDesktop (input) on it; on KDE plasmashell's
     r.extend(v(&["--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
-                 "--talk=org.freedesktop.portal.Documents", "--talk=org.freedesktop.Notifications",
-                 "--talk=org.kde.StatusNotifierWatcher"]));
+                 "--talk=org.freedesktop.portal.Documents",
+                 "--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+                 "--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+                 "--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+                 "--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+                 "--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+                 "--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher"]));
     r.push(format!("--own=dev.mirql.zone.{}.*", z.name));
     r.extend(MOZ_APPS.iter().map(|a| format!("--own=org.mozilla.{}.*", moz_remoting_name(&z.name, a))));
     let dbus = z.get("dbus").as_table();
@@ -1340,6 +1409,21 @@ pub fn plan_main(args: &[OsString]) -> u8 {
         return 2;
     };
     let host = Host::new(code.unwrap_or_else(exe_dir));
+    // never for a zone that runs: the plan replaces its runtime directory (the server takes
+    // the lock itself; this is the same lock, held while the plan is made)
+    if !crate::policy::zone_name_ok(&name) {
+        eprintln!("appzones: not a zone name: {}", py_repr(&name));
+        return 2;
+    }
+    let _ = std::fs::create_dir_all(&host.rt);
+    let lock = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).mode(0o600)
+        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW).open(host.rt.join(format!("{name}.lock")));
+    // Safety: flock on our own descriptor.
+    let held = lock.as_ref().is_ok_and(|f| unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(f), libc::LOCK_EX | libc::LOCK_NB) } == 0);
+    if !held {
+        eprintln!("appzones: zone {name} is running (or starting): no plan made for it now");
+        return 1;
+    }
     match make_plan(&host, &name).and_then(|p| write_plan(&p)) {
         Ok(path) => {
             println!("{}", sh(&path));
@@ -1384,7 +1468,7 @@ mod tests {
         }
         std::fs::write(t.join("denied-paths"), "").unwrap();
         let policy = Policy { home: h.clone().into(), code_dir: t.join("code").into(),
-                              denied_file: Some(t.join("denied-paths").into()), state_dir: None };
+                              denied_file: Some(t.join("denied-paths").into()), state_dir: None, extra: vec![] };
         (t, h, policy)
     }
 
@@ -1459,16 +1543,16 @@ mod tests {
         let secret = h.join(".gitconfig");
         std::fs::write(&secret, "SECRET").unwrap();
         let f = std::fs::File::open(&secret).unwrap();
-        assert!(fd_path(f.as_raw_fd()).is_some());
+        assert!(fd_path_bytes(f.as_raw_fd()).is_some());
         std::fs::write(h.join(".gitconfig.new"), "new").unwrap();
         std::fs::rename(h.join(".gitconfig.new"), &secret).unwrap(); // an atomic save
-        assert_eq!(fd_path(f.as_raw_fd()), None);
+        assert_eq!(fd_path_bytes(f.as_raw_fd()), None);
         // an O_PATH descriptor of a directory removed after it was opened
         let d = h.join("Docs/gone");
         std::fs::create_dir(&d).unwrap();
         let g = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_PATH).open(&d).unwrap();
         std::fs::remove_dir(&d).unwrap();
-        assert_eq!(fd_path(g.as_raw_fd()), None);
+        assert_eq!(fd_path_bytes(g.as_raw_fd()), None);
         let _ = std::fs::remove_dir_all(&t);
     }
 
@@ -1638,6 +1722,15 @@ mod tests {
     }
 
     #[test]
+    fn commands_within_a_deadline() {
+        let t0 = std::time::Instant::now();
+        assert!(output_within(Command::new("sleep").arg("10"), Some(std::time::Duration::from_millis(200)), false).is_none());
+        assert!(t0.elapsed() < std::time::Duration::from_secs(3));
+        let o = output_within(Command::new("sh").args(["-c", "echo out; echo err >&2"]), Some(std::time::Duration::from_secs(5)), false).unwrap();
+        assert_eq!((o.stdout.as_slice(), o.stderr.as_slice()), (&b"out\n"[..], &b"err\n"[..]));
+    }
+
+    #[test]
     fn nft() {
         let a = |i: &str, x: &str, p: u8| (i.to_string(), x.parse::<IpAddr>().unwrap(), p);
         let addrs = vec![a("lo", "127.0.0.1", 8), a("lo", "::1", 128), a("eth0", "203.0.113.7", 24),
@@ -1648,9 +1741,15 @@ mod tests {
         for rules in [&plain, &nb] {
             // every host address refused (never the host itself)
             assert!(rules.contains("ip daddr { 100.70.12.34, 100.70.99.1, 203.0.113.7 } reject"), "{rules}");
-            assert!(rules.contains("ip6 daddr { 2001:db8:1::7, fe80::1 } reject"), "{rules}");
-            // a LAN with global IPv6 or public IPv4 too
-            assert!(rules.contains("ip6 daddr { 2001:db8:1::/64 } reject"), "{rules}");
+            // (and through NAT64: 64:ff9b::/96 with the IPv4 address in its last 32 bits)
+            assert!(rules.contains("ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::6446:6301, 64:ff9b::cb00:7107, 2001:db8:1::7, \
+                                    fe80::1 } reject"), "{rules}");
+            // a LAN with global IPv6 or public IPv4 too, the IPv4 one through NAT64 as well
+            assert!(rules.contains("64:ff9b::cb00:7100/120, 2001:db8:1::/64 } reject"), "{rules}");
+            // the private ranges through NAT64, and RFC 8215's local-use NAT64 prefix
+            for n in ["64:ff9b:1::/48", "64:ff9b::a00:0/104", "64:ff9b::c0a8:0/112", "64:ff9b::7f00:0/104"] {
+                assert!(rules.contains(n), "{n}: {rules}");
+            }
             assert!(!rules.contains("127.0.0.1,"), "{rules}");
         }
         assert!(plain.contains("ip daddr { 100.70.0.0/16, 203.0.113.0/24 } reject"), "{plain}");
@@ -1698,11 +1797,4 @@ mod tests {
         assert_eq!(c(&["::/0"]), vec!["::/0"]);
     }
 
-    #[test]
-    fn rels() {
-        assert!(rel_to("/a/b", "/a"));
-        assert!(rel_to("/a", "/a"));
-        assert!(!rel_to("/ab", "/a"));
-        assert!(rel_to("/x", "/"));
-    }
 }

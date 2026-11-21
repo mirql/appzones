@@ -60,6 +60,9 @@ fn out(line: &str) {
 pub struct Cli {
     pub host: Host,
     legacy_config: bool,
+    /// .state.lock, held shared while this command uses the pre-0.6 state directory (no
+    /// move starts under it)
+    state_hold: Option<std::fs::File>,
 }
 
 /// common.server_command: (subcommand, zone) when ARGV is a zone server of any appzones
@@ -87,7 +90,10 @@ fn server_command(argv: &[String], cwd: &str, here: &Path) -> Option<(String, St
         && parent.and_then(Path::parent).and_then(Path::file_name).is_some_and(|n| n == "libexec")
         && sh(&path).starts_with("/nix/store/");
     let own = std::fs::canonicalize(here.join("zone.py")).ok();
-    (own.as_deref() == Some(path.as_path()) || installed).then(|| (rest[0].clone(), rest[1].clone()))
+    // (an appzones from before the lock whose zone.py an upgrade removed, still running it)
+    let removed = !path.exists() && path.is_absolute()
+        && parent.and_then(Path::file_name).is_some_and(|n| n == "appzones" || n == "zones");
+    (own.as_deref() == Some(path.as_path()) || installed || removed).then(|| (rest[0].clone(), rest[1].clone()))
 }
 
 fn proc_argv(pid: &str) -> Option<(Vec<String>, String)> {
@@ -108,6 +114,28 @@ fn my_pids() -> Vec<(String, u32)> {
         .collect()).unwrap_or_default()
 }
 
+/// The exit status of our child PID (retried on EINTR); None when there is no such child
+/// (fork failed: never waitpid(-1), which would take any child).
+fn wait_child(pid: libc::pid_t) -> Option<i32> {
+    if pid <= 0 {
+        return None;
+    }
+    let mut status = 0;
+    loop {
+        // Safety: waiting for our own child into a local.
+        if unsafe { libc::waitpid(pid, &mut status, 0) } == pid {
+            return Some(status);
+        }
+        if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+            return None;
+        }
+    }
+}
+
+fn exited_ok(status: Option<i32>) -> bool {
+    status.is_some_and(|st| libc::WIFEXITED(st) && libc::WEXITSTATUS(st) == 0)
+}
+
 fn flock_nb(fd: RawFd) -> bool {
     // Safety: flock on a descriptor we own.
     unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) == 0 }
@@ -123,7 +151,7 @@ impl Cli {
         let legacy = config::env("CONFIG").filter(|c| !c.is_empty()).is_none()
             && !host.home.join(".config/appzones/zones.toml").symlink_metadata().is_ok()
             && host.home.join(".config/zones/zones.toml").symlink_metadata().is_ok();
-        Cli { host, legacy_config: legacy }
+        Cli { host, legacy_config: legacy, state_hold: None }
     }
 
     fn rt(&self) -> &Path {
@@ -259,6 +287,16 @@ impl Cli {
         it.filter_map(|e| e.ok()).any(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == lock))
     }
 
+    /// Whether PID holds the flock on the file LOCK (dev, ino), not merely has it open (an
+    /// `appzones up` between its open and its flock): by the descriptor's own fdinfo,
+    /// which lists the locks held through it.
+    fn holds_lock(pid: &str, lock: (u64, u64)) -> bool {
+        let Ok(it) = std::fs::read_dir(format!("/proc/{pid}/fd")) else { return false };
+        it.filter_map(|e| e.ok()).filter(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == lock))
+            .any(|e| std::fs::read_to_string(format!("/proc/{pid}/fdinfo/{}", e.file_name().to_string_lossy()))
+                .is_ok_and(|t| t.lines().any(|l| l.starts_with("lock:") && l.contains("FLOCK"))))
+    }
+
     fn is_server(&self, pid: &str, name: &str, lock: Option<(u64, u64)>) -> bool {
         // Safety: getuid has no preconditions.
         let uid = unsafe { libc::getuid() };
@@ -266,7 +304,7 @@ impl Cli {
             return false;
         }
         if let Some(l) = lock.or_else(|| self.lock_id(name)) {
-            if Self::holds(pid, l) {
+            if Self::holds_lock(pid, l) {
                 return true;
             }
         }
@@ -430,10 +468,7 @@ impl Cli {
         if pid < 0 {
             die(&format!("zone {name}: could not start its server: {}", std::io::Error::last_os_error()));
         }
-        let mut status = 0;
-        // Safety: waiting for our own child.
-        unsafe { libc::waitpid(pid, &mut status, 0) };
-        if !(libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0) {
+        if !exited_ok(wait_child(pid)) {
             die(&format!("zone {name}: could not start its server"));
         }
         (r, since)
@@ -564,7 +599,7 @@ impl Cli {
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
-            return;
+            die(&format!("zone {name} did not answer within 10 s of its restart; see `appzones logs {name}`"));
         }
         let outside = !self.server_pids(name).is_empty();
         self.stop_zone(name);
@@ -599,7 +634,8 @@ impl Cli {
         }
         let mut failed = 0;
         for n in names {
-            if cmd == "stop" && every && !self.answers(&n) {
+            // (stop --all: only zones something runs; a server whose zone-init does not answer counts)
+            if cmd == "stop" && every && !self.answers(&n) && self.server_pids(&n).is_empty() && !self.unit_runs(&n) {
                 continue;
             }
             self.load_zone(&n, true);
@@ -620,10 +656,7 @@ impl Cli {
                 // Safety: the child's end.
                 unsafe { libc::_exit(0) };
             }
-            let mut status = 0;
-            // Safety: waiting for our own child.
-            unsafe { libc::waitpid(pid, &mut status, 0) };
-            if pid < 0 || !(libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0) {
+            if !exited_ok(wait_child(pid)) {
                 failed += 1;
             }
         }
@@ -694,12 +727,14 @@ impl Cli {
                           file chooser", bad.join(", ")));
         }
         if self.answers(name) && self.stale(name, z) {
-            let n = agent::zone_procs(self.rt(), name).map(|p| p.len()).unwrap_or(0);
-            if restart && n == 0 {
+            // (a process list that cannot be had is not an idle zone)
+            let n = agent::zone_procs(self.rt(), name).map(|p| p.len()).ok();
+            let n_text = n.map(|n| n.to_string()).unwrap_or_else(|| "an unknown number of".into());
+            if restart && n == Some(0) {
                 warn(&format!("zones.toml changed for {name}; restarting it (no app runs in it)"));
                 self.restart_zone(name);
             } else if restart {
-                warn(&format!("zones.toml changed for {name}, but {n} process(es) run in it; not restarting \
+                warn(&format!("zones.toml changed for {name}, but {n_text} process(es) run in it; not restarting \
                                (`appzones restart {name}` applies it)"));
             } else {
                 warn(&format!("zones.toml changed for {name}; `appzones restart {name}` (or `appzones run --restart`) \
@@ -828,14 +863,22 @@ impl Cli {
             let _ = stdout.flush();
         }
         static WINCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        static HANGUP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         extern "C" fn on_winch(_: libc::c_int) {
             WINCH.store(true, std::sync::atomic::Ordering::SeqCst);
         }
-        // Safety: a handler that only stores to an atomic; termios on our terminal.
+        extern "C" fn on_hangup(_: libc::c_int) {
+            HANGUP.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        // Safety: handlers that only store to an atomic (no SA_RESTART: poll returns, and the
+        // terminal is restored below on a hangup or a TERM); termios on our terminal.
         let old = unsafe {
             let mut sa: libc::sigaction = std::mem::zeroed();
             sa.sa_sigaction = on_winch as extern "C" fn(libc::c_int) as libc::sighandler_t;
             libc::sigaction(libc::SIGWINCH, &sa, std::ptr::null_mut());
+            sa.sa_sigaction = on_hangup as extern "C" fn(libc::c_int) as libc::sighandler_t;
+            libc::sigaction(libc::SIGHUP, &sa, std::ptr::null_mut());
+            libc::sigaction(libc::SIGTERM, &sa, std::ptr::null_mut());
             let mut old: libc::termios = std::mem::zeroed();
             libc::tcgetattr(0, &mut old);
             let mut raw = old;
@@ -845,19 +888,37 @@ impl Cli {
         };
         let sock = s.as_raw_fd();
         let mut buf = vec![0u8; 65536];
+        // typed but not yet taken by zone-init: while there is some, stdin waits and the
+        // socket is written when it can take more (never a blocking write: a zone that stops
+        // reading cannot freeze this client with the terminal raw)
+        let mut pending: Vec<u8> = Vec::new();
         'outer: loop {
+            if HANGUP.load(std::sync::atomic::Ordering::SeqCst) {
+                break 'outer;
+            }
             if WINCH.swap(false, std::sync::atomic::Ordering::SeqCst) {
                 let (c, r) = size();
                 let _ = agent::ask(self.rt(), name, &json!({"op": "resize", "pid": pid, "rows": r, "cols": c}),
                                    Duration::from_secs(1));
             }
-            let mut fds = [libc::pollfd { fd: 0, events: libc::POLLIN, revents: 0 },
-                           libc::pollfd { fd: sock, events: libc::POLLIN, revents: 0 }];
+            let out = if pending.is_empty() { 0 } else { libc::POLLOUT };
+            let mut fds = [libc::pollfd { fd: if pending.is_empty() { 0 } else { -1 }, events: libc::POLLIN, revents: 0 },
+                           libc::pollfd { fd: sock, events: libc::POLLIN | out, revents: 0 }];
             // Safety: poll on stdin and our socket.
             if unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) } < 0 {
-                continue; // EINTR (a resize)
+                continue; // EINTR (a resize, a hangup)
             }
-            if fds[1].revents != 0 {
+            if !pending.is_empty() && fds[1].revents & libc::POLLOUT != 0 {
+                // Safety: a send from our buffer, never blocking.
+                let n = unsafe { libc::send(sock, pending.as_ptr().cast(), pending.len(), libc::MSG_DONTWAIT | libc::MSG_NOSIGNAL) };
+                if n > 0 {
+                    pending.drain(..n as usize);
+                } else if n < 0 && !matches!(std::io::Error::last_os_error().kind(),
+                                             std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted) {
+                    break 'outer;
+                }
+            }
+            if fds[1].revents & !libc::POLLOUT != 0 {
                 let n = (&s).read(&mut buf).unwrap_or(0);
                 if n == 0 {
                     break 'outer;
@@ -871,9 +932,7 @@ impl Cli {
                 if n <= 0 {
                     break 'outer;
                 }
-                if (&s).write_all(&buf[..n as usize]).is_err() {
-                    break 'outer;
-                }
+                pending.extend_from_slice(&buf[..n as usize]);
             }
         }
         // Safety: the terminal as it was.
@@ -1036,20 +1095,35 @@ impl Cli {
         let mid = std::fs::read_to_string("/etc/machine-id").map(|m| m.trim().to_string()).unwrap_or_default();
         probes.push(("machine-id is the zone's".into(), if z.get("machine_id").as_str() == Some("zone") { 0 } else { 1 },
                      format!("[ \"$(cat /etc/machine-id)\" != \"{mid}\" ]")));
+        // network refusals: only where the host itself reaches the target (else the probe
+        // would pass whatever the zone may do: SKIP, said so)
+        let mut skipped: Vec<String> = Vec::new();
         if z.get("network").as_str() == Some("internet") {
             probes.push(("nft flush refused".into(), 1, "nft flush ruleset 2>/dev/null".into()));
-            probes.push(("LAN 192.168.0.0/16 refused".into(), 1, tcp("192.168.1.1", 53)));
-            probes.push(("tailnet 100.64.0.0/10 refused".into(), 1, tcp("100.64.0.1", 8443)));
-            probes.push(("host loopback refused".into(), 1, tcp("127.0.0.1", 22)));
+            for (title, host, port) in [("LAN 192.168.0.0/16 refused", "192.168.1.1", 53), ("tailnet 100.64.0.0/10 refused",
+                                        "100.64.0.1", 8443), ("host loopback refused", "127.0.0.1", 22)] {
+                let addr: std::net::SocketAddr = format!("{host}:{port}").parse().expect("a literal address");
+                if std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok() {
+                    probes.push((title.into(), 1, tcp(host, port)));
+                } else {
+                    skipped.push(format!("{title} (the host does not reach {host}:{port} either)"));
+                }
+            }
         }
         let exe = std::env::current_exe().unwrap_or_else(|e| die(&e.to_string()));
         let mut fails = 0;
         for (title, expect, cmd) in probes {
-            let ok = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", &cmd])
-                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).output()
-                .is_ok_and(|o| o.status.success() == (expect == 0));
+            // the probe says it ran first: a refusal counts only from a probe that ran
+            let script = format!("echo appzones-probe-ran; {cmd}");
+            let o = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", &script])
+                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
+            let ran = o.as_ref().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).lines().next() == Some("appzones-probe-ran"));
+            let ok = ran && o.as_ref().is_ok_and(|o| o.status.success() == (expect == 0));
             fails += i32::from(!ok);
-            out(&format!("{}  {title}", if ok { "PASS" } else { "FAIL" }));
+            out(&format!("{}  {title}{}", if ok { "PASS" } else { "FAIL" }, if ran { "" } else { " (the probe did not run)" }));
+        }
+        for s in skipped {
+            out(&format!("SKIP  {s}"));
         }
         i32::from(fails > 0)
     }
@@ -1089,15 +1163,14 @@ impl Cli {
     fn apps(&self) -> i32 {
         let cfg = self.load_cfg(true);
         let dir = self.launcher();
-        let _ = std::fs::create_dir_all(&dir);
-        if let Ok(it) = std::fs::read_dir(&dir) {
-            for e in it.filter_map(|e| e.ok()) {
-                let n = e.file_name().to_string_lossy().into_owned();
-                if (n.starts_with("appzones-") || n.starts_with("zone-")) && n.ends_with(".desktop") {
-                    let _ = std::fs::remove_file(e.path());
-                }
-            }
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            warn(&format!("{}: {e}; no launcher entries", sh(&dir))); // (autostart goes on with its zones)
+            return 1;
         }
+        // the new entries first (each written whole, then renamed into place), the stale ones
+        // removed after: a failed write never leaves launchers missing, and is said
+        let mut written: Vec<String> = Vec::new();
+        let mut failed: Vec<String> = Vec::new();
         let mut n = 0;
         for (aid, a) in &cfg.apps {
             let host_entry = a.get("desktop").and_then(Value::as_str).map(|d| self.find_desktop(d)).unwrap_or_default();
@@ -1123,12 +1196,31 @@ impl Cli {
                         lines.push(format!("{k}={v}"));
                     }
                 }
-                let _ = std::fs::write(dir.join(format!("appzones-{aid}-{zn}.desktop")), lines.join("\n") + "\n");
-                n += 1;
+                let file = format!("appzones-{aid}-{zn}.desktop");
+                let tmp = dir.join(format!(".{file}.new"));
+                match std::fs::write(&tmp, lines.join("\n") + "\n").and_then(|_| std::fs::rename(&tmp, dir.join(&file))) {
+                    Ok(()) => n += 1,
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&tmp);
+                        failed.push(format!("{file}: {e}"));
+                    }
+                }
+                written.push(file);
+            }
+        }
+        if let Ok(it) = std::fs::read_dir(&dir) {
+            for e in it.filter_map(|e| e.ok()) {
+                let f = e.file_name().to_string_lossy().into_owned();
+                if (f.starts_with("appzones-") || f.starts_with("zone-")) && f.ends_with(".desktop") && !written.contains(&f) {
+                    let _ = std::fs::remove_file(e.path());
+                }
             }
         }
         out(&format!("{n} launcher entries in {}", sh(&dir)));
-        0
+        for f in &failed {
+            warn(&format!("not written: {f}"));
+        }
+        i32::from(!failed.is_empty())
     }
 
     fn autostart(&self) -> i32 {
@@ -1157,9 +1249,11 @@ impl Cli {
                 // Safety: the child's end.
                 unsafe { libc::_exit(0) };
             }
-            let mut status = 0;
-            // Safety: waiting for our own child.
-            unsafe { libc::waitpid(pid, &mut status, 0) };
+            if pid < 0 {
+                self.wait_ready(&n, r, since, true); // (no child: here, then)
+            } else {
+                wait_child(pid);
+            }
         }
         0
     }
@@ -1269,8 +1363,19 @@ impl Cli {
         shared
     }
 
+    /// Zone NAME's mounts lock, taken: `mount` and `umount` hold it from their check to
+    /// their record, the zone's teardown (`_cleanup`) before it detaches them all, so a
+    /// mount is never made after the teardown has run (and mounts.json never loses one).
+    fn mounts_lock(&self, name: &str) -> Option<std::fs::File> {
+        self.mkdir_rt();
+        let f = open_lock(&self.rt().join(format!("{}.mounts.lock", zone_name_ok(name).then_some(name)?))).ok()?;
+        // Safety: flock on our own descriptor; the others hold it only briefly.
+        (unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } == 0).then_some(f)
+    }
+
     fn mount(&self, name: &str, path: &str, ro: bool, as_name: Option<String>) -> i32 {
         self.load_zone(name, true);
+        let _held = self.mounts_lock(name);
         if !self.answers(name) {
             die(&format!("zone {name} is not running; a mount lives only while the zone runs (`appzones up {name}` first)"));
         }
@@ -1324,6 +1429,7 @@ impl Cli {
 
     fn umount(&self, name: &str, nm: &str, lazy: bool) -> i32 {
         self.load_zone(name, true);
+        let _held = self.mounts_lock(name);
         if !self.host_mounts(name).iter().any(|m| m == nm) {
             die(&format!("nothing is mounted at /mnt/host/{nm} in zone {name} (appzones mounts {name})"));
         }
@@ -1500,9 +1606,29 @@ impl Cli {
         }
         // no server may start until the move is done (they take it shared first), and none
         // of this version runs when it can be had
-        let state_lock = self.state_lock();
-        if !state_lock.as_ref().is_some_and(|f| flock_nb(std::os::fd::AsRawFd::as_raw_fd(f))) {
-            running.push("a server (.state.lock)".into());
+        let Some(state_lock) = self.state_lock() else {
+            warn(&format!("{}: cannot open it; {} stays where it is", sh(&self.rt().join(".state.lock")), sh(&legacy)));
+            return;
+        };
+        let fd = std::os::fd::AsRawFd::as_raw_fd(&state_lock);
+        let share = |fd: RawFd| loop {
+            // Safety: flock on our own descriptor (blocking: a move holds it only briefly).
+            if unsafe { libc::flock(fd, libc::LOCK_SH) } == 0
+                || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                break;
+            }
+        };
+        if !flock_nb(fd) {
+            // held: by servers (shared), or by another command moving it now (briefly): once
+            // it can be had shared, where the state is is looked at again
+            share(fd);
+            self.state_hold = Some(state_lock);
+            if legacy.symlink_metadata().is_err() && new.is_dir() {
+                self.host.state = new; // moved meanwhile
+            } else {
+                warn(&format!("{} moves to {} once no zone runs (appzones stop --all)", sh(&legacy), sh(&new)));
+            }
+            return;
         }
         // and every server since the lock (0.7), whatever it is written in: a zone lock held
         running.extend(self.locked_zones());
@@ -1510,6 +1636,8 @@ impl Cli {
             .any(|m| m == sh(&legacy) || m.starts_with(&format!("{}/", sh(&legacy))))).unwrap_or(true);
         if !running.is_empty() || mounted {
             warn(&format!("{} moves to {} once no zone runs (appzones stop --all)", sh(&legacy), sh(&new)));
+            share(fd); // (still used here: held shared while this command runs)
+            self.state_hold = Some(state_lock);
             return;
         }
         match std::fs::rename(&legacy, &new) {
@@ -1607,6 +1735,7 @@ pub fn main(args: &[OsString]) -> i32 {
         "_cleanup" => {
             let n = one();
             let zdir = cli.host.state.join(&n);
+            let _held = cli.mounts_lock(&n);
             match plan::prepare_mnt(&cli.host, &n, &zdir) {
                 Ok(true) => 0,
                 Ok(false) => 1,
@@ -1792,12 +1921,31 @@ mod tests {
             (a(&["python3", &me, "serve"]), None),
             (a(&["python3", "-X", "dev", &me, "serve", "aa"]), pair("serve", "aa")), // an option with a value
             (a(&["python3", "-m", "x", &me, "serve", "aa"]), None),
+            // a removed zone.py of an installed appzones (an upgrade while it ran)
+            (a(&["python3", "/usr/lib/appzones/zone.py", "serve", "dd"]), pair("serve", "dd")),
+            (a(&["python3", "/usr/local/lib/zones/zone.py", "_supervise", "ee"]), pair("_supervise", "ee")),
         ] {
             assert_eq!(server_command(&argv, "/", &here), want, "{argv:?}");
         }
         // a relative path, from the process's cwd
         assert_eq!(server_command(&a(&["python3", "zone.py", "serve", "aa"]), &sh(&here), &here), pair("serve", "aa"));
         let _ = std::fs::remove_dir_all(&here);
+    }
+
+    #[test]
+    fn a_server_holds_the_lock() {
+        // opened is not held: only the process with the flock counts as the zone's server
+        let t = tmp("holds");
+        let path = t.join("z.lock");
+        let f = std::fs::File::create(&path).unwrap();
+        let m = std::fs::metadata(&path).unwrap();
+        let me = std::process::id().to_string();
+        assert!(Cli::holds(&me, (m.dev(), m.ino())));
+        assert!(!Cli::holds_lock(&me, (m.dev(), m.ino())), "open, not locked");
+        assert!(flock_nb(f.as_raw_fd()));
+        assert!(Cli::holds_lock(&me, (m.dev(), m.ino())), "locked");
+        drop(f);
+        let _ = std::fs::remove_dir_all(&t);
     }
 
     #[test]

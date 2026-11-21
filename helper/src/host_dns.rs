@@ -281,9 +281,13 @@ mod tests {
     #[test]
     fn resolver() {
         // a fake resolver: UDP truncates big answers, TCP gives them whole; a wrong id first
-        let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
-        let port = udp.local_addr().unwrap().port();
-        let tcp = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+        // (a free UDP port need not be free for TCP: tried again until both are)
+        let (udp, tcp, port) = (0..50).find_map(|_| {
+            let udp = UdpSocket::bind("127.0.0.1:0").ok()?;
+            let port = udp.local_addr().ok()?.port();
+            let tcp = std::net::TcpListener::bind(("127.0.0.1", port)).ok()?;
+            Some((udp, tcp, port))
+        }).expect("a port free for UDP and TCP");
         let count = |q: &[u8]| if q.windows(3).any(|w| w == b"big") { 200 } else { 2 };
         thread::spawn(move || loop {
             let mut buf = [0u8; 4096];
