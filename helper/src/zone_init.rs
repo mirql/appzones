@@ -260,6 +260,8 @@ struct Shell {
     pending_out: Vec<u8>,
     /// the pty gave its end (EIO): the shell is dropped once PENDING_OUT reached the client
     master_closed: bool,
+    /// the shell exited: what it wrote goes out until then, and it is dropped
+    exited_by: Option<std::time::Instant>,
 }
 
 #[derive(Clone, Copy)]
@@ -493,7 +495,8 @@ impl Init {
         };
         set_nonblocking(master.as_raw_fd(), true);
         reply(&mut conn, &json!({"ok": true, "pid": pid}));
-        let mut sh = Shell { conn, master, pending: rest, pending_out: Vec::new(), master_closed: false };
+        let mut sh = Shell { conn, master, pending: rest, pending_out: Vec::new(), master_closed: false,
+                            exited_by: None };
         sh.write_pending();
         self.shells.insert(pid, sh);
         log(&format!("shell pid {pid}"));
@@ -619,38 +622,11 @@ impl Init {
             if let Some(mut conn) = self.waiting.remove(&pid) {
                 reply(&mut conn, &json!({"exit": code}));
             }
-            if let Some(mut sh) = self.shells.remove(&pid) {
-                // what the shell wrote last: within one deadline for all of it (and 64 reads)
-                let end = std::time::Instant::now() + SHELL_WRITE_TIMEOUT;
-                let mut out = std::mem::take(&mut sh.pending_out);
-                let send = |data: &[u8], conn: &mut UnixStream| -> bool {
-                    let mut data = data;
-                    while !data.is_empty() {
-                        let left = end.saturating_duration_since(std::time::Instant::now());
-                        if left.is_zero() || conn.set_write_timeout(Some(left)).is_err() {
-                            return false;
-                        }
-                        match conn.write(data) {
-                            Ok(0) | Err(_) => return false,
-                            Ok(n) => data = &data[n..],
-                        }
-                    }
-                    true
-                };
-                let ok = send(&out, &mut sh.conn);
-                out.clear();
-                let mut buf = [0u8; 65536];
-                for _ in 0..64 {
-                    if !ok {
-                        break;
-                    }
-                    // Safety: read from the pty master the shells table owned.
-                    let n = unsafe { libc::read(sh.master.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
-                    if n <= 0 || !send(&buf[..n as usize], &mut sh.conn) {
-                        break;
-                    }
-                }
-                // dropping sh closes the connection and the master
+            if let Some(sh) = self.shells.get_mut(&pid) {
+                // what the shell wrote last goes out through the poll loop (never a blocking
+                // drain here, which would hold every other request): until the pty is empty
+                // and the client has it all, or SHELL_WRITE_TIMEOUT has passed
+                sh.exited_by = Some(std::time::Instant::now() + SHELL_WRITE_TIMEOUT);
             }
         }
     }
@@ -1075,7 +1051,13 @@ pub fn main(_args: &[String]) -> u8 {
             tags.push(Tag::ShellOut(*pid));
         }
         // Safety: poll over our own array of pollfds.
-        let n = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, -1) };
+        // (woken in time for an exited shell's deadline)
+        let now = std::time::Instant::now();
+        let wait = init.shells.values().filter_map(|sh| sh.exited_by)
+            .map(|d| d.saturating_duration_since(now).as_millis().min(1000) as libc::c_int + 1).min().unwrap_or(-1);
+        let n = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, wait) };
+        let now = std::time::Instant::now();
+        init.shells.retain(|_, sh| sh.exited_by.is_none_or(|d| d > now));
         if n < 0 {
             continue; // EINTR
         }

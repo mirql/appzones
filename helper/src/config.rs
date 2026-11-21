@@ -91,7 +91,11 @@ pub fn home_real() -> Vec<u8> {
 /// ($APPZONES_DENIED_PATHS overrides it), a custom $XDG_STATE_HOME.
 pub fn policy(code_dir: OsString) -> Policy {
     let state = std::env::var_os("XDG_STATE_HOME").filter(|s| s.as_bytes().starts_with(b"/"));
-    let extra = ["CONFIG", "STATE"].iter().filter_map(|k| env(k)).filter(|v| v.starts_with('/')).map(OsString::from).collect();
+    // (relative ones as they resolve from here, as appzones uses them; an empty one is none)
+    let cwd = std::env::current_dir().ok();
+    let extra = ["CONFIG", "STATE"].iter().filter_map(|k| env(k)).filter(|v| !v.is_empty())
+        .filter_map(|v| if v.starts_with('/') { Some(OsString::from(v)) } else { cwd.as_ref().map(|d| d.join(v).into_os_string()) })
+        .collect();
     // (an empty override is none: the host's file, as Python reads it)
     let denied_file = env("DENIED_PATHS").filter(|v| !v.is_empty()).map(OsString::from);
     Policy { home: home(), code_dir, denied_file, state_dir: state, extra }

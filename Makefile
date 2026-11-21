@@ -3,7 +3,7 @@
 #
 #   make                  build appzones-helper and appzones-mount-helper (cargo, rustc 1.85
 #                         or newer), unless HELPER_BIN and MOUNT_HELPER_BIN name built ones
-#   sudo make install     install under PREFIX (/usr/local), the sudo rule for
+#   sudo make install     install what make built (or build it first) under PREFIX (/usr/local), the sudo rule for
 #                         `appzones mount`, the AppArmor profile where the kernel
 #                         restricts user namespaces (Ubuntu 23.10+), the systemd
 #                         user units where there is systemd
@@ -58,8 +58,10 @@ build:
 		echo "appzones needs cargo and rustc 1.85 or newer to build (or HELPER_BIN and MOUNT_HELPER_BIN)"; exit 1; \
 	fi
 
-# before anything is copied
-preflight: build
+# before anything is copied: the binaries `make` built (sudo's cargo may be another, older
+# one, so install never rebuilds them), built now only when they are not there
+preflight:
+	@[ -f "$(HELPER_BIN)" ] && [ -f "$(MOUNT_HELPER_BIN)" ] || $(MAKE) --no-print-directory build
 	@for b in "$(HELPER_BIN)" "$(MOUNT_HELPER_BIN)"; do [ -f "$$b" ] || { echo "$$b: not there"; exit 1; }; done
 	@# (where it runs here: a package's binary may be built for other systems than this one)
 	@if out=$$("$(realpath $(HELPER_BIN))" --commands 2>/dev/null); then echo "$$out" | grep -qx cli \
@@ -72,7 +74,7 @@ preflight: build
 	@[ "$(USE_APPARMOR)" != yes ] || { command -v bwrap >/dev/null && command -v pasta >/dev/null; } \
 		|| { echo "install bubblewrap and passt first: the AppArmor profile names them (or APPARMOR=no)"; exit 1; }
 
-install: all preflight
+install: preflight
 	install -d $(DESTDIR)$(LIBDIR) $(DESTDIR)$(BINDIR) $(DESTDIR)$(DATADIR)
 	install -m 755 "$(HELPER_BIN)" $(DESTDIR)$(LIBDIR)/appzones-helper
 	@# the root step of `appzones mount` (the sudo rule names this file)

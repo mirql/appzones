@@ -326,6 +326,8 @@ fn spawn(argv: &[String]) -> Command {
 }
 
 struct Run {
+    /// _cleanup: runtime mounts end with the zone, also when its start is aborted
+    cleanup: Option<Vec<String>>,
     name: String,
     zrt: PathBuf,
     fp: PathBuf,
@@ -370,6 +372,9 @@ impl Run {
         }
         self.wait_relay();
         let _ = std::fs::remove_dir_all(&self.fp);
+        if let Some(cleanup) = &self.cleanup {
+            let _ = spawn(cleanup).stdin(Stdio::null()).status(); // (a mount made while it started)
+        }
         if stop() != 0 {
             say(&format!("[zone] {}: stopped while starting", self.name));
             return self.stop_code();
@@ -604,7 +609,7 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
     let timeout_s = plan.get("start_timeout").and_then(Value::as_f64).ok_or("the plan has no start_timeout")?;
     let timeout = Duration::from_secs_f64(timeout_s);
     let argv_marked = plan.get("argv").and_then(str_list).ok_or("the plan has no argv")?;
-    let mut r = Run { name: name.clone(), zrt: zrt.clone(), fp, timeout, helpers: Vec::new(), child: None, relay_done: None };
+    let mut r = Run { cleanup: plan.get("cleanup").and_then(str_list), name: name.clone(), zrt: zrt.clone(), fp, timeout, helpers: Vec::new(), child: None, relay_done: None };
     if stop() != 0 {
         return Ok(r.abort(""));
     }

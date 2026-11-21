@@ -112,6 +112,23 @@ pub fn output_within(cmd: &mut Command, timeout: Option<std::time::Duration>, st
     Some(std::process::Output { status, stdout, stderr })
 }
 
+/// A mountinfo field decoded: the kernel writes space, tab, newline and backslash as \ooo.
+pub fn mountinfo_path(field: &str) -> String {
+    let b = field.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\\' && i + 3 < b.len() && b[i + 1..i + 4].iter().all(|c| (b'0'..=b'7').contains(c)) {
+            out.push(((b[i + 1] - b'0') << 6) | ((b[i + 2] - b'0') << 3) | (b[i + 3] - b'0'));
+            i += 4;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 pub fn which(name: &str, path: Option<&str>) -> Option<String> {
     let exe = |p: &Path| {
         std::fs::metadata(p).is_ok_and(|m| m.is_file())
@@ -624,6 +641,10 @@ fn prepare_tmp(zdir: &Path) -> Result<(), String> {
     for (sub, days) in [("tmp", 14), ("var-tmp", 30)] {
         let d = zdir.join(sub);
         mkdir_mode(&d, 0o700).map_err(|e| format!("{}: {e}", sh(&d)))?;
+        // (a symlink there would have its target's mode changed and its files cleaned)
+        if !std::fs::symlink_metadata(&d).is_ok_and(|m| m.is_dir()) {
+            return Err(format!("{}: not a directory (a symlink?); not using it as the zone's /tmp", sh(&d)));
+        }
         std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
         let n = clean_old(&d, days);
         if n > 0 {
@@ -639,7 +660,7 @@ pub fn host_mounts(host: &Host, zone: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for line in std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default().lines() {
         let Some(mp) = line.split_whitespace().nth(4) else { continue };
-        let mp = mp.replace("\\040", " ");
+        let mp = mountinfo_path(mp);
         if let Some(rest) = mp.strip_prefix(&pre) {
             if !rest.contains('/') && !out.iter().any(|o| o == rest) {
                 out.push(rest.to_string());

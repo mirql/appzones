@@ -616,19 +616,32 @@ impl Cli {
     fn each_zone(&self, cmd: &str, rest: &[String]) -> i32 {
         let Some(first) = rest.first() else { die(&format!("usage: appzones {cmd} ZONE|--all")) };
         let every = first == "--all";
-        let names: Vec<String> = if every {
+        let mut names: Vec<String> = if every {
             self.load_cfg(true).zones.iter().map(|z| z.name.clone()).collect()
         } else {
             vec![first.clone()]
         };
+        if every && cmd == "stop" {
+            // and zones that still run but left the config (their lock is held)
+            for z in self.locked_zones() {
+                if !names.contains(&z) {
+                    names.push(z);
+                }
+            }
+        }
         let run = |n: &str| match cmd {
             "up" => self.up(n, false),
             "stop" => self.stop_zone(n),
             _ => self.restart_zone(n),
         };
         if !every {
-            // one zone: here (its failure is our exit status, as Python's SystemExit was)
-            self.load_zone(first, true);
+            // one zone: here (its failure is our exit status, as Python's SystemExit was); a
+            // zone that left the config can still be stopped
+            if cmd == "stop" {
+                self.lock_path(first); // (a zone name, or the usual refusal)
+            } else {
+                self.load_zone(first, true);
+            }
             run(first);
             return 0;
         }
@@ -638,7 +651,9 @@ impl Cli {
             if cmd == "stop" && every && !self.answers(&n) && self.server_pids(&n).is_empty() && !self.unit_runs(&n) {
                 continue;
             }
-            self.load_zone(&n, true);
+            if cmd != "stop" {
+                self.load_zone(&n, true);
+            }
             // each zone in a child, so its failure ends only that one; it dies with us
             // Safety: fork in a process with no other threads; the child runs the command and exits.
             let parent = std::process::id() as libc::pid_t;
@@ -864,11 +879,27 @@ impl Cli {
         }
         static WINCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         static HANGUP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        // a byte into this pipe wakes poll: a signal just before it is never missed
+        static WAKE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-1);
+        extern "C" fn wake() {
+            let fd = WAKE.load(std::sync::atomic::Ordering::SeqCst);
+            if fd >= 0 {
+                // Safety: write(2) is async-signal-safe; one byte from a static.
+                unsafe { libc::write(fd, b"!".as_ptr().cast(), 1) };
+            }
+        }
         extern "C" fn on_winch(_: libc::c_int) {
             WINCH.store(true, std::sync::atomic::Ordering::SeqCst);
+            wake();
         }
         extern "C" fn on_hangup(_: libc::c_int) {
             HANGUP.store(true, std::sync::atomic::Ordering::SeqCst);
+            wake();
+        }
+        let mut wake_pipe = [-1; 2];
+        // Safety: pipe2 into a local array.
+        if unsafe { libc::pipe2(wake_pipe.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) } == 0 {
+            WAKE.store(wake_pipe[1], std::sync::atomic::Ordering::SeqCst);
         }
         // Safety: handlers that only store to an atomic (no SA_RESTART: poll returns, and the
         // terminal is restored below on a hangup or a TERM); termios on our terminal.
@@ -903,10 +934,17 @@ impl Cli {
             }
             let out = if pending.is_empty() { 0 } else { libc::POLLOUT };
             let mut fds = [libc::pollfd { fd: if pending.is_empty() { 0 } else { -1 }, events: libc::POLLIN, revents: 0 },
-                           libc::pollfd { fd: sock, events: libc::POLLIN | out, revents: 0 }];
-            // Safety: poll on stdin and our socket.
-            if unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) } < 0 {
+                           libc::pollfd { fd: sock, events: libc::POLLIN | out, revents: 0 },
+                           libc::pollfd { fd: wake_pipe[0], events: libc::POLLIN, revents: 0 }];
+            // Safety: poll on stdin, our socket and the wake pipe.
+            if unsafe { libc::poll(fds.as_mut_ptr(), 3, -1) } < 0 {
                 continue; // EINTR (a resize, a hangup)
+            }
+            if fds[2].revents != 0 {
+                let mut drain = [0u8; 64];
+                // Safety: read from our own non-blocking pipe into a local buffer.
+                while unsafe { libc::read(wake_pipe[0], drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
+                continue; // (the flags are looked at first)
             }
             if !pending.is_empty() && fds[1].revents & libc::POLLOUT != 0 {
                 // Safety: a send from our buffer, never blocking.
@@ -935,8 +973,14 @@ impl Cli {
                 pending.extend_from_slice(&buf[..n as usize]);
             }
         }
-        // Safety: the terminal as it was.
-        unsafe { libc::tcsetattr(0, libc::TCSADRAIN, &old) };
+        // Safety: the terminal as it was; the wake pipe closed (its writer cleared first).
+        unsafe {
+            libc::tcsetattr(0, libc::TCSADRAIN, &old);
+            WAKE.store(-1, std::sync::atomic::Ordering::SeqCst);
+            for fd in wake_pipe.into_iter().filter(|fd| *fd >= 0) {
+                libc::close(fd);
+            }
+        }
         0
     }
 
@@ -1092,9 +1136,7 @@ impl Cli {
                 probes.push((format!("{p} absent"), 1, format!("ls -d {}", shell_quote(&p))));
             }
         }
-        let mid = std::fs::read_to_string("/etc/machine-id").map(|m| m.trim().to_string()).unwrap_or_default();
-        probes.push(("machine-id is the zone's".into(), if z.get("machine_id").as_str() == Some("zone") { 0 } else { 1 },
-                     format!("[ \"$(cat /etc/machine-id)\" != \"{mid}\" ]")));
+        // (the machine-id: the zone's read inside, compared here; the host's never goes in)
         // network refusals: only where the host itself reaches the target (else the probe
         // would pass whatever the zone may do: SKIP, said so)
         let mut skipped: Vec<String> = Vec::new();
@@ -1118,10 +1160,27 @@ impl Cli {
             let o = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", &script])
                 .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
             let ran = o.as_ref().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).lines().next() == Some("appzones-probe-ran"));
+            // a refusal probe whose tool is not in the zone (126, 127) proves nothing: SKIP
+            if ran && expect == 1 && o.as_ref().is_ok_and(|o| matches!(o.status.code(), Some(126 | 127))) {
+                skipped.push(format!("{title} (its tool is not in the zone)"));
+                continue;
+            }
             let ok = ran && o.as_ref().is_ok_and(|o| o.status.success() == (expect == 0));
             fails += i32::from(!ok);
             out(&format!("{}  {title}{}", if ok { "PASS" } else { "FAIL" }, if ran { "" } else { " (the probe did not run)" }));
         }
+        let host_id = std::fs::read_to_string("/etc/machine-id").map(|m| m.trim().to_string()).unwrap_or_default();
+        let zone_id = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/cat", "/etc/machine-id"])
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).output().ok()
+            .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+        let ok = match (&zone_id, z.get("machine_id").as_str() == Some("zone")) {
+            (Some(id), true) => !id.is_empty() && *id != host_id,
+            (Some(id), false) => *id == host_id,
+            (None, _) => false,
+        };
+        fails += i32::from(!ok);
+        out(&format!("{}  machine-id is the zone's{}", if ok { "PASS" } else { "FAIL" },
+                     if zone_id.is_some() { "" } else { " (the probe did not run)" }));
         for s in skipped {
             out(&format!("SKIP  {s}"));
         }
@@ -1328,7 +1387,7 @@ impl Cli {
         let mut v: Vec<String> = Vec::new();
         for line in std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default().lines() {
             let Some(mp) = line.split_whitespace().nth(4) else { continue };
-            let mp = mp.replace("\\040", " ");
+            let mp = crate::plan::mountinfo_path(mp);
             if let Some(rest) = mp.strip_prefix(&pre) {
                 if !rest.contains('/') && !v.iter().any(|x| x == rest) {
                     v.push(rest.to_string());
@@ -1352,7 +1411,7 @@ impl Cli {
             if f.len() < 7 {
                 continue;
             }
-            let point = f[4].replace("\\040", " ");
+            let point = crate::plan::mountinfo_path(f[4]);
             let inside = p == point || p.starts_with(&format!("{}/", point.trim_end_matches('/')));
             if inside && point.len() >= best.len() {
                 let opts: &[&str] = match f.iter().position(|x| *x == "-") { Some(i) => &f[6..i.max(6)], None => &[] };
@@ -1375,7 +1434,14 @@ impl Cli {
 
     fn mount(&self, name: &str, path: &str, ro: bool, as_name: Option<String>) -> i32 {
         self.load_zone(name, true);
-        let _held = self.mounts_lock(name);
+        // the root helper reads no environment: it mounts under ~/.local/share/appzones (or
+        // the pre-0.6 directory); a zone whose state is elsewhere would not see the mount
+        let default = [self.host.home.join(".local/share/appzones"), self.host.home.join(".local/share/zones")];
+        if !default.contains(&self.host.state) {
+            die(&format!("appzones mount works with the default state directory only ({} is set by $APPZONES_STATE)",
+                         sh(&self.host.state)));
+        }
+        let _held = self.mounts_lock(name).unwrap_or_else(|| die(&format!("zone {name}: cannot take its mounts lock")));
         if !self.answers(name) {
             die(&format!("zone {name} is not running; a mount lives only while the zone runs (`appzones up {name}` first)"));
         }
@@ -1429,7 +1495,7 @@ impl Cli {
 
     fn umount(&self, name: &str, nm: &str, lazy: bool) -> i32 {
         self.load_zone(name, true);
-        let _held = self.mounts_lock(name);
+        let _held = self.mounts_lock(name).unwrap_or_else(|| die(&format!("zone {name}: cannot take its mounts lock")));
         if !self.host_mounts(name).iter().any(|m| m == nm) {
             die(&format!("nothing is mounted at /mnt/host/{nm} in zone {name} (appzones mounts {name})"));
         }
@@ -1633,7 +1699,7 @@ impl Cli {
         // and every server since the lock (0.7), whatever it is written in: a zone lock held
         running.extend(self.locked_zones());
         let mounted = std::fs::read_to_string("/proc/self/mountinfo").map(|t| t.lines().filter_map(|l| l.split_whitespace().nth(4))
-            .any(|m| m == sh(&legacy) || m.starts_with(&format!("{}/", sh(&legacy))))).unwrap_or(true);
+            .map(crate::plan::mountinfo_path).any(|m| m == sh(&legacy) || m.starts_with(&format!("{}/", sh(&legacy))))).unwrap_or(true);
         if !running.is_empty() || mounted {
             warn(&format!("{} moves to {} once no zone runs (appzones stop --all)", sh(&legacy), sh(&new)));
             share(fd); // (still used here: held shared while this command runs)
@@ -1735,7 +1801,7 @@ pub fn main(args: &[OsString]) -> i32 {
         "_cleanup" => {
             let n = one();
             let zdir = cli.host.state.join(&n);
-            let _held = cli.mounts_lock(&n);
+            let _held = cli.mounts_lock(&n); // (without it, too: detaching is never the wrong way)
             match plan::prepare_mnt(&cli.host, &n, &zdir) {
                 Ok(true) => 0,
                 Ok(false) => 1,
