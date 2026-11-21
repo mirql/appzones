@@ -129,7 +129,8 @@ if [ $rust = yes ]; then
   # the part of appzones serve that holds the zone: the Rust runner, no Python in memory for it
   srv=$(fuser /run/user/1000/appzones/off.lock 2>/dev/null | tr -s ' ' '\n' | grep -m1 '[0-9]')
   scmd=$(tr '\0' ' ' </proc/$srv/cmdline)
-  case "$scmd" in *"appzones-helper serve --plan "*) ;; *) fail "zone off's server is not the Rust runner: $scmd";; esac
+  # (Rust makes the plan too: `serve --zone`, with no Python left in the server)
+  case "$scmd" in *"appzones-helper serve --zone off "*) ;; *) fail "zone off's server is not the Rust server: $scmd";; esac
   rss=$(awk '/^VmRSS/{print $2}' /proc/$srv/status)
   pass "the Rust runner holds the zone ($rss kB RSS)"
   case " $mflags " in *" MOUNT_HELPER_BIN="*)

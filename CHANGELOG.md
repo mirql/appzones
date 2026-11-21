@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **The configuration and the plan in Rust (rust-version, stage 2 of #157)**: with the
+  Rust helper, `appzones serve` hands over to `appzones-helper serve --zone NAME` right
+  after taking the zone's lock: zones.toml is read and checked in Rust (the same errors,
+  warnings, settings and `settings_hash` as Python's, on 944 test configurations and a
+  real config), and the zone's plan is made there (the same plan, files and messages).
+
 - **The server in Rust (rust-version, stage 1 of #157)**: `appzones serve` writes the
   zone's plan (`plan.json`), then, with the Rust helper, becomes `appzones-helper serve`,
   which holds the zone (helpers, the pidfd handoff, readiness, autostart, the log and DNS
