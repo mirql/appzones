@@ -21,7 +21,8 @@ The config schema has its own release number (`requires = N` in
   terminal on a hangup.
 - Inside a zone: a zone ends with its server also when a zone process stops zone-init
   (pasta and bwrap die with the server); zone-init's memory for an app's output is
-  bounded; a shell that stops reading no longer stalls zone-init; a file planted where
+  bounded (and an app's last lines are kept); a shell, or its client, that stops reading
+  no longer stalls zone-init; a file planted where
   zone-init writes the zone bus's config cannot block it; slow DNS-over-TCP clients
   cannot take the slots UDP queries need.
 - `appzones mount`: a mount whose target directory was moved away while it was made is
