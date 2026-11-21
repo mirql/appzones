@@ -1547,6 +1547,7 @@ pub fn main(args: &[OsString]) -> i32 {
             crate::netsetup::main(&cli.host, &rest[0], &rest[1], &rest[2], rest[i + 1..].to_vec())
         }
         "_autostart" => cli.autostart(),
+        "_sway-marks" => crate::active::sway_hook(),
         "_link" => {
             if rest.len() != 2 {
                 die("usage: appzones _link ZONE URL");
