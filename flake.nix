@@ -10,6 +10,8 @@
       # has been tried on aarch64 yet
       systems = [ "x86_64-linux" ];
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      # the dev shell also on macOS (Apple silicon): the macOS port (design/macos.md)
+      devSystems = systems ++ [ "aarch64-darwin" ];
     in
     {
       packages = forAll (pkgs: rec {
@@ -96,18 +98,24 @@
         };
       });
 
-      devShells = forAll (pkgs: {
-        default = pkgs.mkShell {
-          packages = [
-            pkgs.cargo
-            pkgs.rustc
-            pkgs.clippy
-            pkgs.rustfmt
-            pkgs.just
-            pkgs.nixfmt
-          ];
-        };
-      });
+      devShells = nixpkgs.lib.genAttrs devSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              pkgs.cargo
+              pkgs.rustc
+              pkgs.clippy
+              pkgs.rustfmt
+              pkgs.just
+              pkgs.nixfmt
+            ];
+          };
+        }
+      );
 
       formatter = forAll (pkgs: pkgs.nixfmt-tree);
     };
