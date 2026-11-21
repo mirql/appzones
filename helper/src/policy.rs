@@ -189,11 +189,11 @@ fn parts(p: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// pathlib's == and is_relative_to, part by part.
-fn same(a: &[u8], b: &[u8]) -> bool {
+pub fn same(a: &[u8], b: &[u8]) -> bool {
     parts(a) == parts(b)
 }
 
-fn inside(p: &[u8], dir: &[u8]) -> bool {
+pub fn inside(p: &[u8], dir: &[u8]) -> bool {
     Path::new(OsStr::from_bytes(p)).starts_with(Path::new(OsStr::from_bytes(dir)))
 }
 

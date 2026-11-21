@@ -71,6 +71,30 @@ pub fn say(msg: &str) {
 }
 
 /// shutil.which: NAME (a path when it has a slash) on PATH, an executable file.
+/// CMD's output (stdout and stderr captured), waited for at most TIMEOUT (None: as long as
+/// it takes) and, with STOPPABLE, only until the server is asked to stop. A child that runs
+/// past either is killed and reaped: None.
+pub fn output_within(cmd: &mut Command, timeout: Option<std::time::Duration>, stoppable: bool) -> Option<std::process::Output> {
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().ok()?;
+    let (mut so, mut se) = (child.stdout.take()?, child.stderr.take()?);
+    let out = std::thread::spawn(move || { let mut b = Vec::new(); let _ = so.read_to_end(&mut b); b });
+    let err = std::thread::spawn(move || { let mut b = Vec::new(); let _ = se.read_to_end(&mut b); b });
+    let end = timeout.map(|t| std::time::Instant::now() + t);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) if end.is_some_and(|e| std::time::Instant::now() > e) || (stoppable && crate::serve::stopped()) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            Err(_) => return None,
+        }
+    };
+    Some(std::process::Output { status, stdout: out.join().ok()?, stderr: err.join().ok()? })
+}
+
 pub fn which(name: &str, path: Option<&str>) -> Option<String> {
     let exe = |p: &Path| {
         std::fs::metadata(p).is_ok_and(|m| m.is_file())
@@ -149,8 +173,9 @@ impl Host {
         if let Some((_, _, v)) = self.implements.borrow().iter().find(|(h, c, _)| h == helper && c == command) {
             return *v;
         }
-        let v = Command::new(helper).arg("--commands").stdin(Stdio::null()).stderr(Stdio::null()).output()
-            .is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).split_whitespace().any(|c| c == command));
+        // (5 s: a helper that hangs is one that does not implement it)
+        let v = output_within(Command::new(helper).arg("--commands"), Some(std::time::Duration::from_secs(5)), false)
+            .is_some_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).split_whitespace().any(|c| c == command));
         self.implements.borrow_mut().push((helper.into(), command.into(), v));
         v
     }
@@ -239,17 +264,15 @@ fn system_env(layout: &str, user: &str) -> (String, String, String) {
      s("/usr/share/zoneinfo"))
 }
 
-/// One path is P itself or inside D (Path.is_relative_to), both normalized.
-fn rel_to(p: &str, d: &str) -> bool {
-    p == d || d == "/" || p.strip_prefix(d).is_some_and(|r| r.starts_with('/'))
-}
 
 /// zonecfg.theme_source_error.
-fn theme_source_error(policy: &Policy, real: &str) -> Option<String> {
-    let home_real = rp(&policy.home.to_string_lossy());
-    if !rel_to(real, &home_real) {
-        if let Some(d) = THEME_NEVER_INSIDE.iter().find(|d| rel_to(real, d)) {
-            return Some(format!("{real} is inside {d}"));
+fn theme_source_error(policy: &Policy, real: &[u8]) -> Option<String> {
+    use crate::policy::{inside, realpath, same};
+    let shown = String::from_utf8_lossy(real).into_owned(); // (only for what is said)
+    let Some(home_real) = realpath(policy.home.as_bytes()) else { return Some(format!("{shown}: the home cannot be resolved")) };
+    if !(same(real, &home_real) || inside(real, &home_real)) {
+        if let Some(d) = THEME_NEVER_INSIDE.iter().find(|d| same(real, d.as_bytes()) || inside(real, d.as_bytes())) {
+            return Some(format!("{shown} is inside {d}"));
         }
     }
     let denied = match policy.denied_paths() {
@@ -257,20 +280,24 @@ fn theme_source_error(policy: &Policy, real: &str) -> Option<String> {
         Err(e) => return Some(e),
     };
     for d in denied {
-        let shown = String::from_utf8_lossy(&d).into_owned();
-        let dr = rp(&shown);
-        if rel_to(real, &dr) {
-            return Some(format!("{real} is inside {shown}, which never enters a zone"));
+        // compared as bytes, resolved as they are (a name that is not UTF-8 too); an entry
+        // that cannot be resolved refuses
+        let Some(dr) = realpath(&d) else {
+            return Some(format!("{}: cannot be resolved, which never enters a zone", String::from_utf8_lossy(&d)));
+        };
+        if same(real, &dr) || inside(real, &dr) {
+            return Some(format!("{shown} is inside {}, which never enters a zone", String::from_utf8_lossy(&d)));
         }
     }
     None
 }
 
-/// zonecfg.fd_path: the path of an open descriptor, None when unlinked or not absolute.
-fn fd_path(fd: i32) -> Option<String> {
+
+/// fd_path as the kernel gives it, byte for byte.
+fn fd_path_bytes(fd: i32) -> Option<Vec<u8>> {
     let t = std::fs::read_link(format!("/proc/self/fd/{fd}")).ok()?;
-    let t = sh(&t);
-    (!t.ends_with(" (deleted)") && t.starts_with('/')).then_some(t)
+    let t = t.as_os_str().as_bytes().to_vec();
+    (!t.ends_with(b" (deleted)") && t.starts_with(b"/")).then_some(t)
 }
 
 struct Budget;
@@ -287,7 +314,7 @@ impl Theme<'_> {
             return Ok(Ok(())); // dangling link, no permission: skip quietly
         };
         let ok = f.metadata().is_ok_and(|m| m.is_file())
-            && fd_path(f.as_raw_fd()).is_some_and(|r| theme_source_error(self.policy, &r).is_none());
+            && fd_path_bytes(f.as_raw_fd()).is_some_and(|r| theme_source_error(self.policy, &r).is_none());
         if !ok {
             warn(&format!("theme: not copying {} (it resolves to a path that never enters a zone)", sh(src)));
             return Ok(Ok(()));
@@ -318,8 +345,9 @@ impl Theme<'_> {
         Ok(Ok(()))
     }
 
-    fn dir(&mut self, src: &Path, dst: &Path, seen: &mut BTreeSet<String>, depth: usize) -> Result<Result<(), Budget>, std::io::Error> {
-        let real = rp(&sh(src));
+    fn dir(&mut self, src: &Path, dst: &Path, seen: &mut BTreeSet<Vec<u8>>, depth: usize) -> Result<Result<(), Budget>, std::io::Error> {
+        // (a directory that cannot be resolved is not copied)
+        let Some(real) = crate::policy::realpath(src.as_os_str().as_bytes()) else { return Ok(Ok(())) };
         if depth > 12 || seen.contains(&real) || theme_source_error(self.policy, &real).is_some() {
             return Ok(Ok(()));
         }
@@ -518,10 +546,15 @@ fn package_paths(z: &Zone, zdir: &Path) -> Vec<String> {
         let link = roots.join(&attr);
         let expr = format!("(import (builtins.getFlake \"nixpkgs\").outPath {{ system = builtins.currentSystem; \
                             config.allowUnfree = true; }}).{attr}");
-        let r = Command::new("nix").args(["build", "--impure", "--out-link"]).arg(&link).args(["--expr", &expr])
-            .stdin(Stdio::null()).output();
+        if crate::serve::stopped() {
+            break; // asked to stop: no more builds (make_plan returns the stop)
+        }
+        // (as long as it takes, but never past a stop: the build is ended then)
+        let r = output_within(Command::new("nix").args(["build", "--impure", "--out-link"]).arg(&link).args(["--expr", &expr]),
+                              None, true).ok_or("stopped");
         match r {
             Ok(o) if o.status.success() => out.push(format!("{}/bin", rp(&sh(&link)))),
+            Err(_) if crate::serve::stopped() => break,
             Ok(o) => {
                 let err = String::from_utf8_lossy(&o.stderr);
                 let last: Vec<&str> = err.trim().lines().last().into_iter().collect();
@@ -1359,6 +1392,21 @@ pub fn plan_main(args: &[OsString]) -> u8 {
         return 2;
     };
     let host = Host::new(code.unwrap_or_else(exe_dir));
+    // never for a zone that runs: the plan replaces its runtime directory (the server takes
+    // the lock itself; this is the same lock, held while the plan is made)
+    if !crate::policy::zone_name_ok(&name) {
+        eprintln!("appzones: not a zone name: {}", py_repr(&name));
+        return 2;
+    }
+    let _ = std::fs::create_dir_all(&host.rt);
+    let lock = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).mode(0o600)
+        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW).open(host.rt.join(format!("{name}.lock")));
+    // Safety: flock on our own descriptor.
+    let held = lock.as_ref().is_ok_and(|f| unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(f), libc::LOCK_EX | libc::LOCK_NB) } == 0);
+    if !held {
+        eprintln!("appzones: zone {name} is running (or starting): no plan made for it now");
+        return 1;
+    }
     match make_plan(&host, &name).and_then(|p| write_plan(&p)) {
         Ok(path) => {
             println!("{}", sh(&path));
@@ -1478,16 +1526,16 @@ mod tests {
         let secret = h.join(".gitconfig");
         std::fs::write(&secret, "SECRET").unwrap();
         let f = std::fs::File::open(&secret).unwrap();
-        assert!(fd_path(f.as_raw_fd()).is_some());
+        assert!(fd_path_bytes(f.as_raw_fd()).is_some());
         std::fs::write(h.join(".gitconfig.new"), "new").unwrap();
         std::fs::rename(h.join(".gitconfig.new"), &secret).unwrap(); // an atomic save
-        assert_eq!(fd_path(f.as_raw_fd()), None);
+        assert_eq!(fd_path_bytes(f.as_raw_fd()), None);
         // an O_PATH descriptor of a directory removed after it was opened
         let d = h.join("Docs/gone");
         std::fs::create_dir(&d).unwrap();
         let g = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_PATH).open(&d).unwrap();
         std::fs::remove_dir(&d).unwrap();
-        assert_eq!(fd_path(g.as_raw_fd()), None);
+        assert_eq!(fd_path_bytes(g.as_raw_fd()), None);
         let _ = std::fs::remove_dir_all(&t);
     }
 
@@ -1657,6 +1705,15 @@ mod tests {
     }
 
     #[test]
+    fn commands_within_a_deadline() {
+        let t0 = std::time::Instant::now();
+        assert!(output_within(Command::new("sleep").arg("10"), Some(std::time::Duration::from_millis(200)), false).is_none());
+        assert!(t0.elapsed() < std::time::Duration::from_secs(3));
+        let o = output_within(Command::new("sh").args(["-c", "echo out; echo err >&2"]), Some(std::time::Duration::from_secs(5)), false).unwrap();
+        assert_eq!((o.stdout.as_slice(), o.stderr.as_slice()), (&b"out\n"[..], &b"err\n"[..]));
+    }
+
+    #[test]
     fn nft() {
         let a = |i: &str, x: &str, p: u8| (i.to_string(), x.parse::<IpAddr>().unwrap(), p);
         let addrs = vec![a("lo", "127.0.0.1", 8), a("lo", "::1", 128), a("eth0", "203.0.113.7", 24),
@@ -1723,11 +1780,4 @@ mod tests {
         assert_eq!(c(&["::/0"]), vec!["::/0"]);
     }
 
-    #[test]
-    fn rels() {
-        assert!(rel_to("/a/b", "/a"));
-        assert!(rel_to("/a", "/a"));
-        assert!(!rel_to("/ab", "/a"));
-        assert!(rel_to("/x", "/"));
-    }
 }

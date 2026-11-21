@@ -92,7 +92,9 @@ pub fn home_real() -> Vec<u8> {
 pub fn policy(code_dir: OsString) -> Policy {
     let state = std::env::var_os("XDG_STATE_HOME").filter(|s| s.as_bytes().starts_with(b"/"));
     let extra = ["CONFIG", "STATE"].iter().filter_map(|k| env(k)).filter(|v| v.starts_with('/')).map(OsString::from).collect();
-    Policy { home: home(), code_dir, denied_file: env("DENIED_PATHS").map(OsString::from), state_dir: state, extra }
+    // (an empty override is none: the host's file, as Python reads it)
+    let denied_file = env("DENIED_PATHS").filter(|v| !v.is_empty()).map(OsString::from);
+    Policy { home: home(), code_dir, denied_file, state_dir: state, extra }
 }
 
 fn host_layout() -> &'static str {
@@ -138,10 +140,10 @@ pub fn env_denied(name: &str) -> bool {
 /// (zonecfg.activatable_names: $APPZONES_DBUS_SERVICE_DIRS, else the session bus).
 fn activatable_names() -> Option<Vec<String>> {
     if !has_env("DBUS_SERVICE_DIRS") {
-        let out = std::process::Command::new("busctl")
+        // (5 s, as Python: a bus that does not answer means the names are not known)
+        let out = crate::plan::output_within(std::process::Command::new("busctl")
             .args(["--user", "--json=short", "call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
-                   "org.freedesktop.DBus", "ListActivatableNames"])
-            .stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok()?;
+                   "org.freedesktop.DBus", "ListActivatableNames"]), Some(std::time::Duration::from_secs(5)), false)?;
         if !out.status.success() {
             return None;
         }

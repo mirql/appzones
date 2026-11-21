@@ -32,8 +32,15 @@ impl Box_ {
     }
 
     fn cmd(&self, args: &[&str]) -> Command {
+        let mut c = self.raw(&["cli"]);
+        c.args(args);
+        c
+    }
+
+    /// appzones-helper ARGS (not its cli) in the box's environment.
+    fn raw(&self, args: &[&str]) -> Command {
         let mut c = Command::new(HELPER);
-        c.arg("cli").args(args).env_clear().stdin(Stdio::null())
+        c.args(args).env_clear().stdin(Stdio::null())
             .env("HOME", self.t.join("home")).env("XDG_RUNTIME_DIR", self.t.join("rt"))
             .env("PATH", self.t.join("bin")).env("USER", "alice")
             .env("APPZONES_CONFIG", self.t.join("zones.toml"))
@@ -419,4 +426,25 @@ fn active_on_sway() {
     // sway gone: no label, no failure
     let gone = b.t.join("gone.sock");
     assert_eq!(active(&b, &[("SWAYSOCK", gone.to_str().unwrap())]).0, "");
+}
+
+#[test]
+fn plan_never_for_a_running_zone() {
+    // the standalone plan replaces a zone's runtime directory: refused while its lock is held
+    let b = Box_::new("plan-lock", Some(TWO));
+    fs::create_dir_all(b.t.join("rt/appzones")).unwrap();
+    let held = hold_lock(&b.t.join("rt/appzones/aa.lock"));
+    let o = b.raw(&["plan", "aa"]).output().unwrap();
+    drop(held);
+    let (rc, _, err) = out(o);
+    assert_eq!(rc, 1, "{err}");
+    assert!(err.contains("zone aa is running"), "{err}");
+}
+
+#[test]
+fn empty_denied_paths_override() {
+    // APPZONES_DENIED_PATHS="" is no override (the host's file, as Python reads it), never an error
+    let b = Box_::new("denied-empty", Some(TWO));
+    let (rc, so, err) = b.cmd(&["check"]).env("APPZONES_DENIED_PATHS", "").output().map(out).unwrap();
+    assert_eq!(rc, 0, "{so}{err}");
 }
