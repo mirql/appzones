@@ -1177,7 +1177,8 @@ pub fn make_plan(host: &Host, name: &str) -> Result<J, String> {
         let real_xdg = if layout == "nixos" { "/run/current-system/sw/bin/xdg-open" } else { "/usr/bin/xdg-open" };
         write(&xo, &XDG_OPEN.replace("{links}", &links_setting).replace("{target}", target)
             .replace("{open_link}", &open_link).replace("{xdg_open}", real_xdg))?;
-        std::fs::set_permissions(&xo, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        // the zone's xdg-open shim must be executable; it sits in the zone's own runtime directory (0700)
+        std::fs::set_permissions(&xo, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?; // NOSONAR
         let mut cmd = zone_py.clone();
         cmd.extend([s("_link"), target.clone()]);
         links = json!({"socket": sh(&zrt.join("ctl").join("links.sock")), "command": cmd});
