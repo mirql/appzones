@@ -581,6 +581,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")] // (the mount helper's, Linux only; macOS's /etc is /private/etc)
     fn resolved_is_mount_source_error_for_canonical_paths() {
         let t = TempDir::new("resolved");
         let home = t.0.join("home");

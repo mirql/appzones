@@ -92,8 +92,9 @@ pub fn pidfd_signal(pfd: RawFd, sig: libc::c_int) -> std::io::Result<()> {
 }
 
 /// The path of the open descriptor FD, byte for byte; None when it has no path any more
-/// (unlinked) or it is not absolute. Linux: /proc/self/fd; macOS: F_GETPATH, and a file
-/// with no links left counts as unlinked (macOS gives no "(deleted)" mark).
+/// (unlinked) or it is not absolute. Linux: /proc/self/fd; macOS: F_GETPATH, which gives no
+/// "(deleted)" mark: there the path counts only while it still leads to this very file
+/// (the same device and inode), so a removed or replaced one never passes.
 pub fn fd_path(fd: RawFd) -> Option<Vec<u8>> {
     #[cfg(target_os = "linux")]
     {
@@ -104,20 +105,21 @@ pub fn fd_path(fd: RawFd) -> Option<Vec<u8>> {
     }
     #[cfg(not(target_os = "linux"))]
     {
+        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::fs::MetadataExt;
         let mut buf = vec![0u8; libc::PATH_MAX as usize];
         // Safety: F_GETPATH writes at most PATH_MAX bytes into our buffer; fstat into a local.
-        let (rc, links) = unsafe {
+        let (rc, held) = unsafe {
             let rc = libc::fcntl(fd, libc::F_GETPATH, buf.as_mut_ptr());
             let mut st: libc::stat = std::mem::zeroed();
-            let links = if libc::fstat(fd, &mut st) == 0 { st.st_nlink as u64 } else { 0 };
-            (rc, links)
+            let held = (libc::fstat(fd, &mut st) == 0).then_some((st.st_dev as u64, st.st_ino as u64, st.st_nlink as u64));
+            (rc, held)
         };
-        if rc == -1 || links == 0 {
-            return None;
-        }
+        let Some((dev, ino, links)) = held.filter(|_| rc != -1) else { return None };
         let n = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
         buf.truncate(n);
-        buf.starts_with(b"/").then_some(buf)
+        let at = std::fs::symlink_metadata(std::ffi::OsStr::from_bytes(&buf)).ok()?;
+        (links > 0 && buf.starts_with(b"/") && at.dev() == dev && at.ino() == ino).then_some(buf)
     }
 }
 

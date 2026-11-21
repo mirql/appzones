@@ -2021,6 +2021,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")] // (/proc: macOS finds a lock's holder another way, stage 2)
     fn a_server_holds_the_lock() {
         // opened is not held: only the process with the flock counts as the zone's server
         let t = tmp("holds");
