@@ -11,9 +11,12 @@
 
 use std::process::ExitCode;
 
+mod config;
 mod host_dns;
 mod open_link;
+mod plan;
 mod policy;
+mod pyfmt;
 mod serve;
 mod zone_dns;
 mod zone_init;
@@ -23,7 +26,7 @@ const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-way
                      serve --plan FILE --lock-fd L [--notify-fd N] | --version | --commands";
 
 /// The commands this build implements (`--commands`).
-const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve"];
+const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve", "plan"];
 
 fn main() -> ExitCode {
     // never a panic on an argument that is not UTF-8 (std::env::args would): lossy here,
@@ -31,6 +34,12 @@ fn main() -> ExitCode {
     let raw: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     if raw.first().map(|a| a == "check-mount-source").unwrap_or(false) {
         return ExitCode::from(check_mount_source(&raw[1..])); // paths as given, byte for byte
+    }
+    if raw.first().map(|a| a == "config-json").unwrap_or(false) {
+        return ExitCode::from(config::config_json_main(&raw[1..])); // the differential test's view
+    }
+    if raw.first().map(|a| a == "plan").unwrap_or(false) {
+        return ExitCode::from(plan::plan_main(&raw[1..])); // a zone's plan, as appzones serve's first part
     }
     if raw.first().map(|a| a == "serve").unwrap_or(false) {
         return ExitCode::from(serve::main(&raw[1..])); // the plan's path byte for byte
@@ -70,7 +79,7 @@ fn check_mount_source(args: &[std::ffi::OsString]) -> u8 {
         eprintln!("{USAGE}");
         2
     };
-    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None };
+    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None, state_dir: None };
     let (mut paths, mut list) = (Vec::new(), false);
     let mut it = args.iter();
     while let Some(a) = it.next() {

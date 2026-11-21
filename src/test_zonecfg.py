@@ -50,6 +50,76 @@ class _Zone:
                 setattr(m, name, value)
 
 
+# DifferentialConfigTest: while it runs ZonecfgTest, every zonecfg.load_text there is also
+# given to the Rust loader, and what differs is kept here.
+CONFIG_DIFF: dict = {"helper": None, "compared": 0, "skipped": 0, "mismatches": []}
+_PATCHABLE = ("HOST_DENIED_FILE", "LEGACY_HOST_DENIED_FILE", "bus_activatable_names", "host_layout", "host_nix_ld",
+              "bind_error", "activatable_names", "host_activatable", "denied_paths", "host_denied_paths")
+
+
+def _config_view(z, cfg) -> dict | None:
+    """What both loaders must agree on: errors, warnings, every zone's settings, origins
+    and settings_hash. None when Python's settings cannot be shown as JSON (datetimes)."""
+    from appzones import common
+    zones = {}
+    for name, zone in cfg.zones.items():
+        try:
+            zones[name] = {"settings": json.loads(json.dumps(zone.settings, sort_keys=True)), "origin": zone.origin,
+                           "hash": common.settings_hash(zone)}
+        except (TypeError, ValueError):
+            return None
+    return {"errors": cfg.errors, "warnings": cfg.warnings, "zones": zones}
+
+
+def _diff_load_text(z) -> None:
+    """Wrap Z.load_text (a freshly loaded zonecfg): each call also runs the Rust loader on
+    the same text, with what zonecfg read at import (HOME, the nix-ld paths, CODE_DIR)."""
+    import tomllib
+    real = z.load_text
+    snapshot = {k: getattr(z, k) for k in _PATCHABLE}
+
+    def load_text(text, path="zones.toml"):
+        cfg = real(text, path)
+        if any(getattr(z, k) is not v for k, v in snapshot.items()):
+            CONFIG_DIFF["skipped"] += 1  # a test replaced part of zonecfg: Rust cannot see that
+            return cfg
+        py = _config_view(z, cfg)
+        if py is None:
+            CONFIG_DIFF["skipped"] += 1
+            return cfg
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+            f.write(text)
+        env = dict(os.environ, APPZONES_HOME_FOR_TESTS=str(z.HOME), APPZONES_NIX_LD_SHIM=z.NIX_LD_SHIM,
+                   APPZONES_NIX_LD_LIB=z.NIX_LD_LIB)
+        try:
+            out = subprocess.run([CONFIG_DIFF["helper"], "config-json", f.name, "--name", str(path),
+                                  "--code-dir", str(z.CODE_DIR)], capture_output=True, text=True, env=env, timeout=30)
+        finally:
+            os.unlink(f.name)
+        CONFIG_DIFF["compared"] += 1
+        try:
+            rs = json.loads(out.stdout)
+        except ValueError:
+            CONFIG_DIFF["mismatches"].append((text, "no JSON from the Rust loader", out.stderr[-500:]))
+            return cfg
+        try:
+            tomllib.loads(text)
+            parsed = True
+        except tomllib.TOMLDecodeError:
+            parsed = False
+        if not parsed:  # the parsers' own messages differ: only that both refuse it, naming the file
+            ok = len(rs["errors"]) == 1 and rs["errors"][0].startswith(f"{path}: ") and not rs["zones"]
+            if not ok:
+                CONFIG_DIFF["mismatches"].append((text, py, rs))
+        elif rs != py and not (py["errors"] and len(rs["errors"]) == 1 and "number too large" in rs["errors"][0]):
+            # (an integer beyond 64 bits: tomllib reads it and the check refuses it, the Rust
+            # parser refuses it at once; refused either way)
+            CONFIG_DIFF["mismatches"].append((text, py, rs))
+        return cfg
+
+    z.load_text = load_text
+
+
 class ZonecfgTest(unittest.TestCase):
     def setUp(self):
         # the tests assume NixOS's layout unless they set another (the Nix build
@@ -80,6 +150,8 @@ class ZonecfgTest(unittest.TestCase):
         sys.path.insert(0, str(HERE))
         import zonecfg
         self.z = importlib.reload(zonecfg)
+        if CONFIG_DIFF.get("helper"):
+            _diff_load_text(self.z)
         # the fake home sits in /tmp (TMPDIR): the home is exempt from the system-tree rule, as on a
         # host whose /home lives in /var
 
@@ -2383,6 +2455,195 @@ class AgentProtocolTest(unittest.TestCase):
                 if p.poll() is None:
                     p.kill()
                     p.wait()
+
+
+PLAN_ZONES = """version = 1
+requires = 6
+[zones.alpha]
+colour = "#a6e3a1"
+links = "zone"
+theme = true
+tmp = "disk"
+devices = ["gpu", "audio", "camera", "usb"]
+camera = "device"
+usb = ["abcd"]
+wayland = "host"
+linger = "10m"
+netbird = true
+autostart_apps = ["web"]
+env = { FOO = "bar", LANG = "de_DE.UTF-8" }
+binds = [{ path = "~/proj" }, { path = "~/data", mode = "ro" }]
+dbus = { talk = ["com.example.Talk"], own = ["com.example.app.Own"] }
+[zones.beta]
+colour = "#89b4fa"
+network = "none"
+dns = "public"
+machine_id = "host"
+userns = false
+home = "~/bhome"
+wayland = "none"
+links = "zone:alpha"
+theme = false
+[zones.gamma]
+colour = "#f38ba8"
+network = "host"
+supervisor = "spawn"
+start_timeout = 45
+bus = "zone"
+[apps.web]
+command = ["firefox", "--new-instance"]
+zones = ["alpha", "beta"]
+args = { alpha = ["-P", "alpha"] }
+"""
+
+FAKE_IP = """#!/bin/sh
+cat <<'J'
+[{"ifname": "lo", "addr_info": [{"local": "127.0.0.1", "prefixlen": 8}, {"local": "::1", "prefixlen": 128}]},
+ {"ifname": "eth0", "addr_info": [{"local": "192.168.1.20", "prefixlen": 24}, {"local": "2001:db8:1::20", "prefixlen": 64},
+                                  {"local": "fe80::1", "prefixlen": 64}, {"local": "203.0.113.7", "prefixlen": 25}]},
+ {"ifname": "wt0", "addr_info": [{"local": "100.70.12.34", "prefixlen": 16}]},
+ {"ifname": "docker0", "addr_info": [{"local": "172.17.0.1", "prefixlen": 16}, {"local": "172.18.0.1", "prefixlen": 16}]}]
+J
+"""
+
+
+def _plan_fixture(t: Path) -> dict:
+    """A fresh fixture under T (its old content removed): a home with theme files, the config,
+    fake helper programs and `ip`, a runtime directory. Returns the environment."""
+    shutil.rmtree(t, ignore_errors=True)
+    home, rt, bin_ = t / "home", t / "rt", t / "bin"
+    for d in ("proj", "data", "bhome", ".ssh", ".config/gtk-3.0", ".icons/Theme/cursors", ".config/fontconfig",
+              ".local/share/fonts", ".local/share/appzones/alpha", ".local/share/appzones/beta",
+              ".local/share/appzones/gamma"):
+        (home / d).mkdir(parents=True, exist_ok=True)
+    (home / ".ssh/id").write_text("secret")
+    (home / ".config/gtk-3.0/settings.ini").write_text("[Settings]\n")
+    (home / ".icons/Theme/index.theme").write_text("[Icon Theme]\n")
+    (home / ".icons/Theme/cursors/x.lock").write_text("skip")
+    (home / ".config/fontconfig/fonts.conf").write_text("<fontconfig/>")
+    (home / ".config/fontconfig/key").symlink_to(home / ".ssh/id")  # never copied
+    (home / ".local/share/fonts/f.ttf").write_bytes(b"\0" * 64)
+    for z in ("alpha", "beta", "gamma"):
+        (home / f".local/share/appzones/{z}/machine-id").write_text("0" * 32 + "\n")
+    (home / ".local/share/appzones/alpha/tmp").mkdir()
+    old = home / ".local/share/appzones/alpha/tmp/old"
+    old.write_text("x")
+    os.utime(old, (time.time() - 40 * 86400, time.time() - 40 * 86400))
+    rt.mkdir(parents=True)
+    (rt / "pipewire-0").write_text("")
+    (rt / "wayland-9").write_text("")
+    bin_.mkdir()
+    for name in ("bwrap", "pasta", "xdg-dbus-proxy", "zone-wayland", "dbus-daemon"):
+        (bin_ / name).write_text("#!/bin/sh\nexit 0\n")
+        (bin_ / name).chmod(0o755)
+    (bin_ / "ip").write_text(FAKE_IP)
+    (bin_ / "ip").chmod(0o755)
+    (t / "zones.toml").write_text(PLAN_ZONES)
+    (t / "denied-paths").write_text("~/Secrets\n")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("APPZONES_", "ZONES_", "XDG_", "WAYLAND", "DBUS"))}
+    env.update(HOME=str(home), USER="alice", XDG_RUNTIME_DIR=str(rt), PATH=f"{bin_}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+               APPZONES_CONFIG=str(t / "zones.toml"), APPZONES_DENIED_PATHS=str(t / "denied-paths"),
+               APPZONES_DBUS_SERVICE_DIRS="", APPZONES_INSTANCE_FOR_TESTS="zone-x-1", APPZONES_NETBIRD_IFACE="wt0",
+               WAYLAND_DISPLAY="wayland-9", DBUS_SESSION_BUS_ADDRESS=f"unix:path={rt}/bus",
+               XDG_CURRENT_DESKTOP="Hyprland", LANG="C.UTF-8", APPZONES_DNS_HOST="192.0.2.53",
+               **{f"APPZONES_BIN_{n}": str(bin_ / n.lower().replace("_", "-"))
+                  for n in ("BWRAP", "PASTA", "XDG_DBUS_PROXY", "ZONE_WAYLAND", "DBUS_DAEMON")})
+    return env
+
+
+def _snapshot(t: Path) -> dict:
+    """Every file, link and directory the plan maker left in the runtime and state dirs."""
+    out = {}
+    for root in (t / "rt", t / "home/.local/share/appzones"):
+        for p in sorted(root.rglob("*")):
+            rel = str(p.relative_to(t))
+            if p.name.startswith(".colours."):
+                continue
+            if p.is_symlink():
+                out[rel] = ("link", os.readlink(p))
+            elif p.is_dir():
+                out[rel] = ("dir", oct(p.stat().st_mode & 0o777))
+            elif p.name == "plan.json":
+                out[rel] = ("plan", json.loads(p.read_text()))
+            else:
+                out[rel] = ("file", oct(p.stat().st_mode & 0o777), p.read_bytes().decode(errors="replace"))
+    return out
+
+
+@unittest.skipUnless(os.environ.get("APPZONES_TEST_HELPER"), "needs $APPZONES_TEST_HELPER (the Rust helper)")
+class DifferentialPlanTest(unittest.TestCase):
+    """A zone's plan made in Rust (helper/src/plan.rs) is make_plan's: for three zones that use
+    most settings, on both layouts and with either zone-init, both write the same plan.json and
+    the same files (resolv.conf, hosts, flatpak-info, config.sha256, nft.rules, the xdg-open
+    shim, the colours, the theme copy, /tmp cleaned), and say the same things."""
+
+    def run_maker(self, t: Path, env: dict, rust: bool, zone: str):
+        helper = os.environ["APPZONES_TEST_HELPER"]
+        if rust:
+            argv = [helper, "plan", zone, "--python", sys.executable, "--code-dir", str(HERE)]
+        else:
+            code = ("import sys; sys.path.insert(0, sys.argv[2]); from appzones import server; "
+                    "print(server.write_plan(server.make_plan(sys.argv[1])))")
+            argv = [sys.executable, "-B", "-c", code, zone, str(HERE)]
+        r = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+        return r.returncode, r.stdout.splitlines(), r.stderr.splitlines(), _snapshot(t)
+
+    def test_same_plans(self):
+        helper = os.environ["APPZONES_TEST_HELPER"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        t = Path(tmp.name).resolve() / "f"
+        compared = 0
+        for layout in ("nixos", "fhs"):
+            for rust_init in (True, False):
+                for zone in ("alpha", "beta", "gamma"):
+                    results = []
+                    for rust in (False, True):
+                        env = _plan_fixture(t)
+                        env["APPZONES_LAYOUT"] = layout
+                        if rust_init:
+                            env.update(APPZONES_HELPER="rust", APPZONES_BIN_APPZONES_HELPER=helper)
+                        results.append(self.run_maker(t, env, rust, zone))
+                    with self.subTest(layout=layout, rust_init=rust_init, zone=zone):
+                        py, rs = results
+                        self.assertEqual(py[0], rs[0], f"exit status; python: {py[2]}, rust: {rs[2]}")
+                        self.assertEqual(py[1], rs[1], "stdout")
+                        self.assertEqual(py[2], rs[2], "stderr")
+                        for k in sorted(set(py[3]) | set(rs[3])):
+                            self.assertEqual(py[3].get(k), rs[3].get(k), k)
+                        compared += 1
+        self.assertEqual(compared, 12)
+
+
+@unittest.skipUnless(os.environ.get("APPZONES_TEST_HELPER"), "needs $APPZONES_TEST_HELPER (the Rust helper)")
+class DifferentialConfigTest(unittest.TestCase):
+    """zones.toml in Rust (stage 2, helper/src/config.rs) is zonecfg: for every configuration
+    the unit tests load, and every example, both give the same errors and warnings, in the
+    same order and words, the same settings and origins for every zone, and the same
+    settings_hash. Parse errors: both refuse, naming the file (the parsers word them apart)."""
+
+    def test_same_configs(self):
+        CONFIG_DIFF.update(helper=os.environ["APPZONES_TEST_HELPER"], compared=0, skipped=0, mismatches=[])
+        saved = dict(os.environ)  # (the unit tests change the environment; the next test needs ours)
+        try:
+            suite = unittest.defaultTestLoader.loadTestsFromTestCase(ZonecfgTest)
+            unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
+            sys.path.insert(0, str(HERE))
+            import zonecfg
+            z = importlib.reload(zonecfg)
+            _diff_load_text(z)
+            for ex in sorted((HERE.parent / "examples").glob("*.toml")):
+                z.load(ex)
+        finally:
+            CONFIG_DIFF["helper"] = None
+            os.environ.clear()
+            os.environ.update(saved)
+        print(f"compared {CONFIG_DIFF['compared']} configurations, skipped {CONFIG_DIFF['skipped']}", file=sys.stderr)
+        self.assertGreater(CONFIG_DIFF["compared"], 100)
+        for text, py, rs in CONFIG_DIFF["mismatches"][:5]:
+            print(f"--- differs:\n{text}\n--- python: {json.dumps(py)[:2000]}\n--- rust:   {json.dumps(rs)[:2000]}",
+                  file=sys.stderr)
+        self.assertEqual(len(CONFIG_DIFF["mismatches"]), 0, f"{len(CONFIG_DIFF['mismatches'])} configurations differ")
 
 
 @unittest.skipUnless(os.environ.get("APPZONES_TEST_HELPER"), "needs $APPZONES_TEST_HELPER (the Rust helper)")

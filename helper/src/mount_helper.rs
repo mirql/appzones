@@ -280,7 +280,7 @@ impl Caller {
     }
 
     fn policy(&self) -> policy::Policy {
-        policy::Policy { home: OsString::from_vec(self.home.clone()), code_dir: code_dir(), denied_file: None }
+        policy::Policy { home: OsString::from_vec(self.home.clone()), code_dir: code_dir(), denied_file: None, state_dir: None }
     }
 
     fn mnt_dir(&self, zone: &str) -> Vec<u8> {
