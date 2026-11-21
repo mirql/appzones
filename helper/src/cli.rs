@@ -340,21 +340,38 @@ impl Cli {
 
     /// SIGINT (stop for good) to zone NAME's servers outside its unit, then until they exit.
     fn signal_servers(&self, name: &str) {
+        #[cfg(not(target_os = "linux"))]
+        {
+            // no pidfds: SIGINT to each server found, then until none answers kill(pid, 0)
+            let pids: Vec<i32> = self.server_pids(name).into_iter()
+                // Safety: kill(2) of a pid just checked to be this zone's server.
+                .filter(|p| self.is_server(&p.to_string(), name, None) && unsafe { libc::kill(*p, libc::SIGINT) } == 0).collect();
+            let end = Instant::now() + Duration::from_secs(20);
+            // Safety: kill(pid, 0) only asks whether the process is there.
+            while pids.iter().any(|p| unsafe { libc::kill(*p, 0) } == 0) {
+                if Instant::now() > end {
+                    die(&format!("zone {name}: its server did not exit within 20 s after SIGINT"));
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+        #[cfg(target_os = "linux")]
+        self.signal_servers_pidfd(name);
+    }
+
+    /// signal_servers with pidfds, which pin each process: never a pid taken over.
+    #[cfg(target_os = "linux")]
+    fn signal_servers_pidfd(&self, name: &str) {
         let mut pfds: Vec<RawFd> = Vec::new();
         for pid in self.server_pids(name) {
-            // Safety: pidfd_open of a pid; the descriptor is ours.
-            let pfd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) } as RawFd;
-            if pfd < 0 {
-                continue;
-            }
+            let Some(pfd) = crate::sys::pidfd_open(pid) else { continue };
             if self.is_server(&pid.to_string(), name, None) {
-                // Safety: a signal through the pidfd, which pins the process.
-                let rc = unsafe { libc::syscall(libc::SYS_pidfd_send_signal, pfd, libc::SIGINT, std::ptr::null::<u8>(), 0) };
-                if rc == 0 {
+                let sent = crate::sys::pidfd_signal(pfd, libc::SIGINT);
+                if sent.is_ok() {
                     pfds.push(pfd);
                     continue;
                 }
-                let e = std::io::Error::last_os_error();
+                let e = sent.unwrap_err();
                 if e.raw_os_error() != Some(libc::ESRCH) {
                     let t = e.to_string();
                     warn(&format!("zone {name}: could not signal its server (pid {pid}): {}",
@@ -422,8 +439,8 @@ impl Cli {
         });
         let since = log.metadata().map(|m| m.len()).unwrap_or(0);
         let mut p = [0 as RawFd; 2];
-        // Safety: pipe2 into our array, close-on-exec (the server gets its end below).
-        if unsafe { libc::pipe2(p.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        // close-on-exec (the server gets its end below)
+        if !crate::sys::pipe(&mut p, false) {
             die(&format!("zone {name}: could not start its server: {}", std::io::Error::last_os_error()));
         }
         // Safety: the two new descriptors are ours.
@@ -659,9 +676,9 @@ impl Cli {
             let parent = std::process::id() as libc::pid_t;
             let pid = unsafe { libc::fork() };
             if pid == 0 {
-                // Safety: prctl and getppid in the child.
+                crate::sys::die_with_parent();
+                // Safety: getppid and _exit in the child.
                 unsafe {
-                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
                     if libc::getppid() != parent {
                         libc::_exit(1);
                     }
@@ -897,8 +914,7 @@ impl Cli {
             wake();
         }
         let mut wake_pipe = [-1; 2];
-        // Safety: pipe2 into a local array.
-        if unsafe { libc::pipe2(wake_pipe.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) } == 0 {
+        if crate::sys::pipe(&mut wake_pipe, true) {
             WAKE.store(wake_pipe[1], std::sync::atomic::Ordering::SeqCst);
         }
         // Safety: handlers that only store to an atomic (no SA_RESTART: poll returns, and the
@@ -1302,8 +1318,7 @@ impl Cli {
             // Safety: fork in a process with no other threads; the child dies with us.
             let pid = unsafe { libc::fork() };
             if pid == 0 {
-                // Safety: prctl in the child.
-                unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) };
+                crate::sys::die_with_parent();
                 self.wait_ready(&n, r, since, true);
                 // Safety: the child's end.
                 unsafe { libc::_exit(0) };
@@ -1743,7 +1758,7 @@ fn stdio_fd_ok(fd: RawFd) -> bool {
     }
     let t = st.st_mode & libc::S_IFMT;
     t == libc::S_IFIFO || t == libc::S_IFREG
-        || (t == libc::S_IFCHR && libc::major(st.st_rdev) == 1 && libc::minor(st.st_rdev) == 3)
+        || (t == libc::S_IFCHR && crate::sys::is_dev_null(st.st_rdev))
 }
 
 /// server.notify_fd_ok: open for writing, and a pipe, FIFO, file or character device.
@@ -1775,6 +1790,12 @@ pub fn main(args: &[OsString]) -> i32 {
     }
     let mut cli = Cli::new(Host::new(crate::plan::exe_dir()));
     let (cmd, rest) = (argv[0].as_str(), &argv[1..]);
+    // zones themselves are Linux's so far (macOS: design/macos.md, stage 2)
+    #[cfg(not(target_os = "linux"))]
+    if matches!(cmd, "up" | "run" | "shell" | "restart" | "serve" | "_supervise" | "mount" | "umount" | "apps"
+                | "_autostart" | "_cleanup" | "_link") {
+        die(&format!("{cmd}: zones do not run on this system yet (check, list, which and new work)"));
+    }
     if cmd == "_autostart" || (COMMANDS.contains(&cmd) && cmd != "active" && cmd != "serve") {
         cli.migrate_state();
     }
@@ -1783,6 +1804,7 @@ pub fn main(args: &[OsString]) -> i32 {
     };
     match cmd {
         "serve" | "_supervise" => cli.serve(rest),
+        #[cfg(target_os = "linux")]
         "_netsetup" => {
             let i = rest.iter().position(|a| a == "--").unwrap_or_else(|| die("usage: appzones _netsetup RULES INFO ZONE -- CMD"));
             if i < 3 {

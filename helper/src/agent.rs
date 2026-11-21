@@ -55,7 +55,7 @@ pub fn connect_within(path: &std::path::Path, t: Duration) -> Result<UnixStream,
             for (d, b) in sa.sun_path.iter_mut().zip(bytes) {
                 *d = *b as libc::c_char;
             }
-            let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC, 0);
+            let fd = crate::sys::unix_stream_nonblock();
             if fd < 0 {
                 return Err(std::io::Error::last_os_error().to_string());
             }

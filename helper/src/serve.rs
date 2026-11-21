@@ -267,7 +267,7 @@ fn connect_now(path: &Path) -> Option<UnixStream> {
         for (d, b) in sa.sun_path.iter_mut().zip(bytes) {
             *d = *b as libc::c_char;
         }
-        let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC, 0);
+        let fd = crate::sys::unix_stream_nonblock();
         if fd < 0 {
             return None;
         }
@@ -306,10 +306,15 @@ fn sd_notify(msg: &str) {
     let Ok(s) = UnixDatagram::unbound() else { return };
     let a = addr.to_string_lossy();
     if let Some(name) = a.strip_prefix('@') {
-        use std::os::linux::net::SocketAddrExt;
-        if let Ok(sa) = std::os::unix::net::SocketAddr::from_abstract_name(name.as_bytes()) {
-            let _ = s.send_to_addr(msg.as_bytes(), &sa);
+        // (an abstract socket: Linux only, as systemd)
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::linux::net::SocketAddrExt;
+            if let Ok(sa) = std::os::unix::net::SocketAddr::from_abstract_name(name.as_bytes()) {
+                let _ = s.send_to_addr(msg.as_bytes(), &sa);
+            }
         }
+        let _ = name;
     } else {
         let _ = s.send_to(msg.as_bytes(), &*a);
     }
@@ -395,8 +400,8 @@ impl Run {
             match ls.accept() {
                 Ok((conn, _)) => {
                     let _ = conn.set_nonblocking(false);
-                    // Safety: pidfd_open of our own pid; the descriptor is ours and closed below.
-                    let me = unsafe { libc::syscall(libc::SYS_pidfd_open, libc::getpid(), 0) } as RawFd;
+                    // (ours, closed below)
+                    let me = crate::sys::pidfd_open(std::process::id() as libc::pid_t).unwrap_or(-1);
                     if me < 0 {
                         say(&format!("[zone] {}: handing over the server's pidfd failed: {}", self.name,
                                      std::io::Error::last_os_error()));
@@ -674,7 +679,7 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
         // _exit): it gets SIGKILL when this server dies, and exits if it died already.
         unsafe {
             c.pre_exec(move || {
-                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
+                crate::sys::die_with_parent();
                 if libc::getppid() != server {
                     libc::_exit(1);
                 }
@@ -719,7 +724,7 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
     // Safety: between fork and exec only async-signal-safe calls (prctl, getppid, _exit).
     unsafe {
         cmd.pre_exec(move || {
-            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
+            crate::sys::die_with_parent();
             if libc::getppid() != server {
                 libc::_exit(1);
             }
