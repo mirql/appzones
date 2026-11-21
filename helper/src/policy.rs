@@ -43,6 +43,22 @@ pub struct Policy {
     pub code_dir: OsString,
     /// None: the host's file (HOST_DENIED_FILE, or the legacy one when it is absent)
     pub denied_file: Option<OsString>,
+    /// A custom state directory ($XDG_STATE_HOME, absolute): its appzones/ (the logs) is on
+    /// the never-list too. None for the mount helper, which reads no environment.
+    pub state_dir: Option<OsString>,
+}
+
+/// An OSError as Python shows it: "[Errno N] Message: 'path'".
+pub fn py_oserror(e: &std::io::Error, path: &str) -> String {
+    match e.raw_os_error() {
+        Some(n) => {
+            // std words it "Message (os error N)": the message is C's strerror, as Python's
+            let text = e.to_string();
+            let msg = text.strip_suffix(&format!(" (os error {n})")).unwrap_or(&text);
+            format!("[Errno {n}] {msg}: {}", py_repr(path))
+        }
+        None => e.to_string(),
+    }
 }
 
 fn show(p: &[u8]) -> String {
@@ -169,12 +185,12 @@ fn inside(p: &[u8], dir: &[u8]) -> bool {
 }
 
 /// Python's str.strip(): its whitespace is Unicode's and \x1c-\x1f.
-fn py_strip(s: &str) -> &str {
+pub fn py_strip(s: &str) -> &str {
     s.trim_matches(|c: char| c.is_whitespace() || ('\x1c'..='\x1f').contains(&c))
 }
 
 /// The line breaks Python's str.splitlines() knows ("\r\n" is one).
-fn split_lines(text: &str) -> Vec<&str> {
+pub fn split_lines(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = text;
     while !rest.is_empty() {
@@ -199,7 +215,7 @@ impl Policy {
     }
 
     /// zonecfg.expand: a leading "~" is the home.
-    fn expand(&self, raw: &[u8]) -> Vec<u8> {
+    pub fn expand(&self, raw: &[u8]) -> Vec<u8> {
         match raw.strip_prefix(b"~") {
             Some(rest) => py_path(&[self.home(), rest].concat()),
             None => py_path(raw),
@@ -221,7 +237,7 @@ impl Policy {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Err(format!("{shown} (APPZONES_DENIED_PATHS) does not exist"))
             }
-            Err(e) => return Err(format!("{shown}: cannot read the host's denied paths: {e}")),
+            Err(e) => return Err(format!("{shown}: cannot read the host's denied paths: {}", py_oserror(&e, &shown))),
         };
         let mut out = Vec::new();
         for (n, line) in split_lines(&text).into_iter().enumerate() {
@@ -251,6 +267,9 @@ impl Policy {
         let mut out: Vec<Vec<u8>> = DENIED_SYSTEM.iter().map(|s| s.as_bytes().to_vec()).collect();
         out.extend(DENIED_IN_HOME.iter().map(|r| join(&h, r.as_bytes())));
         out.push(py_path(self.code_dir.as_bytes()));
+        if let Some(state) = &self.state_dir {
+            out.push(join(&py_path(state.as_bytes()), b"appzones")); // the logs, at a custom state location
+        }
         out.extend(self.host_denied_paths()?);
         for (dir, prefix) in [(join(&h, b".local/share"), &b"opencode"[..]), (h.clone(), &b".claude"[..])] {
             let p = Path::new(OsStr::from_bytes(&dir));
@@ -503,7 +522,7 @@ mod tests {
         assert_eq!(rp(format!("{tr}/link/missing/x")), Some(format!("{tr}/real/missing/x")));
         assert_eq!(rp(format!("{tr}/real/sub/..")), Some(format!("{tr}/real")));
         assert_eq!(rp(format!("{tr}/loop/x")), None);
-        let policy = Policy { home: t.0.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None };
+        let policy = Policy { home: t.0.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None, state_dir: None };
         assert!(policy.mount_source_error(format!("{tr}/loop").as_bytes()).unwrap().contains("cannot be resolved"));
     }
 
@@ -514,7 +533,7 @@ mod tests {
         for d in ["proj/sub", ".ssh/inner", "data"] {
             fs::create_dir_all(home.join(d)).unwrap();
         }
-        let policy = Policy { home: home.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None };
+        let policy = Policy { home: home.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None, state_dir: None };
         for p in [home.join("proj"), home.join("proj/sub"), home.join(".ssh"), home.join(".ssh/inner"), home.clone(),
                   "/etc".into(), "/usr".into(), "/tmp".into()] {
             let Ok(meta) = fs::metadata(&p) else { continue };
@@ -527,7 +546,7 @@ mod tests {
     fn host_file_errors() {
         let t = TempDir::new("denied");
         let f = t.0.join("denied-paths");
-        let policy = Policy { home: "/home/u".into(), code_dir: "/c".into(), denied_file: Some(f.clone().into()) };
+        let policy = Policy { home: "/home/u".into(), code_dir: "/c".into(), denied_file: Some(f.clone().into()), state_dir: None };
         fs::write(&f, "~//srv/private\n~/Secrets # mine\n/abs\n").unwrap();
         let got: Vec<String> = policy.host_denied_paths().unwrap().into_iter().map(s).collect();
         assert_eq!(got, vec!["/srv/private", "/home/u/Secrets", "/abs"]);

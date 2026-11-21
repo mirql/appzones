@@ -29,6 +29,9 @@ rustix = { version = "=1.1.6", features = ["pipe", "process"] }
 libc = "=0.2.191"
 # zone-init's agent protocol (JSON lines)
 serde_json = "=1.0.154"
+# zones.toml (stage 2): an untyped table in the file's own order, so errors come in the
+# order Python's tomllib gives them
+toml = { version = "=0.8.23", default-features = false, features = ["parse", "preserve_order"] }
 
 [profile.release]
 strip = true

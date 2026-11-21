@@ -50,6 +50,76 @@ class _Zone:
                 setattr(m, name, value)
 
 
+# DifferentialConfigTest: while it runs ZonecfgTest, every zonecfg.load_text there is also
+# given to the Rust loader, and what differs is kept here.
+CONFIG_DIFF: dict = {"helper": None, "compared": 0, "skipped": 0, "mismatches": []}
+_PATCHABLE = ("HOST_DENIED_FILE", "LEGACY_HOST_DENIED_FILE", "bus_activatable_names", "host_layout", "host_nix_ld",
+              "bind_error", "activatable_names", "host_activatable", "denied_paths", "host_denied_paths")
+
+
+def _config_view(z, cfg) -> dict | None:
+    """What both loaders must agree on: errors, warnings, every zone's settings, origins
+    and settings_hash. None when Python's settings cannot be shown as JSON (datetimes)."""
+    from appzones import common
+    zones = {}
+    for name, zone in cfg.zones.items():
+        try:
+            zones[name] = {"settings": json.loads(json.dumps(zone.settings, sort_keys=True)), "origin": zone.origin,
+                           "hash": common.settings_hash(zone)}
+        except (TypeError, ValueError):
+            return None
+    return {"errors": cfg.errors, "warnings": cfg.warnings, "zones": zones}
+
+
+def _diff_load_text(z) -> None:
+    """Wrap Z.load_text (a freshly loaded zonecfg): each call also runs the Rust loader on
+    the same text, with what zonecfg read at import (HOME, the nix-ld paths, CODE_DIR)."""
+    import tomllib
+    real = z.load_text
+    snapshot = {k: getattr(z, k) for k in _PATCHABLE}
+
+    def load_text(text, path="zones.toml"):
+        cfg = real(text, path)
+        if any(getattr(z, k) is not v for k, v in snapshot.items()):
+            CONFIG_DIFF["skipped"] += 1  # a test replaced part of zonecfg: Rust cannot see that
+            return cfg
+        py = _config_view(z, cfg)
+        if py is None:
+            CONFIG_DIFF["skipped"] += 1
+            return cfg
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+            f.write(text)
+        env = dict(os.environ, APPZONES_HOME_FOR_TESTS=str(z.HOME), APPZONES_NIX_LD_SHIM=z.NIX_LD_SHIM,
+                   APPZONES_NIX_LD_LIB=z.NIX_LD_LIB)
+        try:
+            out = subprocess.run([CONFIG_DIFF["helper"], "config-json", f.name, "--name", str(path),
+                                  "--code-dir", str(z.CODE_DIR)], capture_output=True, text=True, env=env, timeout=30)
+        finally:
+            os.unlink(f.name)
+        CONFIG_DIFF["compared"] += 1
+        try:
+            rs = json.loads(out.stdout)
+        except ValueError:
+            CONFIG_DIFF["mismatches"].append((text, "no JSON from the Rust loader", out.stderr[-500:]))
+            return cfg
+        try:
+            tomllib.loads(text)
+            parsed = True
+        except tomllib.TOMLDecodeError:
+            parsed = False
+        if not parsed:  # the parsers' own messages differ: only that both refuse it, naming the file
+            ok = len(rs["errors"]) == 1 and rs["errors"][0].startswith(f"{path}: ") and not rs["zones"]
+            if not ok:
+                CONFIG_DIFF["mismatches"].append((text, py, rs))
+        elif rs != py and not (py["errors"] and len(rs["errors"]) == 1 and "number too large" in rs["errors"][0]):
+            # (an integer beyond 64 bits: tomllib reads it and the check refuses it, the Rust
+            # parser refuses it at once; refused either way)
+            CONFIG_DIFF["mismatches"].append((text, py, rs))
+        return cfg
+
+    z.load_text = load_text
+
+
 class ZonecfgTest(unittest.TestCase):
     def setUp(self):
         # the tests assume NixOS's layout unless they set another (the Nix build
@@ -80,6 +150,8 @@ class ZonecfgTest(unittest.TestCase):
         sys.path.insert(0, str(HERE))
         import zonecfg
         self.z = importlib.reload(zonecfg)
+        if CONFIG_DIFF.get("helper"):
+            _diff_load_text(self.z)
         # the fake home sits in /tmp (TMPDIR): the home is exempt from the system-tree rule, as on a
         # host whose /home lives in /var
 
@@ -2383,6 +2455,37 @@ class AgentProtocolTest(unittest.TestCase):
                 if p.poll() is None:
                     p.kill()
                     p.wait()
+
+
+@unittest.skipUnless(os.environ.get("APPZONES_TEST_HELPER"), "needs $APPZONES_TEST_HELPER (the Rust helper)")
+class DifferentialConfigTest(unittest.TestCase):
+    """zones.toml in Rust (stage 2, helper/src/config.rs) is zonecfg: for every configuration
+    the unit tests load, and every example, both give the same errors and warnings, in the
+    same order and words, the same settings and origins for every zone, and the same
+    settings_hash. Parse errors: both refuse, naming the file (the parsers word them apart)."""
+
+    def test_same_configs(self):
+        CONFIG_DIFF.update(helper=os.environ["APPZONES_TEST_HELPER"], compared=0, skipped=0, mismatches=[])
+        saved = dict(os.environ)  # (the unit tests change the environment; the next test needs ours)
+        try:
+            suite = unittest.defaultTestLoader.loadTestsFromTestCase(ZonecfgTest)
+            unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
+            sys.path.insert(0, str(HERE))
+            import zonecfg
+            z = importlib.reload(zonecfg)
+            _diff_load_text(z)
+            for ex in sorted((HERE.parent / "examples").glob("*.toml")):
+                z.load(ex)
+        finally:
+            CONFIG_DIFF["helper"] = None
+            os.environ.clear()
+            os.environ.update(saved)
+        print(f"compared {CONFIG_DIFF['compared']} configurations, skipped {CONFIG_DIFF['skipped']}", file=sys.stderr)
+        self.assertGreater(CONFIG_DIFF["compared"], 100)
+        for text, py, rs in CONFIG_DIFF["mismatches"][:5]:
+            print(f"--- differs:\n{text}\n--- python: {json.dumps(py)[:2000]}\n--- rust:   {json.dumps(rs)[:2000]}",
+                  file=sys.stderr)
+        self.assertEqual(len(CONFIG_DIFF["mismatches"]), 0, f"{len(CONFIG_DIFF['mismatches'])} configurations differ")
 
 
 @unittest.skipUnless(os.environ.get("APPZONES_TEST_HELPER"), "needs $APPZONES_TEST_HELPER (the Rust helper)")
