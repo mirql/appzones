@@ -238,8 +238,8 @@ fn snapshot(t: &Path) -> serde_json::Map<String, Value> {
         for p in all {
             let rel = p.strip_prefix(t).unwrap().to_str().unwrap().to_string();
             let name = p.file_name().unwrap().to_str().unwrap();
-            if name.starts_with(".colours.") {
-                continue;
+            if name.starts_with(".colours.") || (name.ends_with(".lock") && rel.matches('/').count() == 2) {
+                continue; // (a zone's lock: the plan command takes it, as the server does)
             }
             let md = fs::symlink_metadata(&p).unwrap();
             let mode = format!("0o{:o}", md.permissions().mode() & 0o777);
