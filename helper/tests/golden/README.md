@@ -11,7 +11,8 @@ so the Rust code is still held to them (`tests/golden.rs`, run in the helper's N
 | `policy.json` | the never-list for runtime mounts, and its answer for 169 paths | 169 |
 
 `capture.py` made them, with `capture.nix` (a Nix build, so the file system the answers
-depend on is the one the test runs in), from the last tree with the Python sources
-(rust/stage4-one-binary, before "remove the Python"). Each case keeps the file tree it
+depend on is the one the test runs in), from the last tree with the Python sources:
+commit 0e0552a ("Stage 4c", on rust/stage4-one-binary). They run only in a checkout of
+that commit (`git worktree add /tmp/py 0e0552a`, then the command in `capture.nix`). Each case keeps the file tree it
 saw; `{T}` stands for its root. To change an answer on purpose, change the JSON here, in
 the same commit as the code, and say why.

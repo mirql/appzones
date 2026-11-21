@@ -58,8 +58,7 @@
 {
   pkgs,
   module,
-  # another build of appzones to test (e.g. with a helper in another language);
-  # null: the module's default
+  # another build of appzones to test; null: the module's default
   package ? null,
 }:
 let
@@ -108,6 +107,10 @@ let
   # command names firefox; this one writes the link it gets into the zone's home
   # a bwrap that waits before it starts: a zone held "starting" for a moment, whatever the
   # server is written in (the crash test kills its server then)
+  # zone-wayland: the package's binary, as a wrapper script can run it
+  zoneWayland = "${
+    if package != null then package else pkgs.callPackage ../nix/package.nix { }
+  }/libexec/appzones/appzones-helper zone-wayland";
   slowBwrap = pkgs.writeShellScript "slow-bwrap" "sleep 3; exec ${pkgs.bubblewrap}/bin/bwrap \"$@\"";
   linkCatcher = pkgs.writeShellScriptBin "firefox-link-catcher" "printf '%s\\n' \"$1\" > \"$HOME/opened-link\"";
 
@@ -599,9 +602,8 @@ pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds(
             "grep -qx https://example.com/clicked-in-tz /home/alice/.local/share/appzones/tz/home/opened-link", timeout=60)
         print("PASS  a link clicked in a links = zone zone opens in that zone's browser")
-        if "APPZONES_HELPER" in machine.succeed("cat $(readlink -f /run/current-system/sw/bin/appzones)"):
-            ok("tz", "! grep -q python /run/zone/bin/xdg-open && grep -q '/run/appzones-helper open-link' "
-                     "/run/zone/bin/xdg-open", "the Rust helper: the link part of xdg-open, no Python")
+        ok("tz", "! grep -q python /run/zone/bin/xdg-open && grep -q '/run/appzones-helper open-link' "
+                 "/run/zone/bin/xdg-open", "the link part of xdg-open is appzones' own binary, no Python")
         rc, out = u("appzones run --wait tz -- xdg-open 'https://example.com/x y' </dev/null 2>&1; echo rc=$?", check=False)
         assert "rc=0" in out, out  # a space is fine; only http(s) URLs leave the zone this way
         # that link arrived too (its browser starts in the background), before the next check
@@ -1148,7 +1150,7 @@ pkgs.testers.runNixOSTest {
         u(S + "appzones stop tb")
         # a client killed before the zone is ready: zone-wayland made slow, so the start
         # is still going on when the client dies; the server finishes it
-        zw = machine.succeed("ls /nix/store/*-zone-wayland*/bin/zone-wayland | head -1").strip()
+        zw = "${zoneWayland}"
         machine.succeed(f"printf '#!/bin/sh\\nsleep 4\\nexec {zw} \"$@\"\\n' >/tmp/slow-zw && chmod 755 /tmp/slow-zw")
         u("systemd-run --user --collect --unit=client-tb -p KillMode=process "
           "-E APPZONES_SUPERVISOR=spawn -E APPZONES_BIN_ZONE_WAYLAND=/tmp/slow-zw $(readlink -f $(command -v appzones)) up tb")
@@ -1264,7 +1266,7 @@ pkgs.testers.runNixOSTest {
         # a stop while the zone starts: zone-wayland waits at a gate that never opens, so
         # the start is surely still going on. SIGINT (appzones stop) exits 0, SIGTERM
         # 143; neither is a failure
-        zw = machine.succeed("ls /nix/store/*-zone-wayland*/bin/zone-wayland | head -1").strip()
+        zw = "${zoneWayland}"
         machine.succeed("printf '#!/bin/sh\\ntouch /tmp/zw-entered\\nwhile [ ! -e /tmp/zw-go ]; do sleep 0.1; done\\n"
                         f"exec {zw} \"$@\"\\n' >/tmp/gated-zw && chmod 755 /tmp/gated-zw")
         for how, want in [("appzones stop tb", "0"), ("systemctl --user kill -s TERM --kill-whom=main serve-slow", "143")]:

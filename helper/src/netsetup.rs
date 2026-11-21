@@ -9,7 +9,6 @@ use std::io::Write;
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use crate::plan::{Host, PIN};
@@ -212,9 +211,6 @@ pub fn main(host: &Host, rules: &str, info: &str, name: &str, argv: Vec<String>)
     let err = std::os::unix::process::CommandExt::exec(std::process::Command::new(first).args(&argv[1..]));
     die(&format!("{first}: {err}"))
 }
-
-#[allow(dead_code)]
-fn _p(_: &Path) {}
 
 #[cfg(test)]
 mod tests {

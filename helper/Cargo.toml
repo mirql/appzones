@@ -3,12 +3,12 @@ name = "appzones-helper"
 version = "0.11.3"
 edition = "2021"
 rust-version = "1.85"
-description = "appzones' helpers in Rust: zone-init, open-link, zone-wayland and the mount helper (design/rust.md)"
+description = "appzones: every command, the server, zone-init and zone-wayland in one binary, and the mount helper"
 license = "MIT"
 repository = "https://github.com/mirql/appzones"
 publish = false
 
-# the helpers (static, see nix/helper.nix), and the root step on its own (glibc: NSS)
+# appzones (static, see nix/helper.nix), and the root step on its own (glibc: NSS)
 [[bin]]
 name = "appzones-helper"
 path = "src/main.rs"

@@ -30,7 +30,7 @@ For a bar: `appzones active --follow --json` prints Waybar custom-module JSON
 
 ## Sway
 
-`contrib/sway/appzones-sway` (Python, standard library only) watches sway's
+`contrib/sway/appzones-sway` (it runs `appzones _sway-marks`) watches sway's
 windows over its IPC and gives every window whose process runs in a zone the
 mark `zone:NAME:ID` and the title prefix `[NAME]`, and switches off its
 keyboard-shortcuts inhibitor. Sway has no per-window border colour; with

@@ -172,6 +172,30 @@ dependencies. aarch64 is not solved by Rust (x86_64 in nix-ld paths, `flatpak_in
 | stage 1: the server (`appzones-helper serve`, the runner of a zone's plan; about 900 lines with the host side of the DNS) | about 30 s for the crate | 785 KiB static helper, `serve` in it | the server holding a zone: **about 930 KB RSS, against 26 MB in Python**; `vm-rust` 163, every distro check, `test-fedora`, `test-arch`, `test-opensuse` |
 | stage 2: the configuration (`config.rs`, `pyfmt.rs`) and the plan (`plan.rs`), 2,732 lines | about 40 s for the crate | 1.3 MB static helper (785 KiB before; toml 0.8 and the plan) | the server, now with the plan made in Rust too, about 1.3 MB RSS; `DifferentialConfigTest` 944 configurations, `DifferentialPlanTest` 12 cases (both layouts, either zone-init), all identical; `vm-rust` 163, every distro check, `test-fedora`, `test-arch`, `test-opensuse` |
 | stage 3: the commands (`cli.rs`, `agent.rs`, `netsetup.rs`, `active.rs`), 2,240 lines | about 40 s for the crate | the same static helper; `appzones` is `appzones-helper cli` | with the Rust helper no Python runs at all; the commands that need no zone give Python's output byte for byte (help, check, which, list, new, errors); `vm-rust` 163, `vm` 162, every distro check (`appzones` the Rust command line on the Rust ones), `test-fedora`, `test-arch`, `test-opensuse` |
+| stage 4: one binary everywhere, the Python removed (8,144 lines of Python, 89 of C); its 49 unit tests that tested internals ported (units in the modules, `tests/cli.rs`, `tests/agent.rs`: 1,048 lines of tests outside the modules), and its answers frozen (`tests/golden`: 937 configurations, 6 plans, 169 paths) | about a minute for the crate, with every test | `appzones-helper` 1.5 MB (static, Nix) or 1.4 MB (glibc 2.17, other distributions: `nix/portable.nix`, built with zig); `appzones-mount-helper` 371 KB | no Python and no C anywhere; the server 1.5 MB RSS static, about 3 MB with glibc; `vm` 163, `debian12`, `ubuntu2404` (`make install` with the portable binaries), both `-deb`, `test-fedora` (RPM built with Fedora's cargo), `test-arch` (AUR package, Arch's cargo), `test-opensuse` (`make install`, openSUSE's cargo) |
+
+## Stage 4: one binary (what changed besides the language)
+
+- **Packages.** Nix builds the binary static (musl) and the mount helper against glibc
+  (NSS). The other distributions get `nix/portable.nix`: both binaries linked against glibc
+  2.17's symbols with zig, so one build runs everywhere and the mount helper uses the
+  system's NSS (a static musl one would not find LDAP or systemd-homed users). The .deb is
+  packed from them with nixpkgs' dpkg; no Debian image any more. The RPM and the AUR
+  package build from source with the distribution's cargo.
+- **Where the binaries go.** `make install` puts them in `PREFIX/libexec/appzones`, not
+  `lib/`: on Fedora pasta runs in its own SELinux domain and may execute only `bin_t`
+  files (`/usr/libexec` is; `/usr/lib` is `lib_t`), without an audit message. Python never
+  met this, since pasta ran `/usr/bin/python3`. The .deb and the AUR package keep
+  `/usr/lib/appzones` (no SELinux there, and their sudo rule names it); the RPM uses
+  `%{_libexecdir}`.
+- **No install rule.** A zone gets a read-only copy of the binary, so appzones may be
+  installed anywhere (`PREFIX=/opt/...`); the rule that it live under `/usr` is gone.
+- **Python's tests.** Its answers are the golden files, captured in a Nix build (the same
+  file system the Rust test runs in), each with the file tree it saw. Its unit tests of
+  internals are Rust tests of the same behaviour; what only made sense in Python (which
+  zone.py runs, the Python link shim) went with it.
+- **Found on the way.** A zone lock held by a server from this version did not keep the
+  pre-0.6 state directory from moving (only Python servers were seen); now any held lock does.
 
 ## Phase 1: the result
 

@@ -1,6 +1,6 @@
 # The RPM of appzones for Fedora (`just test-fedora` builds it from the checkout and tests
-# it; `just release-rpm VERSION` attaches it to a release). Python and the C zone-wayland
-# only, like the .deb: the optional Rust helpers are not packaged (yet, #121).
+# it; `just release-rpm VERSION` attaches it to a release). One Rust binary and the mount
+# helper, built with Fedora's cargo (the crates come from crates.io, pinned by Cargo.lock).
 Name:           appzones
 Version:        0.11.3
 Release:        1%{?dist}
@@ -9,14 +9,12 @@ License:        MIT
 URL:            https://github.com/mirql/appzones
 Source0:        https://github.com/mirql/appzones/archive/refs/tags/v%{version}/%{name}-%{version}.tar.gz
 
+BuildRequires:  cargo
+BuildRequires:  rust >= 1.85
 BuildRequires:  gcc
 BuildRequires:  make
-BuildRequires:  pkgconf-pkg-config
-BuildRequires:  wayland-devel
-BuildRequires:  python3
 BuildRequires:  systemd-rpm-macros
 # what a server needs; the desktop's parts are optional (a zone starts without them)
-Requires:       python3 >= 3.11
 Requires:       bubblewrap
 Requires:       passt
 Requires:       nftables
@@ -25,7 +23,7 @@ Recommends:     sudo
 Recommends:     xdg-dbus-proxy
 Recommends:     dbus-daemon
 
-# zone-wayland is small; no separate debuginfo package
+# the binaries are stripped at build (helper/Cargo.toml): no debuginfo package
 %global debug_package %{nil}
 
 %description
@@ -38,13 +36,13 @@ and nftables. Members of the group appzones may share folders with running zones
 %autosetup
 
 %build
-# the C helper only: the same package whether or not cargo is installed
-%make_build zone-wayland CFLAGS="%{optflags}" LDFLAGS="%{build_ldflags}"
-test -f build/zone-wayland
+make build
+test -x build/appzones-helper && test -x build/appzones-mount-helper
 
 %install
-make -o helper install DESTDIR=%{buildroot} PREFIX=/usr PYTHON=/usr/bin/python3 HELPER= \
-  HELPER_BIN=build/none SYSTEMD=yes APPARMOR=no SUDOERS=yes MOUNT_USERS=%%appzones
+# in %{_libexecdir} (bin_t): pasta, in its SELinux domain, may execute only such files
+make install DESTDIR=%{buildroot} PREFIX=/usr LIBDIR=%{_libexecdir}/appzones SYSTEMD=yes APPARMOR=no SUDOERS=yes \
+  MOUNT_USERS=%%appzones
 # the sudo rule names this group
 install -Dm644 contrib/arch/appzones.sysusers %{buildroot}%{_sysusersdir}/appzones.conf
 
@@ -60,7 +58,7 @@ MSG
 %files
 %license LICENSE
 %{_bindir}/appzones
-%{_prefix}/lib/appzones/
+%{_libexecdir}/appzones/
 %{_datadir}/appzones/
 %{_userunitdir}/appzones@.service
 %{_userunitdir}/appzones-autostart.service

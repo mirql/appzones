@@ -88,21 +88,21 @@ fi
 if [[ $distro == arch ]]; then
   vm "echo 'Server = $ARCHIVE/\$repo/os/\$arch' | sudo tee /etc/pacman.d/mirrorlist >/dev/null && \
     sudo sed -i 's/^#\?ParallelDownloads.*/ParallelDownloads = 2/' /etc/pacman.conf && \
-    sudo pacman -Syyuu --noconfirm --needed --disable-download-timeout base-devel python bubblewrap passt \
-    nftables iproute2 wayland pkgconf xdg-dbus-proxy dbus sudo dnsmasq procps-ng psmisc util-linux weston \
+    sudo pacman -Syyuu --noconfirm --needed --disable-download-timeout base-devel rust python bubblewrap passt \
+    nftables iproute2 xdg-dbus-proxy dbus sudo dnsmasq procps-ng psmisc util-linux weston \
     wayland-utils sway foot >/tmp/pkgs.log 2>&1 || { tail -20 /tmp/pkgs.log; exit 1; }"
 elif [[ $distro == opensuse ]]; then
   # the release repositories only (no updates: the same packages every run), packages kept
   vm "for r in \$(sudo zypper -q lr -E | awk -F'|' 'NR>2 && tolower(\$2) ~ /update/ {gsub(/ /,\"\",\$2); print \$2}'); do \
       sudo zypper -q mr -d \"\$r\"; done; sudo zypper -q mr -k -a && \
-    sudo zypper -n -q --gpg-auto-import-keys install --no-recommends gcc make pkgconf-pkg-config wayland-devel \
+    sudo zypper -n -q --gpg-auto-import-keys install --no-recommends gcc make cargo \
     python3 bubblewrap passt nftables iproute2 xdg-dbus-proxy dbus-1-daemon sudo dnsmasq procps psmisc \
     util-linux weston wayland-utils sway foot policycoreutils-python-utils >/tmp/pkgs.log 2>&1 \
     || { tail -20 /tmp/pkgs.log; exit 1; }"
 else
   # (script, for the shell check, is its own package on Fedora)
   vm "echo keepcache=True | sudo tee -a /etc/dnf/dnf.conf >/dev/null && \
-    sudo dnf -y -q --disablerepo='*' --enablerepo=fedora install rpm-build systemd-rpm-macros gcc make pkgconf-pkg-config wayland-devel \
+    sudo dnf -y -q --disablerepo='*' --enablerepo=fedora install rpm-build systemd-rpm-macros gcc make cargo rust \
     python3 bubblewrap passt nftables iproute xdg-dbus-proxy dbus-daemon sudo dnsmasq procps-ng psmisc \
     util-linux util-linux-script weston wayland-utils sway foot >/tmp/pkgs.log 2>&1 || { tail -20 /tmp/pkgs.log; exit 1; }"
 fi
@@ -130,6 +130,9 @@ elif [[ $distro == opensuse ]]; then
   # the checkout's tracked files; the test runs make and make install itself
   (cd "$here" && git ls-files -z | tar --null -T - -czf "$work/src.tar.gz")
   vm "mkdir -p /tmp/src && tar xz -C /tmp/src" <"$work/src.tar.gz"
+  # the crates now, while the VM resolves names (the test points DNS at its own dnsmasq),
+  # for root, who runs make in the test
+  vm "cd /tmp/src/helper && sudo cargo fetch --locked >/tmp/fetch.log 2>&1 || { tail -5 /tmp/fetch.log; exit 1; }"
   mode="" src=/tmp/src
 else
   # the RPM from this checkout: a tarball of the tracked files, as GitHub's would be

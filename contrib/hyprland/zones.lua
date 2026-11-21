@@ -1,7 +1,7 @@
 -- zones.lua: the pre-0.6 name of appzones.lua, kept so a Hyprland config
 -- that loads it keeps working; point it at appzones.lua instead. A full copy,
 -- not a loader: Nix may copy this file into the store on its own. Removed in
--- a later release; test_zonecfg checks the copy matches appzones.lua.
+-- a later release; the flake's check `repo` checks the copy matches appzones.lua.
 -- (appzones docs/desktop.md; tested in tests/vm.nix).
 --
 -- The zone comes from what the kernel says about the window's pid, never from
