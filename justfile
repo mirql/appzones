@@ -54,8 +54,9 @@ test-macos host:
     #!/usr/bin/env bash
     set -euo pipefail
     sha=$(git rev-parse HEAD)
-    git push -q "ssh://{{host}}/~/src/appzones" "HEAD:refs/heads/test-macos" 2>/dev/null \
-        || { ssh "{{host}}" 'git clone -q https://github.com/mirql/appzones ~/src/appzones' && git push -q "ssh://{{host}}/~/src/appzones" "HEAD:refs/heads/test-macos"; }
+    ssh "{{host}}" 'test -d ~/src/appzones || git clone -q https://github.com/mirql/appzones ~/src/appzones'
+    # a ref of its own for each commit: never a branch to move (an amend, another branch)
+    git push -q "ssh://{{host}}/~/src/appzones" "HEAD:refs/test-macos/$sha"
     ssh "{{host}}" "cd ~/src/appzones && git checkout -q --detach $sha && nix develop -c sh -c 'cd helper && cargo clippy --release -q --all-targets -- -D warnings && cargo test --release -q'"
 
 # The Rust dependencies: advisories, licenses, sources (cargo deny; needs the network)

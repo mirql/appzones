@@ -7,6 +7,7 @@
 | **Arch Linux** (preview) | the same as Ubuntu and Debian; sway names zones started without systemd too | [a PKGBUILD](#arch-linux-preview), or `make install` |
 | **Fedora 45** (preview) | the same, with SELinux enforcing | [the RPM, or `make install`](#fedora-preview) |
 | **openSUSE Leap 16** (preview) | the same, with SELinux enforcing; internet zones need one SELinux setting | [`make install`](#opensuse-preview) |
+| **macOS** (Apple silicon, in development) | not zones yet: `check`, `list`, `which` and `new` work | [from a checkout](#macos-in-development) |
 
 Other x86_64 distributions with systemd or another init, glibc 2.17 or newer and the
 same tools should work like these; they are not tested yet.
@@ -257,6 +258,15 @@ sudo semanage permissive -a passt_t
 
 Zones with `network = "none"` or `"host"` work without it. Then
 [your first zone](#ubuntu-and-debian-preview) as on Ubuntu (step 3).
+
+## macOS (in development)
+
+appzones builds on macOS (Apple silicon), but zones do not run there yet: `appzones
+check`, `list`, `which` and `new` work, and `up`, `run`, `shell`, `restart`, `serve`,
+`mount`, `apps` and `check --probe` say that zones do not run on this system yet. The
+plan (macOS's own sandbox, Seatbelt) is in `design/macos.md` in the repository. To build
+it: `nix develop` (or Rust 1.85 or newer), then `cd helper && cargo build --release`;
+the command is `helper/target/release/appzones-helper cli` (as `appzones`).
 
 ## Requirements
 

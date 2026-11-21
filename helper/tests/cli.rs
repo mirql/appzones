@@ -461,7 +461,7 @@ fn zones_do_not_run_here_yet() {
     // where zones are not built yet (macOS), what would start one says so; the rest works
     let b = Box_::new("not-yet", Some(TWO));
     for cmd in [&["up", "aa"][..], &["run", "aa", "--", "true"], &["shell", "aa"], &["serve", "aa"],
-                &["mount", "aa", "/tmp"], &["apps"]] {
+                &["mount", "aa", "/tmp"], &["apps"], &["check", "--probe", "aa"]] {
         let (rc, _, err) = b.run(cmd);
         assert_eq!(rc, 1, "{cmd:?}");
         assert!(err.contains("zones do not run on this system yet"), "{cmd:?}: {err}");

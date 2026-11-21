@@ -1129,6 +1129,9 @@ impl Cli {
         out(&format!("ok: {}: {} zones ({}), {} apps (this zone is release {})", self.config_path(), cfg.zones.len(),
                      cfg.zones.iter().map(|z| z.name.as_str()).collect::<Vec<_>>().join(", "), cfg.apps.len(), config::RELEASE));
         let Some(probe) = probe else { return 0 };
+        // (the probes run in the zone: not where zones do not run yet)
+        #[cfg(not(target_os = "linux"))]
+        die(&format!("check --probe {probe}: zones do not run on this system yet (check, list, which and new work)"));
         let cfg = self.load_zone(probe, true);
         let z = cfg.zone(probe).expect("checked");
         self.up(probe, true);
@@ -1790,7 +1793,8 @@ pub fn main(args: &[OsString]) -> i32 {
     }
     let mut cli = Cli::new(Host::new(crate::plan::exe_dir()));
     let (cmd, rest) = (argv[0].as_str(), &argv[1..]);
-    // zones themselves are Linux's so far (macOS: design/macos.md, stage 2)
+    // zones themselves are Linux's so far (macOS: design/macos.md, stage 2); check --probe
+    // is refused in check, after the configuration is checked
     #[cfg(not(target_os = "linux"))]
     if matches!(cmd, "up" | "run" | "shell" | "restart" | "serve" | "_supervise" | "mount" | "umount" | "apps"
                 | "_autostart" | "_cleanup" | "_link") {
