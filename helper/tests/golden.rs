@@ -84,7 +84,8 @@ fn build(root: &Path, tree: &Value) {
             symlink(l.as_str().unwrap().replace("{T}", t), &p).unwrap();
         } else if let Some(k) = e.get("special") {
             if k == "socket" {
-                std::mem::forget(std::os::unix::net::UnixListener::bind(&p).unwrap());
+                // (the socket file stays after the listener is closed: only the file is needed)
+                drop(std::os::unix::net::UnixListener::bind(&p).unwrap());
             } else {
                 assert!(Command::new("mkfifo").arg(&p).status().unwrap().success());
             }

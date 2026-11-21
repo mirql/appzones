@@ -1456,12 +1456,21 @@ impl Cli {
         let lock = self.take_lock(name, lock);
         // held as long as this server runs (shared: other servers too), taken before the
         // server chooses its state directory: the pre-0.6 move (migrate_state) waits for it
-        if let Some(f) = self.state_lock() {
+        // (never without it: a server that could not take it does not start)
+        let state = self.state_lock().unwrap_or_else(|| die(&format!("{}: cannot open it", sh(&self.rt().join(".state.lock")))));
+        loop {
             // Safety: flock on our own descriptor; blocking, as the move holds it only briefly.
-            unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&f), libc::LOCK_SH) };
-            std::mem::forget(f);
+            if unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&state), libc::LOCK_SH) } == 0 {
+                break;
+            }
+            let e = std::io::Error::last_os_error();
+            if e.kind() != std::io::ErrorKind::Interrupted {
+                die(&format!("{}: {e}", sh(&self.rt().join(".state.lock"))));
+            }
         }
-        crate::serve::serve_zone(name, lock, notify) as i32
+        let rc = crate::serve::serve_zone(name, lock, notify) as i32;
+        drop(state); // (held to here: the server's whole life)
+        rc
     }
 
     // ── upgrading from before 0.6 ────────────────────────────────────────
