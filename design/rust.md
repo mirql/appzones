@@ -194,8 +194,21 @@ dependencies. aarch64 is not solved by Rust (x86_64 in nix-ld paths, `flatpak_in
   file system the Rust test runs in), each with the file tree it saw. Its unit tests of
   internals are Rust tests of the same behaviour; what only made sense in Python (which
   zone.py runs, the Python link shim) went with it.
+- **Measured** (this laptop, hyperfine, 30 runs, no zone running, the minimal example):
+
+  | command | Python (0.11) | Rust |
+  |---|---|---|
+  | `appzones list` | 202 ms | 16 ms |
+  | `appzones check` | 197 ms | 15 ms |
+  | `appzones --help` | 167 ms | 6 ms |
+  | `appzones list`, peak RSS | 27.8 MB | 4.7 MB |
+
+  The server holding a zone: 26 MB RSS in Python, 1.5 MB (static) or about 3 MB (glibc).
 - **Found on the way.** A zone lock held by a server from this version did not keep the
   pre-0.6 state directory from moving (only Python servers were seen); now any held lock does.
+  And the move could race a server starting between the check and the rename (old, from
+  Python): servers now hold `$XDG_RUNTIME_DIR/appzones/.state.lock` shared from before they
+  choose their state directory, and the move takes it exclusively.
 
 ## Phase 1: the result
 

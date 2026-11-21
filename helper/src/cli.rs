@@ -273,6 +273,13 @@ impl Cli {
         proc_argv(pid).and_then(|(a, c)| server_command(&a, &c, &self.host.here)).is_some_and(|(_, z)| z == name)
     }
 
+    /// $XDG_RUNTIME_DIR/appzones/.state.lock: servers hold it shared, the move of the
+    /// pre-0.6 state directory takes it exclusively (close-on-exec: never in a zone).
+    fn state_lock(&self) -> Option<std::fs::File> {
+        self.mkdir_rt();
+        open_lock(&self.rt().join(".state.lock")).ok()
+    }
+
     /// The zones whose lock file a process of this user holds open (a server runs them, or
     /// a client is starting one): by the processes' descriptors, never by taking the lock,
     /// which would make a server starting in that instant give up.
@@ -1447,6 +1454,13 @@ impl Cli {
             }
         }
         let lock = self.take_lock(name, lock);
+        // held as long as this server runs (shared: other servers too), taken before the
+        // server chooses its state directory: the pre-0.6 move (migrate_state) waits for it
+        if let Some(f) = self.state_lock() {
+            // Safety: flock on our own descriptor; blocking, as the move holds it only briefly.
+            unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&f), libc::LOCK_SH) };
+            std::mem::forget(f);
+        }
         crate::serve::serve_zone(name, lock, notify) as i32
     }
 
@@ -1474,6 +1488,12 @@ impl Cli {
                               sh(&legacy), sh(&new)));
             }
             return;
+        }
+        // no server may start until the move is done (they take it shared first), and none
+        // of this version runs when it can be had
+        let state_lock = self.state_lock();
+        if !state_lock.as_ref().is_some_and(|f| flock_nb(std::os::fd::AsRawFd::as_raw_fd(f))) {
+            running.push("a server (.state.lock)".into());
         }
         // and every server since the lock (0.7), whatever it is written in: a zone lock held
         running.extend(self.locked_zones());

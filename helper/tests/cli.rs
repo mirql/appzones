@@ -298,6 +298,17 @@ fn state_moves_once_nothing_runs() {
     assert!(err.contains("once no zone runs"), "{err}");
     assert!(legacy.join("ta/home/kept").exists());
     drop(held);
+    // a server of this version holds the state lock (shared) from before it picks its
+    // state directory: the move waits for it too, so none starts in between
+    let state = fs::OpenOptions::new().read(true).write(true).create(true).truncate(false)
+        .open(b.t.join("rt/appzones/.state.lock")).unwrap();
+    // Safety: flock on our own file.
+    assert_eq!(unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&state), libc::LOCK_SH | libc::LOCK_NB) }, 0);
+    let (rc, _, err) = b.run(&["list"]);
+    assert_eq!(rc, 0, "{err}");
+    assert!(err.contains("once no zone runs"), "{err}");
+    assert!(legacy.join("ta/home/kept").exists());
+    drop(state);
     let (rc, _, err) = b.run(&["list"]);
     assert_eq!(rc, 0, "{err}");
     if err.contains("once no zone runs") {
