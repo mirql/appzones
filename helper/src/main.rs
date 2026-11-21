@@ -1,24 +1,40 @@
-//! appzones-helper: the parts of appzones that run inside a zone, and zone-wayland.
+//! appzones-helper: all of appzones in one binary (the mount helper is its own).
 //!
+//!   appzones-helper cli ARGS...        `appzones` itself: every command, `serve` included
 //!   appzones-helper zone-init          the agent inside a zone (pid 2, after bwrap)
 //!   appzones-helper open-link URL      in a zone: hand an http(s) link to the host
 //!   appzones-helper zone-wayland SOCKET APP_ID INSTANCE
+//!   appzones-helper serve --plan FILE --lock-fd L [--notify-fd N]
+//!                                      run a plan written by `appzones-helper plan ZONE`
+//!   appzones-helper config-json FILE, check-mount-source ...   for tests: the config and
+//!                                      the never-list as JSON
 //!
-//! Optional (design/rust.md): installed with `make install HELPER=rust` or the Nix package
-//! appzones-rust. Each command keeps the interface of the Python or C part it replaces.
+//! The interfaces are those of the Python implementation it replaced (0.11): the config,
+//! the commands and their outputs, the runtime layout, the agent protocol, settings_hash
+//! byte for byte (helper/tests/golden).
 
 use std::process::ExitCode;
 
+mod active;
+mod agent;
+mod cli;
+mod config;
+mod host_dns;
+mod netsetup;
 mod open_link;
+mod plan;
 mod policy;
+mod pyfmt;
+mod serve;
 mod zone_dns;
 mod zone_init;
 mod zone_wayland;
 
-const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-wayland SOCKET APP_ID INSTANCE | --version | --commands";
+const USAGE: &str = "usage: appzones-helper cli ARGS... | zone-init | open-link URL | zone-wayland SOCKET APP_ID INSTANCE | \
+                     plan ZONE | serve --plan FILE --lock-fd L [--notify-fd N] | --version | --commands";
 
 /// The commands this build implements (`--commands`).
-const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link"];
+const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve", "plan", "cli"];
 
 fn main() -> ExitCode {
     // never a panic on an argument that is not UTF-8 (std::env::args would): lossy here,
@@ -26,6 +42,21 @@ fn main() -> ExitCode {
     let raw: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     if raw.first().map(|a| a == "check-mount-source").unwrap_or(false) {
         return ExitCode::from(check_mount_source(&raw[1..])); // paths as given, byte for byte
+    }
+    if raw.first().map(|a| a == "config-json").unwrap_or(false) {
+        return ExitCode::from(config::config_json_main(&raw[1..])); // the differential test's view
+    }
+    if raw.first().map(|a| a == "cli").unwrap_or(false) {
+        // `appzones` itself (its wrapper runs this when installed with the Rust helper)
+        // the low byte, as an exit status is (Python's sys.exit(-15) is 241: killed by
+        // SIGTERM), never a negative clamped to success
+        return ExitCode::from((cli::main(&raw[1..]) & 0xff) as u8);
+    }
+    if raw.first().map(|a| a == "plan").unwrap_or(false) {
+        return ExitCode::from(plan::plan_main(&raw[1..])); // a zone's plan, as appzones serve's first part
+    }
+    if raw.first().map(|a| a == "serve").unwrap_or(false) {
+        return ExitCode::from(serve::main(&raw[1..])); // the plan's path byte for byte
     }
     let args: Vec<String> = raw.iter().map(|a| a.to_string_lossy().into_owned()).collect();
     match args.first().map(String::as_str) {
@@ -62,7 +93,7 @@ fn check_mount_source(args: &[std::ffi::OsString]) -> u8 {
         eprintln!("{USAGE}");
         2
     };
-    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None };
+    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None, state_dir: None, extra: vec![] };
     let (mut paths, mut list) = (Vec::new(), false);
     let mut it = args.iter();
     while let Some(a) = it.next() {

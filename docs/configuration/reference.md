@@ -21,7 +21,7 @@ known key suggested.
 | key | values (built-in default first) | what it does |
 |---|---|---|
 | `colour` | `"#rrggbb"` (required, unique) | border colour and bar label |
-| `network` | `"internet"` · `"none"` · `"host"` | `internet`: own network namespace (pasta) plus a deny list loaded inside it. The deny list blocks every address of the host, every network the host is directly connected to (a LAN with global IPv6 or public IPv4 addresses too), private ranges, loopback, CGNAT (tailnet, NetBird), link-local and multicast. It is computed when the zone starts: after the host joins another network, restart the zone. `none`: loopback only. `host`: the host's whole network, including localhost (warned; refused for a zone named `untrusted` without `force_host`) |
+| `network` | `"internet"` · `"none"` · `"host"` | `internet`: own network namespace (pasta) plus a deny list loaded inside it. The deny list blocks every address of the host, every network the host is directly connected to (a LAN with global IPv6 or public IPv4 addresses too), private ranges, loopback, CGNAT (tailnet, NetBird), link-local and multicast. It is computed when the zone starts: after the host joins another network, restart the zone. Only directly connected networks: one the host reaches through a router or a VPN route stays reachable. The same addresses are refused through NAT64 (`64:ff9b::/96`) too. `none`: loopback only. `host`: the host's whole network, including localhost and the host's abstract sockets (Xwayland's among them, so X11 apps of the host can be read and driven) (warned; refused for a zone named `untrusted` without `force_host`) |
 | `netbird` | `false` · `true` | with `internet`: also reach the NetBird mesh (the networks of the host's NetBird interface, `programs.appzones.netbirdInterface`), except the host's own addresses. Services see the traffic as coming from the host |
 | `dns` | `"host"` · `"public"` | `host`: the host's resolver (the first nameserver in `/etc/resolv.conf`, or `programs.appzones.dnsServer`; its ad blocking and internal names). `public`: 1.1.1.1 (then 1.0.0.1) and a minimal `/etc/hosts` |
 | `links` | `"portal"` · `"zone"` · `"zone:NAME"` | where clicked http(s) links open: the host's browser, this zone's browser, or zone NAME's browser (the first browser in `[apps]` for that zone) |
@@ -30,16 +30,16 @@ known key suggested.
 | `camera` | `"portal"` · `"device"` | how `camera` is given |
 | `usb` | `[]` | with `usb` in `devices`: `["vvvv"]` (a vendor) or `["vvvv:pppp"]` (vendor and product), lowercase hex as `lsusb` prints them. Required (non-empty) with the device; set in a zone without the device it is an error |
 | `wayland` | `"zone"` · `"none"` · `"host"` | `zone`: the zone's own Wayland socket, a security context (`wp_security_context_v1`): the compositor hides screencopy, clipboard snooping, virtual input and the like from its apps, and marks their windows as the zone's. Under a compositor without the protocol (GNOME's Mutter 46, Weston, sway before 1.9) the zone gets no socket. `none`: no Wayland. `host`: as `zone` where the compositor has the protocol; where it has none, the host's own socket: no security context, so the apps get whatever the compositor offers any app (under GNOME no screencopy or clipboard snooping) and their windows are not marked. A compositor with the protocol never hands a zone its raw socket. `appzones check` warns about every `wayland = "host"`, and a zone named `untrusted` needs `force_host` for it, on any compositor |
-| `x11` | `"none"` · `"own"` | `own` (xwayland-satellite) is not built yet. The host's Xwayland is never shared |
+| `x11` | `"none"` · `"own"` | `own` (xwayland-satellite) is not built yet. The host's Xwayland is never shared (except through `network = "host"`, see there) |
 | `clipboard` | `"both"` | copy and paste both ways, through the focused window |
 | `autostart` | `false` · `true` | start the zone at login |
 | `autostart_apps` | `[]` | app ids from `[apps]` started with the zone |
 | `userns` | `true` · `false` | nested user namespaces, which browser and Electron sandboxes need. `false`: Chromium and Electron refuse to start, and Firefox runs a weaker sandbox without saying so (warned) |
 | `machine_id` | `"zone"` · `"host"` | `zone`: a random id, kept, so apps cannot link the zone to the host or to other zones |
 | `theme` | `true` · `false` | copy GTK, Qt, font, icon and cursor settings in at each start. Copied, not bound, because they are often links into a dotfiles checkout |
-| `packages` | `[]` | extra nixpkgs attributes, built at zone start and put first on `PATH`. Needs Nix on the host (without it: a warning, nothing built) |
-| `env` | `{}` | extra environment. Names on the never-list are refused (`*TOKEN*`, `*KEY*`, `SSH_AUTH_SOCK`, `HYPRLAND_*`, `LD_PRELOAD`, …) |
-| `binds` | `[]` | `{ path = "~/Downloads", mode = "rw" \| "ro" }`, at the same path inside |
+| `packages` | `[]` | extra nixpkgs attributes (`hello`, `python3Packages.requests`), built at zone start and put first on `PATH`. Needs Nix on the host (without it: a warning, nothing built) |
+| `env` | `{}` | extra environment: names of letters, digits and `_`. Names on the never-list are refused (`*TOKEN*`, `*KEY*`, `SSH_AUTH_SOCK`, `HYPRLAND_*`, `LD_*`, `ZONE_*`, `NIX_LD*`, …) |
+| `binds` | `[]` | `{ path = "~/Downloads", mode = "rw" \| "ro" }` (`rw` when no mode is given), at the same path inside. Not under `/usr`, and never a path in `/proc`, `/sys` or `/dev` |
 | `dbus` | `{ talk = [], own = [] }` | names on the host bus proxy added to the safe default set (see [D-Bus](dbus.md) for what is refused) |
 | `bus` | `"host"` · `"zone"` · `"none"` | the session bus for a command that is not in `[apps]` (`appzones run Z -- CMD`). See [D-Bus](dbus.md) |
 | `nix_ld` | `false` · `true` | generic Linux binaries run: `/lib64/ld-linux-x86-64.so.2` in the zone is the host's nix-ld shim, and `NIX_LD`, `NIX_LD_LIBRARY_PATH` are set as on the host. Refused on a host without nix-ld (`programs.nix-ld.enable`), and outside NixOS, where generic binaries run without it. See [Generic binaries](nix-ld.md) |
@@ -75,7 +75,7 @@ inside any of these:
   as the system bus, devices, other users' files);
 - `/run/user`, `/run/secrets`, `/var/lib/sops-nix`, `/etc/ssh`,
   `/nix/var`;
-- appzones' own code directory (where `zone.py` is, also a checkout): the host
+- appzones' own code directory (where its binary is, also a checkout's build): the host
   runs that code, so no zone may ever write it;
 - the host's own additions: `/etc/appzones/denied-paths`, one path per line,
   `~/` for the home (`programs.appzones.deniedPaths`);
@@ -83,9 +83,14 @@ inside any of these:
   and kwallet;
 - opencode and claude state;
 - everything the host runs or reads at login: `~/.config/{zones,hypr,
-  systemd,autostart,environment.d,uwsm,nix,git,fish}`,
-  `~/.local/share/{zones,applications}`, `~/.local/bin`, `~/.bin`, and the
-  shell rc files.
+  systemd,autostart,environment.d,uwsm,nix,git,fish,user-tmpfiles.d,
+  plasma-workspace,sway,niri,river,labwc,tmux}`,
+  `~/.local/share/{zones,applications,dbus-1,systemd}`, `~/.local/bin`, `~/.bin`,
+  the shell rc and login files, `~/.xprofile`, `~/.xsession`, `~/.xsessionrc`,
+  `~/.xinitrc`, `~/.pam_environment`, `~/.tmux.conf`;
+- the live config file (`zones.toml`, also where a symlink points, and
+  `$APPZONES_CONFIG`) and `$APPZONES_STATE`: a zone that could write them would
+  give itself more at its next start.
 
 A bound directory brings everything in it, also what appears there later:
 a socket an app on the host creates inside a shared folder (an agent, a
@@ -98,7 +103,11 @@ On the host bus, these names are never granted (`talk` or `own`):
 session managers and shells, the host's file and settings daemons
 (`org.gtk.vfs.*`, `org.freedesktop.thumbnails.*`, `org.xfce.Xfconf`,
 `org.freedesktop.FileManager1`, `org.xfce.FileManager`, `org.xfce.Thunar`),
-`*` and `org.*`. On top of that:
+Mutter and kglobalaccel, the portal itself (zones get it filtered, per method),
+other zones' names (`dev.mirql.zone*`, `org.mozilla.*_zone_*`), `*` and `org.*`.
+Notifications and the tray are given per interface, never as a whole name:
+the proxy grants a name's rights to the whole connection that owns it, and on
+GNOME that is gnome-shell's. On top of that:
 
 - `own` never takes `org.freedesktop.*`, `org.kde.*`, `org.gnome.*`,
   `org.xfce.*`, `org.a11y.*`, `com.canonical.*` or the Mozilla apps'

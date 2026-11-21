@@ -19,7 +19,7 @@
   <a href="https://coderabbit.ai"><img alt="CodeRabbit reviews" src="https://img.shields.io/coderabbit/prs/github/mirql/appzones?labelColor=171717&color=FF570A&label=CodeRabbit%20reviews"></a>
   <a href="https://sonarcloud.io/summary/overall?id=mirql_appzones"><img alt="Quality gate" src="https://sonarcloud.io/api/project_badges/measure?project=mirql_appzones&metric=alert_status"></a>
   <a href="https://sonarcloud.io/summary/overall?id=mirql_appzones"><img alt="Security rating" src="https://sonarcloud.io/api/project_badges/measure?project=mirql_appzones&metric=security_rating"></a>
-  <a href="CONTRIBUTING.md"><img alt="Python dependencies: 0 (standard library only)" src="https://img.shields.io/badge/Python%20dependencies-0-brightgreen?logo=python&logoColor=white"></a>
+  <a href="CONTRIBUTING.md"><img alt="One Rust binary, dependencies pinned" src="https://img.shields.io/badge/Rust-one%20binary-brightgreen?logo=rust&logoColor=white"></a>
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 <a href="#contributors"><img alt="All contributors" src="https://img.shields.io/badge/all_contributors-6-orange"></a>
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
@@ -256,7 +256,8 @@ Ubuntu 24.04 and Debian 12 (preview): the `.deb` from the
 `sudo apt install ./appzones_*_amd64.deb`. Or from a checkout:
 
 ```bash
-sudo apt install python3 bubblewrap passt nftables iproute2 git make   # a desktop also: xdg-dbus-proxy dbus gcc pkg-config libwayland-dev
+sudo apt install bubblewrap passt nftables iproute2 git make gcc   # a desktop also: xdg-dbus-proxy dbus
+# and Rust 1.85 or newer (rustup.rs: Debian 12 and Ubuntu 24.04 ship older ones)
 git clone https://github.com/mirql/appzones && cd appzones && make && sudo make install
 ```
 

@@ -15,11 +15,18 @@ const DNS_SOCK: &str = "/run/zone/dns.sock";
 const DNS_MAX: usize = 4096;
 const MAX_INFLIGHT: usize = 64;
 static INFLIGHT: AtomicUsize = AtomicUsize::new(0);
+/// TCP connections at once, apart from the UDP queries: slow TCP clients cannot take
+/// the slots every app's UDP queries need.
+const MAX_TCP: usize = 16;
+static TCP: AtomicUsize = AtomicUsize::new(0);
+/// One query over TCP must arrive whole within this; a connection answers at most so many.
+const TCP_QUERY_DEADLINE: Duration = Duration::from_secs(10);
+const TCP_QUERIES: usize = 64;
 
-fn take_slot() -> bool {
-    let mut n = INFLIGHT.load(Ordering::Acquire);
-    while n < MAX_INFLIGHT {
-        match INFLIGHT.compare_exchange_weak(n, n + 1, Ordering::AcqRel, Ordering::Acquire) {
+fn take(count: &AtomicUsize, max: usize) -> bool {
+    let mut n = count.load(Ordering::Acquire);
+    while n < max {
+        match count.compare_exchange_weak(n, n + 1, Ordering::AcqRel, Ordering::Acquire) {
             Ok(_) => return true,
             Err(now) => n = now,
         }
@@ -27,8 +34,28 @@ fn take_slot() -> bool {
     false
 }
 
+fn take_slot() -> bool {
+    take(&INFLIGHT, MAX_INFLIGHT)
+}
+
 fn give_slot() {
     INFLIGHT.fetch_sub(1, Ordering::AcqRel);
+}
+
+/// BUF filled from CONN by END (each read gets what is left of it).
+fn read_exact_by(conn: &mut TcpStream, buf: &mut [u8], end: std::time::Instant) -> bool {
+    let mut got = 0;
+    while got < buf.len() {
+        let left = end.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() || conn.set_read_timeout(Some(left)).is_err() {
+            return false;
+        }
+        match conn.read(&mut buf[got..]) {
+            Ok(0) | Err(_) => return false,
+            Ok(n) => got += n,
+        }
+    }
+    true
 }
 
 /// The answer to MSG from the host side, or None.
@@ -58,7 +85,7 @@ fn connect(path: &str, timeout: Duration) -> Option<UnixStream> {
             return None;
         }
         let s = UnixStream::from_raw_fd(fd); // closes fd on every return below
-        let tv = libc::timeval { tv_sec: timeout.as_secs() as libc::time_t, tv_usec: 0 };
+        let tv = libc::timeval { tv_sec: timeout.as_secs() as _, tv_usec: 0 };
         libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_SNDTIMEO, (&tv as *const libc::timeval).cast(),
                          std::mem::size_of::<libc::timeval>() as libc::socklen_t);
         let mut addr: libc::sockaddr_un = std::mem::zeroed();
@@ -174,11 +201,11 @@ fn udp_loop(sock: UdpSocket) {
 }
 
 fn tcp_conn(mut conn: TcpStream) {
-    let _ = conn.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = conn.set_write_timeout(Some(Duration::from_secs(10)));
-    loop {
+    for _ in 0..TCP_QUERIES {
+        let end = std::time::Instant::now() + TCP_QUERY_DEADLINE;
         let mut head = [0u8; 2];
-        if conn.read_exact(&mut head).is_err() {
+        if !read_exact_by(&mut conn, &mut head, end) {
             break;
         }
         let n = u16::from_be_bytes(head) as usize;
@@ -186,7 +213,7 @@ fn tcp_conn(mut conn: TcpStream) {
             break;
         }
         let mut query = vec![0u8; n];
-        if conn.read_exact(&mut query).is_err() {
+        if !read_exact_by(&mut conn, &mut query, end) {
             break;
         }
         let Some(ans) = forward(&query) else { break };
@@ -195,17 +222,17 @@ fn tcp_conn(mut conn: TcpStream) {
             break;
         }
     }
-    give_slot();
+    TCP.fetch_sub(1, Ordering::AcqRel);
 }
 
 fn tcp_loop(listener: TcpListener) {
     loop {
         let Ok((conn, _)) = listener.accept() else { continue };
-        if !take_slot() {
-            continue;
+        if !take(&TCP, MAX_TCP) {
+            continue; // dropped: the client asks again, or over UDP
         }
         if thread::Builder::new().spawn(move || tcp_conn(conn)).is_err() {
-            give_slot();
+            TCP.fetch_sub(1, Ordering::AcqRel);
         }
     }
 }

@@ -24,39 +24,41 @@ reviews:
     - "!assets/**/*.svg"
     - "!assets/**/*.png"
   path_instructions:
-    - path: "src/zone_mount_helper.py"
+    - path: "helper/src/mount_helper.rs"
       instructions: |
-        Runs as root through sudo. Check that it clears every ZONES_* variable
-        before importing anything, trusts only SUDO_UID for the caller, mounts
-        only under the caller's zones/*/mnt, and is safe against symlink swaps
-        and races between checking a path and using it. It should stay small;
-        flag anything that grows its surface.
-    - path: "src/zonecfg.py"
+        Runs as root through sudo, as its own binary. Check that it reads no
+        environment, trusts only SUDO_UID for the caller, mounts only under the
+        caller's appzones/*/mnt, and is safe against symlink swaps and races
+        between checking a path and using it (fds, O_NOFOLLOW). unsafe only in
+        `mod sys`. It should stay small; flag anything that grows its surface.
+    - path: "helper/src/{config,policy}.rs"
       instructions: |
         The schema, the validator and the never-lists. Never-lists (paths,
         D-Bus names, environment) only grow: flag any removal. A new config key
-        or value needs RELEASE bumped, an entry in SINCE, a unit test in
-        src/test_zonecfg.py, and docs in docs/configuration/reference.md and examples/zones.toml.
-        Malformed values must be errors, never a crash.
-    - path: "src/appzones/**"
+        or value needs RELEASE bumped, an entry in SINCE, a test, and docs in
+        docs/configuration/reference.md and examples/zones.toml. Malformed
+        values must be errors, never a panic. settings_hash must stay byte for
+        byte what it was (helper/tests/golden).
+    - path: "helper/src/{cli,plan,serve,netsetup,agent,active,host_dns}.rs"
       instructions: |
-        The CLI commands (client.py), the supervisor (server.py), the bubblewrap
-        command line (fs.py), the network (net.py), D-Bus and links (portals.py),
-        runtime mounts (mounts.py). Flag anything that gives a zone more: new
-        binds, sockets, environment variables, D-Bus names, devices or
-        capabilities. Binds are pinned by fd (--bind-fd) and checked after
-        opening; zone-init's socket is made by the host (server.py); keep both.
-        Cross-module settings are read as `common.X` at call time, never copied.
-    - path: "src/zone.py"
-      instructions: "The entry point: usage text, argument parsing and dispatch only; logic belongs in src/appzones/."
-    - path: "src/zone_init.py"
+        The commands (cli.rs), the server (serve.rs), the zone's plan and its
+        bubblewrap command line (plan.rs), the network (netsetup.rs, host_dns.rs).
+        Flag anything that gives a zone more: new binds, sockets, environment
+        variables, D-Bus names, devices or capabilities. Binds are pinned by fd
+        (--bind-fd) and checked after opening; zone-init's socket is made by the
+        host; keep both. Messages are part of the interface (tests grep them).
+    - path: "helper/src/{zone_init,zone_dns,open_link}.rs"
       instructions: |
-        Runs inside the zone (PID 2 under bwrap) and serves the control socket.
-        Treat everything arriving on the socket as untrusted input.
-    - path: "src/zone-wayland/**"
+        Runs inside the zone (zone-init is PID 2 under bwrap) and serves the
+        control socket. Treat everything arriving on the socket as untrusted input.
+    - path: "helper/src/zone_wayland.rs"
       instructions: |
-        C helper for wp_security_context_v1. Check memory safety, fd leaks and
-        error paths; a failure must close the zone's access, not open it.
+        The wp_security_context_v1 helper. A failure must close the zone's
+        access, never fall back to the host's socket.
+    - path: "helper/tests/golden/*.json"
+      instructions: |
+        What the Python implementation answered. An answer changes only on
+        purpose, in the same PR as the code, with the reason stated.
     - path: "nix/module.nix"
       instructions: |
         The sudo rule must allow the configured user only the mount helper,
@@ -65,8 +67,8 @@ reviews:
       instructions: |
         Isolation checks should assert that something is refused, not only that
         the happy path works. Nothing may run on a live desktop session.
-    - path: "**/*.py"
-      instructions: "Standard library only: the package has no Python dependencies."
+    - path: "helper/Cargo.toml"
+      instructions: "Every dependency pinned (=x.y.z) and justified in a comment; `just audit` (cargo deny) must pass."
     - path: "**/*.md"
       instructions: "If behaviour changes, the pages in docs/ and a CHANGELOG line under Unreleased change in the same PR."
 

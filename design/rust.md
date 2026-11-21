@@ -121,7 +121,7 @@ Python helper's, and a separate security review of it is written down.
 
 Phase 1 can come back to `main` on its own.
 
-## Phases 2 and 3, if they come (not now: see the result of phase 1, and the research below)
+## Phases 2 and 3 (see the research below, and the decision after it)
 
 - **Phase 2, the configuration**: the rest of `zonecfg` (keys and origins, `[defaults]`,
   `RELEASE`/`SINCE`), with the 80 unit tests as the specification (same results; messages
@@ -169,6 +169,46 @@ dependencies. aarch64 is not solved by Rust (x86_64 in nix-ld paths, `flatpak_in
 | zone-init (about 1,000 lines with DNS and tests, replacing 770 lines of Python) | about 40 s for the crate | 785 KiB static | new crate: serde_json; `AgentProtocolTest` (7) passes against it (flake check `agent-protocol-rust`); `vm-rust`: the 159 checks pass with zone-init in Rust in every zone (shell, zone bus, `bus = "none"`, DNS with TCP fallback, crash containment, linger, busy umount); no Python of appzones' runs in a zone, except the `xdg-open` shim for `links = "zone"` and `"zone:NAME"` |
 | open-link (the shim's link part), and the install outside `/usr` | seconds | 785 KiB static (all three commands) | `vm-rust` 162 (the link round trip, no Python in the shim); `debian12-rust`, `ubuntu2404-rust`: installed under `/opt/appzones`, no Python in any zone, `appzones mount` through a sudo rule (written because `/opt/appzones` is root's alone). Phase 1a done |
 | the mount helper (its own executable) | about 10 s | 341 KiB, glibc (NSS), only `libc` as a dependency | `vm-rust` 163 with every runtime-mount check (refusals through symlinks, as the caller, bad names, without sudo; read-only also from a nested user namespace); `debian12-rust`, `ubuntu2404-rust` mount through the sudo rule with it |
+| stage 1: the server (`appzones-helper serve`, the runner of a zone's plan; about 900 lines with the host side of the DNS) | about 30 s for the crate | 785 KiB static helper, `serve` in it | the server holding a zone: **about 930 KB RSS, against 26 MB in Python**; `vm-rust` 163, every distro check, `test-fedora`, `test-arch`, `test-opensuse` |
+| stage 2: the configuration (`config.rs`, `pyfmt.rs`) and the plan (`plan.rs`), 2,732 lines | about 40 s for the crate | 1.3 MB static helper (785 KiB before; toml 0.8 and the plan) | the server, now with the plan made in Rust too, about 1.3 MB RSS; `DifferentialConfigTest` 944 configurations, `DifferentialPlanTest` 12 cases (both layouts, either zone-init), all identical; `vm-rust` 163, every distro check, `test-fedora`, `test-arch`, `test-opensuse` |
+| stage 3: the commands (`cli.rs`, `agent.rs`, `netsetup.rs`, `active.rs`), 2,240 lines | about 40 s for the crate | the same static helper; `appzones` is `appzones-helper cli` | with the Rust helper no Python runs at all; the commands that need no zone give Python's output byte for byte (help, check, which, list, new, errors); `vm-rust` 163, `vm` 162, every distro check (`appzones` the Rust command line on the Rust ones), `test-fedora`, `test-arch`, `test-opensuse` |
+| stage 4: one binary everywhere, the Python removed (8,144 lines of Python, 89 of C); its 49 unit tests that tested internals ported (units in the modules, `tests/cli.rs`, `tests/agent.rs`: 1,048 lines of tests outside the modules), and its answers frozen (`tests/golden`: 937 configurations, 6 plans, 169 paths) | about a minute for the crate, with every test | `appzones-helper` 1.5 MB (static, Nix) or 1.4 MB (glibc 2.17, other distributions: `nix/portable.nix`, built with zig); `appzones-mount-helper` 371 KB | no Python and no C anywhere; the server 1.5 MB RSS static, about 3 MB with glibc; `vm` 163, `debian12`, `ubuntu2404` (`make install` with the portable binaries), both `-deb`, `test-fedora` (RPM built with Fedora's cargo), `test-arch` (AUR package, Arch's cargo), `test-opensuse` (`make install`, openSUSE's cargo) |
+
+## Stage 4: one binary (what changed besides the language)
+
+- **Packages.** Nix builds the binary static (musl) and the mount helper against glibc
+  (NSS). The other distributions get `nix/portable.nix`: both binaries linked against glibc
+  2.17's symbols with zig, so one build runs everywhere and the mount helper uses the
+  system's NSS (a static musl one would not find LDAP or systemd-homed users). The .deb is
+  packed from them with nixpkgs' dpkg; no Debian image any more. The RPM and the AUR
+  package build from source with the distribution's cargo.
+- **Where the binaries go.** `make install` puts them in `PREFIX/libexec/appzones`, not
+  `lib/`: on Fedora pasta runs in its own SELinux domain and may execute only `bin_t`
+  files (`/usr/libexec` is; `/usr/lib` is `lib_t`), without an audit message. Python never
+  met this, since pasta ran `/usr/bin/python3`. The .deb and the AUR package keep
+  `/usr/lib/appzones` (no SELinux there, and their sudo rule names it); the RPM uses
+  `%{_libexecdir}`.
+- **No install rule.** A zone gets a read-only copy of the binary, so appzones may be
+  installed anywhere (`PREFIX=/opt/...`); the rule that it live under `/usr` is gone.
+- **Python's tests.** Its answers are the golden files, captured in a Nix build (the same
+  file system the Rust test runs in), each with the file tree it saw. Its unit tests of
+  internals are Rust tests of the same behaviour; what only made sense in Python (which
+  zone.py runs, the Python link shim) went with it.
+- **Measured** (this laptop, hyperfine, 30 runs, no zone running, the minimal example):
+
+  | command | Python (0.11) | Rust |
+  |---|---|---|
+  | `appzones list` | 202 ms | 16 ms |
+  | `appzones check` | 197 ms | 15 ms |
+  | `appzones --help` | 167 ms | 6 ms |
+  | `appzones list`, peak RSS | 27.8 MB | 4.7 MB |
+
+  The server holding a zone: 26 MB RSS in Python, 1.5 MB (static) or about 3 MB (glibc).
+- **Found on the way.** A zone lock held by a server from this version did not keep the
+  pre-0.6 state directory from moving (only Python servers were seen); now any held lock does.
+  And the move could race a server starting between the check and the rename (old, from
+  Python): servers now hold `$XDG_RUNTIME_DIR/appzones/.state.lock` shared from before they
+  choose their state directory, and the move takes it exclusively.
 
 ## Phase 1: the result
 
@@ -259,6 +299,71 @@ C only if Python itself becomes the problem: a distribution without a usable Pyt
 or a request for a single binary. Before B: a spike that writes the plan for one zone and
 runs it with a minimal Rust server (no DNS, no links), measuring its memory and how much of
 `server.py` moves.
+
+## Everything in Rust (decided 2026-11-20, on rust-version)
+
+The maintainer chose option C above as the branch's goal: all of appzones in Rust, on
+`rust-version`, while `main` stays Python. It comes back to `main` only when it passes
+everything `main` passes.
+
+**Done (2026-11-21):** stages 1 to 4 and a review (#158 to #163) passed everything `main`
+passes, and `rust-version` went into `main` whole. What follows is the plan as it was
+made, then each stage's result.
+
+**The end state**: one Rust binary, `appzones` (the CLI, the server, zone-init,
+zone-wayland, open-link), static where it can be, plus `appzones-mount-helper` on its own
+(glibc, for NSS; unchanged). No Python on the host.
+
+**What must not change** (the contract; each is tested from outside already or gets a test):
+- `zones.toml`: keys, values, defaults, `requires`/`RELEASE`, and what `appzones check`
+  refuses and warns about (messages close, not byte for byte);
+- the commands, their options, outputs (`--json` ones exactly) and exit statuses;
+- the runtime layout: `$XDG_RUNTIME_DIR/appzones/NAME.lock` and the zone's runtime
+  directory, logs in `$XDG_STATE_HOME/appzones/`, the colours file, the launcher entries;
+- `appzones serve NAME [--lock-fd L] [--notify-fd W]` and the systemd units;
+- the agent protocol (zone-init: both exist already, `AgentProtocolTest`);
+- `settings_hash` byte for byte while servers of the other implementation may be running
+  (or a running zone looks stale);
+- the mount helper and its sudo rule.
+
+**Stages**, each done when its tests pass; numbers into "Measured" after each:
+
+1. **The server.** `appzones serve` (Python) loads and checks the configuration, works out
+   the zone's plan (command lines, rules, binds to pin, environment, timeouts) into a JSON
+   file in the zone's runtime directory, and `exec`s `appzones-helper serve --plan FILE`,
+   keeping the lock and notify descriptors. The Rust server holds the zone: helpers and
+   their readiness, `_netsetup`, the pidfd handoff, the log and DNS relays, links, linger,
+   autostart, stop and cleanup. Done: `vm-rust` and the distro tests with it.
+   In two steps:
+   - **1a (Python only)**: `supervise` split into making the plan and running it, with the
+     plan as JSON; Python still runs it, so `vm` shows nothing changed, and the plan format
+     is the tested interface. Parts that depend on what the helpers produce (the zone's
+     Wayland socket, the host's as a fallback, the bus) are marked in bwrap's command line,
+     and the runner keeps or drops them. `_netsetup` stays Python in this stage: it execs
+     bwrap at once and holds no memory.
+   - **1b**: the Rust runner (`appzones-helper serve --plan FILE`): helpers and their
+     readiness (zone-wayland's exit 3 and the host fallback), the D-Bus proxy, the pidfd
+     handoff, zone-init's answer, readiness, autostart, the log and DNS relays (`dns.py`),
+     links, linger, a dead helper, stop, cleanup, the exit statuses. With the Rust helper
+     installed, `appzones serve` writes the plan and execs it. About 800 to 1,000 lines.
+2. **The configuration.** `zonecfg` in Rust (TOML with each key's origin, `[defaults]`,
+   `RELEASE`/`SINCE`, the never-list from phase 1b), and the plan made in Rust. A
+   differential test runs both on every example and unit-test case (results, warnings,
+   `settings_hash`) until they agree.
+3. **The commands.** The CLI in Rust, with the same outputs; Python's `zone.py` and
+   `appzones/` removed from the branch. Done: the whole suite, and `appzones check` on the
+   maintainer's real `zones.toml` agrees with Python's.
+4. **Packaging.** One binary in the Nix package, the .deb, the RPM and the AUR; the Python
+   dependency dropped. Then the decision whether it replaces Python on `main`.
+
+**Tests in two tiers.** Every PR: `cargo test` and clippy, the Python unit tests while
+Python is there, the protocol and differential tests (minutes). The end of each stage: the
+whole suite (`vm`, `vm-rust`, the distro tests, `just test-arch`, `test-fedora`,
+`test-opensuse`), once.
+
+**`main` meanwhile**: bug fixes and small things only, no large features, so the branch
+does not chase a moving target. Each fix reaches the branch with the next sync, and is
+ported there if the code it touches is Rust already.
 
 ## When to stop
 

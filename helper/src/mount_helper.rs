@@ -17,11 +17,11 @@
 mod policy;
 
 use std::ffi::{OsStr, OsString};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::Write;
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::process::ExitCode;
 
 const USAGE: &str = "    sudo -n appzones-mount-helper mount ZONE NAME SOURCE [--ro]
@@ -115,6 +115,17 @@ mod sys {
     /// PATH opened O_PATH|O_DIRECTORY, refusing every symlink on the way (RESOLVE_NO_SYMLINKS:
     /// the last one too, with ELOOP) and magic links.
     pub fn openat2_nosym(path: &[u8]) -> Result<OwnedFd> {
+        openat2(path, (libc::O_PATH | libc::O_DIRECTORY | libc::O_CLOEXEC) as u64,
+                libc::RESOLVE_NO_SYMLINKS | libc::RESOLVE_NO_MAGICLINKS)
+    }
+
+    /// PATH opened for reading as a directory, following ordinary symlinks but never a magic
+    /// link (/proc/PID/root and its kind, in any spelling: they reach other mount namespaces).
+    pub fn open_dir_no_magic(path: &[u8]) -> Result<OwnedFd> {
+        openat2(path, (libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC) as u64, libc::RESOLVE_NO_MAGICLINKS)
+    }
+
+    fn openat2(path: &[u8], flags: u64, resolve: u64) -> Result<OwnedFd> {
         let p = cstr(path)?;
         // struct open_how (linux/openat2.h): flags, mode, resolve, all u64
         #[repr(C)]
@@ -123,11 +134,7 @@ mod sys {
             mode: u64,
             resolve: u64,
         }
-        let how = OpenHow {
-            flags: (libc::O_PATH | libc::O_DIRECTORY | libc::O_CLOEXEC) as u64,
-            mode: 0,
-            resolve: libc::RESOLVE_NO_SYMLINKS | libc::RESOLVE_NO_MAGICLINKS,
-        };
+        let how = OpenHow { flags, mode: 0, resolve };
         // Safety: openat2 reads the NUL-terminated path and the open_how struct of the given size.
         let fd = check(unsafe {
             libc::syscall(libc::SYS_openat2, libc::AT_FDCWD, p.as_ptr(), &how as *const OpenHow,
@@ -173,7 +180,7 @@ mod sys {
     /// longer a peer of the source, so a mount made later under the source never
     /// propagates into it (the zone gets SOURCE, not what is mounted there afterwards).
     pub fn mount_setattr(tree: RawFd, attrs: u64) -> Result<()> {
-        let a = MountAttr { attr_set: attrs, attr_clr: 0, propagation: libc::MS_PRIVATE as u64, userns_fd: 0 };
+        let a = MountAttr { attr_set: attrs, attr_clr: 0, propagation: libc::MS_PRIVATE, userns_fd: 0 };
         // Safety: mount_setattr reads the struct of the given size; the path is empty.
         check(unsafe {
             libc::syscall(libc::SYS_mount_setattr, tree, c"".as_ptr(), libc::AT_EMPTY_PATH as libc::c_uint,
@@ -280,7 +287,7 @@ impl Caller {
     }
 
     fn policy(&self) -> policy::Policy {
-        policy::Policy { home: OsString::from_vec(self.home.clone()), code_dir: code_dir(), denied_file: None }
+        policy::Policy { home: OsString::from_vec(self.home.clone()), code_dir: code_dir(), denied_file: None, state_dir: None, extra: vec![] }
     }
 
     fn mnt_dir(&self, zone: &str) -> Vec<u8> {
@@ -322,10 +329,9 @@ impl Caller {
             sys::seteuid(self.uid)
         };
         let opened = drop_to_caller().and_then(|_| {
-            let f = OpenOptions::new().read(true).custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC)
-                .open(OsStr::from_bytes(source))?;
+            let f = sys::open_dir_no_magic(source)?; // (a magic link anywhere on the way: refused)
             sys::stat_dot(f.as_raw_fd())?; // search permission on it, too
-            Ok(OwnedFd::from(f))
+            Ok(f)
         });
         // back to root (euid first, then the groups it allows), whatever happened
         let back = sys::seteuid(0).and_then(|_| sys::setegid(0)).and_then(|_| sys::setgroups(&[]));
@@ -343,6 +349,11 @@ fn do_mount(c: &Caller, zone: &str, name: &str, source: &[u8], ro: bool) -> u8 {
     }
     if !source.starts_with(b"/") {
         die(format!("{}: must be an absolute path", show(source)));
+    }
+    // never named (as the CLI refuses it too): /proc/PID/root and its kind reach into other
+    // mount namespaces, whose paths read back as this one's
+    if let Some(d) = policy::NEVER_NAMED.iter().find(|d| source == d.as_bytes() || source.starts_with(format!("{d}/").as_bytes())) {
+        die(format!("refused: {}: is inside {d}, which never enters a zone", show(source)));
     }
     let target = [mnt.as_slice(), b"/", name.as_bytes()].concat();
     let _pfd = c.open_owned(&mnt);
@@ -366,6 +377,14 @@ fn do_mount(c: &Caller, zone: &str, name: &str, source: &[u8], ro: bool) -> u8 {
     let attrs = sys::MOUNT_ATTR_NOSUID | sys::MOUNT_ATTR_NODEV | if ro { sys::MOUNT_ATTR_RDONLY } else { 0 };
     sys::mount_setattr(tree.as_raw_fd(), attrs).unwrap_or_else(|e| die(format!("mount_setattr: {}", strerror(&e))));
     sys::move_mount(tree.as_raw_fd(), tfd.as_raw_fd()).unwrap_or_else(|e| die(format!("move_mount: {}", strerror(&e))));
+    // where it went: the target directory as it is now (the caller can rename it, or a
+    // directory above it, between the check and the mount); anywhere else, undone at once
+    let landed = fd_path(tree.as_raw_fd());
+    if landed != target {
+        let undo = sys::umount2(format!("/proc/self/fd/{}", tree.as_raw_fd()).as_bytes(), libc::MNT_DETACH);
+        die(format!("{}: moved while it was mounted (to {}); {}", show(&target), show(&landed),
+                    if undo.is_ok() { "detached again" } else { "COULD NOT DETACH IT: umount it by hand" }));
+    }
     // mounted: from here nothing may fail (a closed stdout is not a failure)
     let _ = writeln!(std::io::stdout(), "mounted {} at {} ({})", show(&real), show(&target), if ro { "ro" } else { "rw" });
     0
@@ -398,7 +417,7 @@ fn do_umount(c: &Caller, zone: &str, name: &str, lazy: bool) -> u8 {
     let rc = umount_one(pfd.as_raw_fd(), &target, name.as_bytes(), lazy);
     if rc == 0 {
         let note = if lazy { " (lazily: files still open keep it until they close)" } else { "" };
-        println!("unmounted {}{note}", show(&target));
+        let _ = writeln!(std::io::stdout(), "unmounted {}{note}", show(&target)); // (a closed stdout: not a failure)
     }
     rc
 }
@@ -471,6 +490,27 @@ mod tests {
     fn code_dir_is_the_executables() {
         let exe = std::env::current_exe().unwrap();
         assert_eq!(code_dir(), exe.parent().unwrap().as_os_str());
+    }
+
+    #[test]
+    fn mnt_dir_as_appzones_chooses() {
+        // ~/.local/share/appzones; the pre-0.6 ~/.local/share/zones only while the new one is not
+        // there (a symlink counts as there: chosen, and then refused by open_owned)
+        let t = std::env::temp_dir().join(format!("az-mnt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(&t).unwrap();
+        let c = Caller { uid: 0, gid: 0, name: b"alice".to_vec(), home: t.as_os_str().as_bytes().to_vec() };
+        let (new, old) = (t.join(".local/share/appzones"), t.join(".local/share/zones"));
+        let mnt = |base: &std::path::Path| [base.as_os_str().as_bytes(), b"/ta/mnt"].concat();
+        assert_eq!(c.mnt_dir("ta"), mnt(&new));
+        std::fs::create_dir_all(&old).unwrap();
+        assert_eq!(c.mnt_dir("ta"), mnt(&old));
+        std::os::unix::fs::symlink(&old, &new).unwrap();
+        assert_eq!(c.mnt_dir("ta"), mnt(&new));
+        std::fs::remove_file(&new).unwrap();
+        std::fs::create_dir(&new).unwrap();
+        assert_eq!(c.mnt_dir("ta"), mnt(&new));
+        let _ = std::fs::remove_dir_all(&t);
     }
 
     #[test]

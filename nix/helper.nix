@@ -21,7 +21,19 @@ rustPlatform.buildRustPackage {
   cargoTestFlags = [
     "--bin"
     bin
+  ]
+  ++ lib.optionals (bin == "appzones-helper") [
+    # what the Python implementation answered, before it was removed (helper/tests/golden)
+    "--test"
+    "golden"
+    # the commands from the outside, in a temporary home
+    "--test"
+    "cli"
+    # the agent protocol of zone-init
+    "--test"
+    "agent"
   ];
+  APPZONES_GOLDEN = "1";
   stripAllList = [ "bin" ]; # the symbol table too, not only debug info
   meta = {
     description = "appzones' helpers in Rust (optional: design/rust.md)";

@@ -1,0 +1,776 @@
+{
+"args": [
+"check-mount-source",
+"--home",
+"{T}/home",
+"--code-dir",
+"{T}/code",
+"--denied-file",
+"{T}/denied-paths",
+"--list-denied"
+],
+"paths": [
+"~/proj",
+"~/proj/sub",
+"{T}/home/proj",
+"~/proj-link",
+"~/ssh-link",
+"~/dangling",
+"~/file",
+"~/missing",
+"relative/path",
+"~",
+"{T}/home",
+"{T}",
+"/",
+"/home",
+"/etc",
+"/etc/ssh",
+"/nix",
+"/nix/store",
+"/tmp",
+"/var/tmp",
+"/run",
+"/proc/1",
+"/usr",
+"/usr/share",
+"/boot",
+"/root",
+"{T}/srv/code",
+"{T}/srv",
+"{T}/srv/code/x",
+"~/Secrets",
+"~/Secrets/inner",
+"~/data",
+"~/.config",
+"~//proj/./sub/",
+"{T}/code",
+"{T}",
+"{T}/code/appzones",
+"~/.local/state",
+"~/.local/share",
+"{T}",
+"/run/secrets",
+"/run",
+"/run/secrets/inner",
+"/run/user",
+"/run",
+"/run/user/inner",
+"/var/lib/sops-nix",
+"/var/lib",
+"/var/lib/sops-nix/inner",
+"/etc/ssh",
+"/etc",
+"/etc/ssh/inner",
+"/nix/var",
+"/nix",
+"/nix/var/inner",
+"{T}/home/.ssh",
+"{T}/home",
+"{T}/home/.ssh/inner",
+"{T}/home/.gnupg",
+"{T}/home",
+"{T}/home/.gnupg/inner",
+"{T}/home/.config/sops",
+"{T}/home/.config",
+"{T}/home/.config/sops/inner",
+"{T}/home/.password-store",
+"{T}/home",
+"{T}/home/.password-store/inner",
+"{T}/home/.local/share/keyrings",
+"{T}/home/.local/share",
+"{T}/home/.local/share/keyrings/inner",
+"{T}/home/.local/share/kwalletd",
+"{T}/home/.local/share",
+"{T}/home/.local/share/kwalletd/inner",
+"{T}/home/.config/opencode",
+"{T}/home/.config",
+"{T}/home/.config/opencode/inner",
+"{T}/home/.config/appzones",
+"{T}/home/.config",
+"{T}/home/.config/appzones/inner",
+"{T}/home/.local/share/appzones",
+"{T}/home/.local/share",
+"{T}/home/.local/share/appzones/inner",
+"{T}/home/.config/zones",
+"{T}/home/.config",
+"{T}/home/.config/zones/inner",
+"{T}/home/.local/share/zones",
+"{T}/home/.local/share",
+"{T}/home/.local/share/zones/inner",
+"{T}/home/.local/state/appzones",
+"{T}/home/.local/state",
+"{T}/home/.local/state/appzones/inner",
+"{T}/home/.config/hypr",
+"{T}/home/.config",
+"{T}/home/.config/hypr/inner",
+"{T}/home/.config/systemd",
+"{T}/home/.config",
+"{T}/home/.config/systemd/inner",
+"{T}/home/.config/autostart",
+"{T}/home/.config",
+"{T}/home/.config/autostart/inner",
+"{T}/home/.config/environment.d",
+"{T}/home/.config",
+"{T}/home/.config/environment.d/inner",
+"{T}/home/.config/uwsm",
+"{T}/home/.config",
+"{T}/home/.config/uwsm/inner",
+"{T}/home/.local/share/applications",
+"{T}/home/.local/share",
+"{T}/home/.local/share/applications/inner",
+"{T}/home/.local/bin",
+"{T}/home/.local",
+"{T}/home/.local/bin/inner",
+"{T}/home/.bin",
+"{T}/home",
+"{T}/home/.bin/inner",
+"{T}/home/.bashrc",
+"{T}/home",
+"{T}/home/.bashrc/inner",
+"{T}/home/.bash_profile",
+"{T}/home",
+"{T}/home/.bash_profile/inner",
+"{T}/home/.profile",
+"{T}/home",
+"{T}/home/.profile/inner",
+"{T}/home/.zshrc",
+"{T}/home",
+"{T}/home/.zshrc/inner",
+"{T}/home/.zshenv",
+"{T}/home",
+"{T}/home/.zshenv/inner",
+"{T}/home/.zprofile",
+"{T}/home",
+"{T}/home/.zprofile/inner",
+"{T}/home/.config/fish",
+"{T}/home/.config",
+"{T}/home/.config/fish/inner",
+"{T}/home/.config/nix",
+"{T}/home/.config",
+"{T}/home/.config/nix/inner",
+"{T}/home/.config/git",
+"{T}/home/.config",
+"{T}/home/.config/git/inner",
+"{T}/home/.gitconfig",
+"{T}/home",
+"{T}/home/.gitconfig/inner",
+"{T}/home/.config/kwalletrc",
+"{T}/home/.config",
+"{T}/home/.config/kwalletrc/inner",
+"{T}/code",
+"{T}",
+"{T}/code/inner",
+"{T}/home/Secrets",
+"{T}/home",
+"{T}/home/Secrets/inner",
+"{T}/srv/code",
+"{T}/srv",
+"{T}/srv/code/inner",
+"{T}/home/.local/share/opencode-x",
+"{T}/home/.local/share",
+"{T}/home/.local/share/opencode-x/inner",
+"{T}/home/.local/share/opencodeish",
+"{T}/home/.local/share",
+"{T}/home/.local/share/opencodeish/inner",
+"{T}/home/.claude",
+"{T}/home",
+"{T}/home/.claude/inner",
+"{T}/home/.claude-2",
+"{T}/home",
+"{T}/home/.claude-2/inner"
+],
+"want": [
+null,
+null,
+null,
+null,
+"~/ssh-link (resolves to {T}/home/.ssh): is {T}/home/.ssh, which never enters a zone",
+"~/dangling: does not exist",
+"~/file: not a directory",
+"~/missing: does not exist",
+"relative/path: must be absolute or start with ~",
+"~: binding {T}/home whole is never allowed",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}: contains {T}/home/.ssh, which never enters a zone",
+"/: binding / whole is never allowed",
+"/home: binding /home whole is never allowed",
+"/etc: is inside /etc, which is never mounted into a zone",
+"/etc/ssh: is inside /etc, which is never mounted into a zone",
+"/nix: is inside /nix, which is never mounted into a zone",
+"/nix/store: is inside /nix, which is never mounted into a zone",
+"/tmp: is inside /tmp, which is never mounted into a zone",
+"/var/tmp: is inside /var, which is never mounted into a zone",
+"/run: is inside /run, which is never mounted into a zone",
+"/proc/1: is inside /proc, which is never mounted into a zone",
+"/usr: is inside /usr, which is never mounted into a zone",
+"/usr/share: is inside /usr, which is never mounted into a zone",
+"/boot: is inside /boot, which is never mounted into a zone",
+"/root: is inside /root, which is never mounted into a zone",
+"{T}/srv/code: is {T}/srv/code, which never enters a zone",
+"{T}/srv: contains {T}/srv/code, which never enters a zone",
+"{T}/srv/code/x: is inside {T}/srv/code, which never enters a zone",
+"~/Secrets: is {T}/home/Secrets, which never enters a zone",
+"~/Secrets/inner: is inside {T}/home/Secrets, which never enters a zone",
+null,
+"~/.config: contains {T}/home/.config/sops, which never enters a zone",
+null,
+"{T}/code: is {T}/code, which never enters a zone",
+"{T}: contains {T}/home/.ssh, which never enters a zone",
+"{T}/code/appzones: is inside {T}/code, which never enters a zone",
+"~/.local/state: contains {T}/home/.local/state/appzones, which never enters a zone",
+"~/.local/share: contains {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}: contains {T}/home/.ssh, which never enters a zone",
+"/run/secrets: is inside /run, which is never mounted into a zone",
+"/run: is inside /run, which is never mounted into a zone",
+"/run/secrets/inner: is inside /run, which is never mounted into a zone",
+"/run/user: is inside /run, which is never mounted into a zone",
+"/run: is inside /run, which is never mounted into a zone",
+"/run/user/inner: is inside /run, which is never mounted into a zone",
+"/var/lib/sops-nix: is inside /var, which is never mounted into a zone",
+"/var/lib: is inside /var, which is never mounted into a zone",
+"/var/lib/sops-nix/inner: is inside /var, which is never mounted into a zone",
+"/etc/ssh: is inside /etc, which is never mounted into a zone",
+"/etc: is inside /etc, which is never mounted into a zone",
+"/etc/ssh/inner: is inside /etc, which is never mounted into a zone",
+"/nix/var: is inside /nix, which is never mounted into a zone",
+"/nix: is inside /nix, which is never mounted into a zone",
+"/nix/var/inner: is inside /nix, which is never mounted into a zone",
+"{T}/home/.ssh: is {T}/home/.ssh, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.ssh/inner: is inside {T}/home/.ssh, which never enters a zone",
+"{T}/home/.gnupg: is {T}/home/.gnupg, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.gnupg/inner: is inside {T}/home/.gnupg, which never enters a zone",
+"{T}/home/.config/sops: is {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/sops/inner: is inside {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.password-store: is {T}/home/.password-store, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.password-store/inner: is inside {T}/home/.password-store, which never enters a zone",
+"{T}/home/.local/share/keyrings: is {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/share: contains {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/share/keyrings/inner: is inside {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/share/kwalletd: is {T}/home/.local/share/kwalletd, which never enters a zone",
+"{T}/home/.local/share: contains {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/share/kwalletd/inner: is inside {T}/home/.local/share/kwalletd, which never enters a zone",
+"{T}/home/.config/opencode: is {T}/home/.config/opencode, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/opencode/inner: is inside {T}/home/.config/opencode, which never enters a zone",
+"{T}/home/.config/appzones: is {T}/home/.config/appzones, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/appzones/inner: is inside {T}/home/.config/appzones, which never enters a zone",
+"{T}/home/.local/share/appzones: is {T}/home/.local/share/appzones, which never enters a zone",
+"{T}/home/.local/share: contains {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/share/appzones/inner: is inside {T}/home/.local/share/appzones, which never enters a zone",
+"{T}/home/.config/zones: is {T}/home/.config/zones, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/zones/inner: is inside {T}/home/.config/zones, which never enters a zone",
+"{T}/home/.local/share/zones: is {T}/home/.local/share/zones, which never enters a zone",
+"{T}/home/.local/share: contains {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/share/zones/inner: is inside {T}/home/.local/share/zones, which never enters a zone",
+"{T}/home/.local/state/appzones: is {T}/home/.local/state/appzones, which never enters a zone",
+"{T}/home/.local/state: contains {T}/home/.local/state/appzones, which never enters a zone",
+"{T}/home/.local/state/appzones/inner: is inside {T}/home/.local/state/appzones, which never enters a zone",
+"{T}/home/.config/hypr: is {T}/home/.config/hypr, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/hypr/inner: is inside {T}/home/.config/hypr, which never enters a zone",
+"{T}/home/.config/systemd: is {T}/home/.config/systemd, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/systemd/inner: is inside {T}/home/.config/systemd, which never enters a zone",
+"{T}/home/.config/autostart: is {T}/home/.config/autostart, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/autostart/inner: is inside {T}/home/.config/autostart, which never enters a zone",
+"{T}/home/.config/environment.d: is {T}/home/.config/environment.d, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/environment.d/inner: is inside {T}/home/.config/environment.d, which never enters a zone",
+"{T}/home/.config/uwsm: is {T}/home/.config/uwsm, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/uwsm/inner: is inside {T}/home/.config/uwsm, which never enters a zone",
+"{T}/home/.local/share/applications: is {T}/home/.local/share/applications, which never enters a zone",
+"{T}/home/.local/share: contains {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/share/applications/inner: is inside {T}/home/.local/share/applications, which never enters a zone",
+"{T}/home/.local/bin: is {T}/home/.local/bin, which never enters a zone",
+"{T}/home/.local: contains {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/bin/inner: is inside {T}/home/.local/bin, which never enters a zone",
+"{T}/home/.bin: is {T}/home/.bin, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.bin/inner: is inside {T}/home/.bin, which never enters a zone",
+"{T}/home/.bashrc: is {T}/home/.bashrc, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.bashrc/inner: is inside {T}/home/.bashrc, which never enters a zone",
+"{T}/home/.bash_profile: is {T}/home/.bash_profile, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.bash_profile/inner: is inside {T}/home/.bash_profile, which never enters a zone",
+"{T}/home/.profile: is {T}/home/.profile, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.profile/inner: is inside {T}/home/.profile, which never enters a zone",
+"{T}/home/.zshrc: is {T}/home/.zshrc, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.zshrc/inner: is inside {T}/home/.zshrc, which never enters a zone",
+"{T}/home/.zshenv: is {T}/home/.zshenv, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.zshenv/inner: is inside {T}/home/.zshenv, which never enters a zone",
+"{T}/home/.zprofile: is {T}/home/.zprofile, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.zprofile/inner: is inside {T}/home/.zprofile, which never enters a zone",
+"{T}/home/.config/fish: is {T}/home/.config/fish, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/fish/inner: is inside {T}/home/.config/fish, which never enters a zone",
+"{T}/home/.config/nix: is {T}/home/.config/nix, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/nix/inner: is inside {T}/home/.config/nix, which never enters a zone",
+"{T}/home/.config/git: is {T}/home/.config/git, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/git/inner: is inside {T}/home/.config/git, which never enters a zone",
+"{T}/home/.gitconfig: is {T}/home/.gitconfig, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.gitconfig/inner: is inside {T}/home/.gitconfig, which never enters a zone",
+"{T}/home/.config/kwalletrc: is {T}/home/.config/kwalletrc, which never enters a zone",
+"{T}/home/.config: contains {T}/home/.config/sops, which never enters a zone",
+"{T}/home/.config/kwalletrc/inner: is inside {T}/home/.config/kwalletrc, which never enters a zone",
+"{T}/code: is {T}/code, which never enters a zone",
+"{T}: contains {T}/home/.ssh, which never enters a zone",
+"{T}/code/inner: is inside {T}/code, which never enters a zone",
+"{T}/home/Secrets: is {T}/home/Secrets, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/Secrets/inner: is inside {T}/home/Secrets, which never enters a zone",
+"{T}/srv/code: is {T}/srv/code, which never enters a zone",
+"{T}/srv: contains {T}/srv/code, which never enters a zone",
+"{T}/srv/code/inner: is inside {T}/srv/code, which never enters a zone",
+"{T}/home/.local/share/opencode-x: is {T}/home/.local/share/opencode-x, which never enters a zone",
+"{T}/home/.local/share: contains {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/share/opencode-x/inner: is inside {T}/home/.local/share/opencode-x, which never enters a zone",
+"{T}/home/.local/share/opencodeish: is {T}/home/.local/share/opencodeish, which never enters a zone",
+"{T}/home/.local/share: contains {T}/home/.local/share/keyrings, which never enters a zone",
+"{T}/home/.local/share/opencodeish/inner: is inside {T}/home/.local/share/opencodeish, which never enters a zone",
+"{T}/home/.claude: is {T}/home/.claude, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.claude/inner: is inside {T}/home/.claude, which never enters a zone",
+"{T}/home/.claude-2: is {T}/home/.claude-2, which never enters a zone",
+"{T}/home: binding {T}/home whole is never allowed",
+"{T}/home/.claude-2/inner: is inside {T}/home/.claude-2, which never enters a zone"
+],
+"denied": [
+"/run/secrets",
+"/run/user",
+"/var/lib/sops-nix",
+"/etc/ssh",
+"/nix/var",
+"{T}/home/.ssh",
+"{T}/home/.gnupg",
+"{T}/home/.config/sops",
+"{T}/home/.password-store",
+"{T}/home/.local/share/keyrings",
+"{T}/home/.local/share/kwalletd",
+"{T}/home/.config/opencode",
+"{T}/home/.config/appzones",
+"{T}/home/.local/share/appzones",
+"{T}/home/.config/zones",
+"{T}/home/.local/share/zones",
+"{T}/home/.local/state/appzones",
+"{T}/home/.config/hypr",
+"{T}/home/.config/systemd",
+"{T}/home/.config/autostart",
+"{T}/home/.config/environment.d",
+"{T}/home/.config/uwsm",
+"{T}/home/.local/share/applications",
+"{T}/home/.local/bin",
+"{T}/home/.bin",
+"{T}/home/.bashrc",
+"{T}/home/.bash_profile",
+"{T}/home/.profile",
+"{T}/home/.zshrc",
+"{T}/home/.zshenv",
+"{T}/home/.zprofile",
+"{T}/home/.config/fish",
+"{T}/home/.config/nix",
+"{T}/home/.config/git",
+"{T}/home/.gitconfig",
+"{T}/home/.config/kwalletrc",
+"{T}/home/.config/appzones/zones.toml",
+"{T}/home/.config/zones/zones.toml",
+"{T}/home/.local/share/dbus-1",
+"{T}/home/.local/share/systemd",
+"{T}/home/.config/user-tmpfiles.d",
+"{T}/home/.config/plasma-workspace",
+"{T}/home/.xprofile",
+"{T}/home/.xsession",
+"{T}/home/.xsessionrc",
+"{T}/home/.xinitrc",
+"{T}/home/.bash_login",
+"{T}/home/.bash_logout",
+"{T}/home/.pam_environment",
+"{T}/home/.config/sway",
+"{T}/home/.config/niri",
+"{T}/home/.config/river",
+"{T}/home/.config/labwc",
+"{T}/home/.tmux.conf",
+"{T}/home/.config/tmux",
+"{T}/code",
+"{T}/home/Secrets",
+"{T}/srv/code",
+"{T}/home/.local/share/opencode-x",
+"{T}/home/.local/share/opencodeish",
+"{T}/home/.claude",
+"{T}/home/.claude-2"
+],
+"tree": [
+{
+"path": "code",
+"dir": 493
+},
+{
+"path": "home",
+"dir": 493
+},
+{
+"path": "srv",
+"dir": 493
+},
+{
+"path": "denied-paths",
+"mode": 420,
+"age": 1,
+"data": "IyB0aGUgaG9zdCdzIG93bgp+L1NlY3JldHMKe1R9L3Nydi9jb2RlICAgIyBjb2RlCgo="
+},
+{
+"path": "home/.bash_profile",
+"dir": 493
+},
+{
+"path": "home/.bashrc",
+"dir": 493
+},
+{
+"path": "home/.bin",
+"dir": 493
+},
+{
+"path": "home/.claude",
+"dir": 493
+},
+{
+"path": "home/.claude-2",
+"dir": 493
+},
+{
+"path": "home/.config",
+"dir": 493
+},
+{
+"path": "home/.gitconfig",
+"dir": 493
+},
+{
+"path": "home/.gnupg",
+"dir": 493
+},
+{
+"path": "home/.local",
+"dir": 493
+},
+{
+"path": "home/.password-store",
+"dir": 493
+},
+{
+"path": "home/.profile",
+"dir": 493
+},
+{
+"path": "home/.ssh",
+"dir": 493
+},
+{
+"path": "home/.zprofile",
+"dir": 493
+},
+{
+"path": "home/.zshenv",
+"dir": 493
+},
+{
+"path": "home/.zshrc",
+"dir": 493
+},
+{
+"path": "home/Secrets",
+"dir": 493
+},
+{
+"path": "home/data",
+"dir": 493
+},
+{
+"path": "home/proj",
+"dir": 493
+},
+{
+"path": "home/proj-link",
+"link": "{T}/home/proj"
+},
+{
+"path": "home/ssh-link",
+"link": "{T}/home/.ssh"
+},
+{
+"path": "home/dangling",
+"link": "{T}/nowhere"
+},
+{
+"path": "home/file",
+"mode": 420,
+"age": 1,
+"data": "eA=="
+},
+{
+"path": "home/proj/sub",
+"dir": 493
+},
+{
+"path": "home/.ssh/inner",
+"dir": 493
+},
+{
+"path": "home/.local/bin",
+"dir": 493
+},
+{
+"path": "home/.local/share",
+"dir": 493
+},
+{
+"path": "home/.local/state",
+"dir": 493
+},
+{
+"path": "home/.local/share/applications",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones",
+"dir": 493
+},
+{
+"path": "home/.local/share/keyrings",
+"dir": 493
+},
+{
+"path": "home/.local/share/kwalletd",
+"dir": 493
+},
+{
+"path": "home/.local/share/opencode-x",
+"dir": 493
+},
+{
+"path": "home/.local/share/opencodeish",
+"dir": 493
+},
+{
+"path": "home/.local/share/zones",
+"dir": 493
+},
+{
+"path": "home/.local/share/opencode-x/inner",
+"dir": 493
+},
+{
+"path": "home/.local/share/opencodeish/inner",
+"dir": 493
+},
+{
+"path": "home/.local/share/keyrings/inner",
+"dir": 493
+},
+{
+"path": "home/.local/share/kwalletd/inner",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/inner",
+"dir": 493
+},
+{
+"path": "home/.local/share/zones/inner",
+"dir": 493
+},
+{
+"path": "home/.local/share/applications/inner",
+"dir": 493
+},
+{
+"path": "home/.local/state/appzones",
+"dir": 493
+},
+{
+"path": "home/.local/state/appzones/inner",
+"dir": 493
+},
+{
+"path": "home/.local/bin/inner",
+"dir": 493
+},
+{
+"path": "home/.claude/inner",
+"dir": 493
+},
+{
+"path": "home/.claude-2/inner",
+"dir": 493
+},
+{
+"path": "home/Secrets/inner",
+"dir": 493
+},
+{
+"path": "home/.config/appzones",
+"dir": 493
+},
+{
+"path": "home/.config/autostart",
+"dir": 493
+},
+{
+"path": "home/.config/environment.d",
+"dir": 493
+},
+{
+"path": "home/.config/fish",
+"dir": 493
+},
+{
+"path": "home/.config/git",
+"dir": 493
+},
+{
+"path": "home/.config/hypr",
+"dir": 493
+},
+{
+"path": "home/.config/kwalletrc",
+"dir": 493
+},
+{
+"path": "home/.config/nix",
+"dir": 493
+},
+{
+"path": "home/.config/opencode",
+"dir": 493
+},
+{
+"path": "home/.config/sops",
+"dir": 493
+},
+{
+"path": "home/.config/systemd",
+"dir": 493
+},
+{
+"path": "home/.config/uwsm",
+"dir": 493
+},
+{
+"path": "home/.config/zones",
+"dir": 493
+},
+{
+"path": "home/.config/sops/inner",
+"dir": 493
+},
+{
+"path": "home/.config/opencode/inner",
+"dir": 493
+},
+{
+"path": "home/.config/appzones/inner",
+"dir": 493
+},
+{
+"path": "home/.config/zones/inner",
+"dir": 493
+},
+{
+"path": "home/.config/hypr/inner",
+"dir": 493
+},
+{
+"path": "home/.config/systemd/inner",
+"dir": 493
+},
+{
+"path": "home/.config/autostart/inner",
+"dir": 493
+},
+{
+"path": "home/.config/environment.d/inner",
+"dir": 493
+},
+{
+"path": "home/.config/uwsm/inner",
+"dir": 493
+},
+{
+"path": "home/.config/fish/inner",
+"dir": 493
+},
+{
+"path": "home/.config/nix/inner",
+"dir": 493
+},
+{
+"path": "home/.config/git/inner",
+"dir": 493
+},
+{
+"path": "home/.config/kwalletrc/inner",
+"dir": 493
+},
+{
+"path": "home/.gnupg/inner",
+"dir": 493
+},
+{
+"path": "home/.password-store/inner",
+"dir": 493
+},
+{
+"path": "home/.bin/inner",
+"dir": 493
+},
+{
+"path": "home/.bashrc/inner",
+"dir": 493
+},
+{
+"path": "home/.bash_profile/inner",
+"dir": 493
+},
+{
+"path": "home/.profile/inner",
+"dir": 493
+},
+{
+"path": "home/.zshrc/inner",
+"dir": 493
+},
+{
+"path": "home/.zshenv/inner",
+"dir": 493
+},
+{
+"path": "home/.zprofile/inner",
+"dir": 493
+},
+{
+"path": "home/.gitconfig/inner",
+"dir": 493
+},
+{
+"path": "srv/code",
+"dir": 493
+}
+]
+}

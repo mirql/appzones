@@ -6,7 +6,7 @@
 {
   pkgs,
   image,
-  # extra `make` and `make install` arguments (e.g. another helper implementation)
+  # `make` and `make install` arguments: the binaries (cargo has no network here), PREFIX
   makeFlags ? "",
   # the .deb (nix/deb.nix) to install instead of `make install`
   deb ? null,
@@ -42,10 +42,6 @@ let
       "xdg-dbus-proxy"
       "dbus"
       "make"
-      "gcc"
-      "pkg-config"
-      "libwayland-dev"
-      "libwayland-bin"
       "sudo"
       "iproute2"
       "procps"

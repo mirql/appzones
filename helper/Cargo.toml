@@ -3,12 +3,12 @@ name = "appzones-helper"
 version = "0.11.3"
 edition = "2021"
 rust-version = "1.85"
-description = "appzones' helpers in Rust: zone-init, open-link, zone-wayland and the mount helper (design/rust.md)"
+description = "appzones: every command, the server, zone-init and zone-wayland in one binary, and the mount helper"
 license = "MIT"
 repository = "https://github.com/mirql/appzones"
 publish = false
 
-# the helpers (static, see nix/helper.nix), and the root step on its own (glibc: NSS)
+# appzones (static, see nix/helper.nix), and the root step on its own (glibc: NSS)
 [[bin]]
 name = "appzones-helper"
 path = "src/main.rs"
@@ -28,7 +28,10 @@ rustix = { version = "=1.1.6", features = ["pipe", "process"] }
 # what rustix keeps experimental (the signal mask)
 libc = "=0.2.191"
 # zone-init's agent protocol (JSON lines)
-serde_json = "=1.0.154"
+serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+# zones.toml (stage 2): an untyped table in the file's own order, so errors come in the
+# order Python's tomllib gives them
+toml = { version = "=0.8.23", default-features = false, features = ["parse", "preserve_order"] }
 
 [profile.release]
 strip = true

@@ -58,8 +58,7 @@
 {
   pkgs,
   module,
-  # another build of appzones to test (e.g. with a helper in another language);
-  # null: the module's default
+  # another build of appzones to test; null: the module's default
   package ? null,
 }:
 let
@@ -106,6 +105,49 @@ let
 
   # a "browser" for tz's links (links = "zone"): the server picks a declared app whose
   # command names firefox; this one writes the link it gets into the zone's home
+  # a bwrap that waits before it starts: a zone held "starting" for a moment, whatever the
+  # server is written in (the crash test kills its server then)
+  # zone-wayland: the package's binary, as a wrapper script can run it
+  zoneWayland = "${
+    if package != null then package else pkgs.callPackage ../nix/package.nix { }
+  }/libexec/appzones/appzones-helper zone-wayland";
+  slowBwrap = pkgs.writeShellScript "slow-bwrap" "sleep 3; exec ${pkgs.bubblewrap}/bin/bwrap \"$@\"";
+  # a notification server that, like gnome-shell, has more on the same connection (here
+  # org.example.Other.Poke, standing in for Mutter's RemoteDesktop): a zone may notify, but
+  # never call the rest through the owner's unique name
+  fakeNotifier = pkgs.writeText "fake-notifier.py" ''
+    import asyncio
+    from dbus_next.aio import MessageBus
+    from dbus_next.service import ServiceInterface, method
+
+    class Notifications(ServiceInterface):
+        def __init__(self):
+            super().__init__("org.freedesktop.Notifications")
+
+        @method()
+        def GetServerInformation(self) -> "ssss":
+            return ["fake", "appzones-test", "1", "1.2"]
+
+    class Other(ServiceInterface):
+        def __init__(self):
+            super().__init__("org.example.Other")
+
+        @method()
+        def Poke(self) -> "s":
+            open("/tmp/poked", "w").write("x")
+            return "poked"
+
+    async def main():
+        bus = await MessageBus().connect()
+        bus.export("/org/freedesktop/Notifications", Notifications())
+        bus.export("/poke", Other())
+        await bus.request_name("org.freedesktop.Notifications")
+        open("/tmp/notifier", "w").write(bus.unique_name)
+        await asyncio.Future()
+
+    asyncio.run(main())
+  '';
+  notifierPython = pkgs.python3.withPackages (ps: [ ps.dbus-next ]);
   linkCatcher = pkgs.writeShellScriptBin "firefox-link-catcher" "printf '%s\\n' \"$1\" > \"$HOME/opened-link\"";
 
   fhsHello = pkgs.buildFHSEnv {
@@ -529,6 +571,13 @@ pkgs.testers.runNixOSTest {
         print(u("systemctl --user status appzones@ta.service --no-pager -n 20"))
         u("systemctl --user is-active appzones@ta.service")
         print(u("appzones list"))
+        # what the sway hook names a window by (sway before 1.11): the zone's processes in
+        # its unit's cgroup, as the host sees it
+        pid = u("systemctl --user show appzones@ta.service -p MainPID --value").strip()
+        init = machine.succeed(f"pgrep -u alice -x zone-init -s $(ps -o sid= -p {pid}) || pgrep -u alice -x zone-init").split()
+        cg = [machine.succeed(f"cat /proc/{p}/cgroup").strip() for p in init]
+        assert any("/appzones.slice/appzones@ta.service" in c for c in cg), cg
+        print("PASS  the zone's processes are in appzones.slice/appzones@ta.service (the sway hook's cgroup rule)")
 
     with subtest("filesystem and process isolation"):
         ok("ta", "touch ~/probe && test -w ~", "zone home writable")
@@ -596,9 +645,8 @@ pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds(
             "grep -qx https://example.com/clicked-in-tz /home/alice/.local/share/appzones/tz/home/opened-link", timeout=60)
         print("PASS  a link clicked in a links = zone zone opens in that zone's browser")
-        if "APPZONES_HELPER" in machine.succeed("cat $(readlink -f /run/current-system/sw/bin/appzones)"):
-            ok("tz", "! grep -q python /run/zone/bin/xdg-open && grep -q '/run/appzones-helper open-link' "
-                     "/run/zone/bin/xdg-open", "the Rust helper: the link part of xdg-open, no Python")
+        ok("tz", "! grep -q python /run/zone/bin/xdg-open && grep -q '/run/appzones-helper open-link' "
+                 "/run/zone/bin/xdg-open", "the link part of xdg-open is appzones' own binary, no Python")
         rc, out = u("appzones run --wait tz -- xdg-open 'https://example.com/x y' </dev/null 2>&1; echo rc=$?", check=False)
         assert "rc=0" in out, out  # a space is fine; only http(s) URLs leave the zone this way
         # that link arrived too (its browser starts in the background), before the next check
@@ -630,6 +678,23 @@ pkgs.testers.runNixOSTest {
         print(out)
         assert rc != 0 and "AccessDenied" in out, out
         print("PASS  RemoteDesktop portal refused by the proxy")
+        # notifications: only their own interface, not the whole connection that owns the name
+        u("rm -f /tmp/notifier /tmp/poked; systemd-run --user --collect --unit=fake-notifier "
+          "${notifierPython}/bin/python3 ${fakeNotifier}")
+        machine.wait_until_succeeds("test -s /tmp/notifier", timeout=30)
+        owner = machine.succeed("cat /tmp/notifier").strip()
+        ok("ta", "gdbus call --session -d org.freedesktop.Notifications -o /org/freedesktop/Notifications "
+                 "-m org.freedesktop.Notifications.GetServerInformation | grep -q appzones-test",
+           "a notification server answers through the proxy")
+        rc, out = inside("ta", f"gdbus call --session -d {owner} -o /poke -m org.example.Other.Poke")
+        print(out)
+        assert rc != 0 and "AccessDenied" in out, out
+        machine.succeed("test ! -e /tmp/poked")
+        rc, out = inside("ta", "gdbus call --session -d org.freedesktop.Notifications -o /poke -m org.example.Other.Poke")
+        assert rc != 0, out
+        machine.succeed("test ! -e /tmp/poked")
+        u("systemctl --user stop fake-notifier")
+        print("PASS  the notification server's other interfaces (by its name or its unique name) refused")
         # no blanket org.mpris.MediaPlayer2.*: owning implies talking to the host's and other zones' players
         refused("ta", "gdbus call --session -d org.freedesktop.DBus -o /org/freedesktop/DBus "
                       "-m org.freedesktop.DBus.RequestName org.mpris.MediaPlayer2.zoneprobe 4",
@@ -895,8 +960,14 @@ pkgs.testers.runNixOSTest {
             and 'bus = "zone"' in out, out
         print("PASS  on the host bus Thunar exits; appzones run reports status, output and the bus hint")
 
+        # a FIFO planted where zone-init writes the zone bus's config: it must neither block
+        # zone-init nor be used (a new file is made)
+        ok("ta", "rm -f /run/user/1000/zone-bus/session.conf; mkdir -p /run/user/1000/zone-bus && "
+                 "mkfifo /run/user/1000/zone-bus/session.conf", "a FIFO planted at zone-bus/session.conf")
         u("appzones run ta thunar")
         w1 = wait_windows("ta", "thunar", 1)
+        ok("ta", "test -f /run/user/1000/zone-bus/session.conf && ! test -p /run/user/1000/zone-bus/session.conf",
+           "zone-init made its own session.conf (the FIFO did not block it)")
         pid = w1[0]["pid"]
         out = u("appzones logs ta")
         assert "zone bus up" in out and "(bus zone)" in out, out
@@ -964,15 +1035,22 @@ pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones ps ta | grep -q contentproc"), timeout=120)
         # one line per content process: "SECCOMP-MODE USERNS". The probe's own
         # bash also has "-contentproc" in its command line: skipped by name.
-        out = ok("ta", "for p in $(pgrep -f -- '-contentproc' | grep -v -x $$); do "
-                       "[ \"$(cat /proc/$p/comm)\" = bash ] && continue; "
-                       "echo $(awk '/^Seccomp:/{print $2}' /proc/$p/status) $(readlink /proc/$p/ns/user); done; "
-                       "echo self $(readlink /proc/self/ns/user)",
-                 "content processes listed")
+        # content processes come and go while Firefox starts, and take their seccomp filter
+        # a moment after they appear: asked again until one is sandboxed (or 60 s)
+        probe = ("for p in $(pgrep -f -- '-contentproc' | grep -v -x $$); do "
+                 "[ \"$(cat /proc/$p/comm 2>/dev/null)\" = bash ] && continue; "
+                 "echo $(awk '/^Seccomp:/{print $2}' /proc/$p/status 2>/dev/null) $(readlink /proc/$p/ns/user); done; "
+                 "echo self $(readlink /proc/self/ns/user)")
+        sandboxed, out = [], ""
+        for _ in range(120):
+            out = ok("ta", probe, "content processes listed") if not out else inside("ta", probe)[1]
+            selfns = [l.split()[1] for l in out.splitlines() if l.startswith("self ")][0]
+            procs = [l.split() for l in out.splitlines() if l.split()[:1] in (["0"], ["1"], ["2"])]
+            sandboxed = [p for p in procs if len(p) > 1 and p[0] == "2" and p[1] != selfns]
+            if sandboxed:
+                break
+            time.sleep(0.5)
         print(out)
-        selfns = [l.split()[1] for l in out.splitlines() if l.startswith("self ")][0]
-        procs = [l.split() for l in out.splitlines() if l.split()[:1] in (["0"], ["1"], ["2"])]
-        sandboxed = [p for p in procs if p[0] == "2" and p[1] != selfns]
         assert len(sandboxed) >= 1, f"no content process under seccomp in its own user namespace: {out}"
         print("PASS  content processes under seccomp in their own user namespace")
 
@@ -1089,15 +1167,25 @@ pkgs.testers.runNixOSTest {
 
     with subtest("crash containment: kill -9 of the server leaves nothing behind"):
         appz = machine.succeed("readlink -f $(command -v appzones)").strip()
-        for z, when in [("td", "running"), ("tb", "running"), ("td", "starting"), ("tb", "starting")]:
+        for z, when in [("td", "running"), ("tb", "running"), ("td", "starting"), ("tb", "starting"), ("td", "stuck")]:
             unit = f"crash-{z}-{when}"
             u(f"rm -f /tmp/{z}-ready")
             # KillMode=process: systemd cleans up nothing; what stays is what the zone left
-            u(f"systemd-run --user --collect --unit={unit} -p KillMode=process /bin/sh -c "
+            slow = "-E APPZONES_BIN_BWRAP=${slowBwrap} " if when == "starting" else ""
+            u(f"systemd-run --user --collect --unit={unit} -p KillMode=process {slow}/bin/sh -c "
               + shlex.quote(f"exec {appz} serve {z} --notify-fd 3 3>/tmp/{z}-ready"))
-            if when == "running":
+            if when in ("running", "stuck"):
                 machine.wait_until_succeeds(f"test -s /tmp/{z}-ready", timeout=90)
                 u(f"appzones ping {z}")
+            if when == "stuck":
+                # a zone process stops zone-init (same uid: it may): the zone still ends with
+                # its server, from outside (pasta and bwrap die with it)
+                init = machine.succeed(f"for p in $(pgrep -u alice -x zone-init); do tr '\\0' '\\n' </proc/$p/environ "
+                                       f"| grep -qx ZONE={z} && echo $p; done").split()
+                assert len(init) == 1, init
+                # (from the host here: stopped from inside, `run --wait` would wait for its reply)
+                machine.succeed(f"kill -STOP {init[0]}")
+                assert "T" in machine.succeed(f"ps -o stat= -p {init[0]}"), "zone-init is not stopped"
             pid = "0"
             for _ in range(200):  # a live server, as early as possible
                 pid = u(f"systemctl --user show {unit} -p MainPID --value").strip()
@@ -1137,7 +1225,7 @@ pkgs.testers.runNixOSTest {
         u(S + "appzones stop tb")
         # a client killed before the zone is ready: zone-wayland made slow, so the start
         # is still going on when the client dies; the server finishes it
-        zw = machine.succeed("ls /nix/store/*-zone-wayland*/bin/zone-wayland | head -1").strip()
+        zw = "${zoneWayland}"
         machine.succeed(f"printf '#!/bin/sh\\nsleep 4\\nexec {zw} \"$@\"\\n' >/tmp/slow-zw && chmod 755 /tmp/slow-zw")
         u("systemd-run --user --collect --unit=client-tb -p KillMode=process "
           "-E APPZONES_SUPERVISOR=spawn -E APPZONES_BIN_ZONE_WAYLAND=/tmp/slow-zw $(readlink -f $(command -v appzones)) up tb")
@@ -1253,7 +1341,7 @@ pkgs.testers.runNixOSTest {
         # a stop while the zone starts: zone-wayland waits at a gate that never opens, so
         # the start is surely still going on. SIGINT (appzones stop) exits 0, SIGTERM
         # 143; neither is a failure
-        zw = machine.succeed("ls /nix/store/*-zone-wayland*/bin/zone-wayland | head -1").strip()
+        zw = "${zoneWayland}"
         machine.succeed("printf '#!/bin/sh\\ntouch /tmp/zw-entered\\nwhile [ ! -e /tmp/zw-go ]; do sleep 0.1; done\\n"
                         f"exec {zw} \"$@\"\\n' >/tmp/gated-zw && chmod 755 /tmp/gated-zw")
         for how, want in [("appzones stop tb", "0"), ("systemctl --user kill -s TERM --kill-whom=main serve-slow", "143")]:

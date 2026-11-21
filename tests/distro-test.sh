@@ -9,12 +9,10 @@ src=$1
 mflags=${2:-}  # extra make arguments (tests/distro.nix makeFlags)
 deb=${3:-}     # a .deb to install instead of `make install` (tests/distro.nix deb), or
                # "pacman" or "rpm": the Arch or Fedora package, installed already (tests/cloud-test.sh)
-# where it installs (make's PREFIX, /usr for the .deb), and whether with the Rust helper
+# where it installs (make's PREFIX, /usr for the packages)
 prefix=/usr/local
 for f in $mflags; do case $f in PREFIX=*) prefix=${f#PREFIX=};; esac; done
 [ -z "$deb" ] || prefix=/usr
-rust=no
-case " $mflags " in *" HELPER=rust "*) rust=yes;; esac
 export PATH=$prefix/bin:/usr/sbin:/usr/bin:/sbin:/bin
 fail() { echo "FAIL $*"; exit 1; }
 pass() { echo "PASS $*"; }
@@ -53,14 +51,15 @@ if [ "$deb" = pacman ] || [ "$deb" = rpm ]; then
   if [ "$deb" = pacman ]; then v=$(pacman -Q appzones); else v=$(rpm -q appzones); fi || fail "the package is not installed"
   getent group appzones >/dev/null || fail "no group appzones (sysusers)"
   usermod -aG appzones alice
-  [ -x /usr/lib/appzones/zone-wayland ] || fail "no zone-wayland in the package"
+  ls /usr/lib/appzones/appzones-helper /usr/libexec/appzones/appzones-helper 2>/dev/null | grep -q . \
+    || fail "no appzones-helper in the package"
   [ "$(stat -c %a /etc/sudoers.d/appzones)" = 440 ] || fail "the sudo rule is not 0440"
-  pass "the package ($v): group appzones, zone-wayland, the sudo rule"
+  pass "the package ($v): group appzones, appzones-helper, the sudo rule"
 elif [ -n "$deb" ]; then
   dpkg -i "$deb" >/tmp/install.log 2>&1 || { cat /tmp/install.log; fail "dpkg -i"; }
   getent group appzones >/dev/null || fail "no group appzones"
   usermod -aG appzones alice
-  [ -x /usr/lib/appzones/zone-wayland ] || fail "no zone-wayland in the package"
+  [ -x /usr/lib/appzones/appzones-helper ] || fail "no appzones-helper in the package"
   if [ -e /etc/apparmor.d/abi/4.0 ]; then
     # what postinst installs where user namespaces are restricted (not in this VM's kernel)
     /usr/lib/appzones/apparmor-profile >/tmp/aa-profile || fail "apparmor-profile"
@@ -71,18 +70,19 @@ elif [ -n "$deb" ]; then
 else
 cp -r "$src" /tmp/appzones && chmod -R u+w /tmp/appzones && cd /tmp/appzones
 make $mflags >/tmp/make.log 2>&1 || { cat /tmp/make.log; fail "make"; }
-grep -q "built build/zone-wayland" /tmp/make.log || fail "zone-wayland not built: $(tail -2 /tmp/make.log)"
 # the profile needs AppArmor 4 (Ubuntu 24.04); where there is no restriction (Debian 12) none is installed
 if [ -e /etc/apparmor.d/abi/4.0 ]; then aa=yes; else aa=auto; fi
 make install $mflags MOUNT_USERS=alice APPARMOR=$aa SYSTEMD=no >/tmp/install.log 2>&1 || { cat /tmp/install.log; fail "make install"; }
 if [ $aa = yes ]; then
   apparmor_parser -Q -K /etc/apparmor.d/appzones || fail "AppArmor profile does not parse"
-  pass "make; make install (zone-wayland built, the AppArmor profile parses)"
+  pass "make; make install (the AppArmor profile parses)"
 else
   [ ! -e /etc/apparmor.d/appzones ] || fail "an AppArmor profile where user namespaces are not restricted"
-  pass "make; make install (zone-wayland built, no AppArmor profile: not needed here)"
+  pass "make; make install (no AppArmor profile: not needed here)"
 fi
 fi
+# where the binaries are: what the appzones wrapper runs
+libdir=$(dirname "$(grep -o '/[^ ]*/appzones-helper' $prefix/bin/appzones | head -1)")
 v=$(as_alice "appzones --version")
 echo "$v" | grep -q "^appzones [0-9][0-9.]* (config release [0-9]*)$" || fail "version: $v"
 pass "$v"
@@ -112,21 +112,28 @@ out=$(as_alice 'appzones run --wait off -- sh -c "id -un; cat ~/proj/f; ls -A ~;
 echo "$out"
 echo "$out" | grep -qx alice && echo "$out" | grep -qx hello && echo "$out" | grep -qx no-ssh || fail "zone off"
 pass "a zone without network starts on demand: its own home, the bind, no ~/.ssh"
+# the zone's plan (what appzones serve worked out, for the part that holds the zone): there, 0600, JSON
+[ "$(stat -c %a /run/user/1000/appzones/off/plan.json)" = 600 ] || fail "no 0600 plan.json for zone off"
+python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["version"] == 1 and p["name"] == "off"' \
+  /run/user/1000/appzones/off/plan.json || fail "plan.json is not a version-1 plan of zone off"
+pass "the zone's plan: plan.json, 0600, version 1"
 as_alice 'appzones run --wait off -- unshare -Ur true </dev/null' || fail "a sandbox inside the zone"
 pass "a sandbox inside the zone (user namespace)"
-if [ $rust = yes ]; then
-  init=$(pgrep -u alice -x zone-init | head -1)
-  cmd=$(tr '\0' ' ' </proc/$init/cmdline)
-  [ "$cmd" = "/run/appzones-helper zone-init " ] || fail "zone-init is not the Rust helper: $cmd"
-  inside=$(as_alice 'appzones run --wait off -- sh -c "cat /proc/[0-9]*/cmdline | tr \"\\000\" \" \""' </dev/null)
-  if echo "$inside" | grep -q python; then fail "Python runs in the zone: $inside"; fi
-  pass "the Rust helper: zone-init runs from /run/appzones-helper, no Python in the zone (installed under $prefix)"
-  case " $mflags " in *" MOUNT_HELPER_BIN="*)
-    [ "$(head -c 4 $prefix/lib/appzones/appzones-mount-helper | od -An -c | tr -d ' ')" = '177ELF' ] \
-      || fail "the mount helper is not the Rust one"
-    pass "the mount helper is the Rust one";;
-  esac
-fi
+init=$(pgrep -u alice -x zone-init | head -1)
+cmd=$(tr '\0' ' ' </proc/$init/cmdline)
+[ "$cmd" = "/run/appzones-helper zone-init " ] || fail "zone-init is not appzones' binary: $cmd"
+inside=$(as_alice 'appzones run --wait off -- sh -c "cat /proc/[0-9]*/cmdline | tr \"\\000\" \" \""' </dev/null)
+if echo "$inside" | grep -q python; then fail "Python runs in the zone: $inside"; fi
+pass "zone-init runs from /run/appzones-helper, nothing else of appzones in the zone (installed under $prefix)"
+# the server that holds the zone: appzones' binary
+srv=$(fuser /run/user/1000/appzones/off.lock 2>/dev/null | tr -s ' ' '\n' | grep -m1 '[0-9]')
+scmd=$(tr '\0' ' ' </proc/$srv/cmdline)
+case "$scmd" in *"appzones-helper cli serve off "*) ;; *) fail "zone off's server is not appzones' binary: $scmd";; esac
+grep -q 'appzones-helper cli' "$prefix/bin/appzones" || fail "appzones is not appzones-helper cli: $(cat $prefix/bin/appzones)"
+rss=$(awk '/^VmRSS/{print $2}' /proc/$srv/status)
+[ "$(head -c 4 $libdir/appzones-mount-helper | od -An -c | tr -d ' ')" = '177ELF' ] \
+  || fail "the mount helper is not a binary"
+pass "one binary: the server ($rss kB RSS) and every command; the mount helper its own"
 (sleep 2; printf 'echo in-shell-$ZONE\r'; sleep 1; printf 'exit\r') \
   | timeout 60 su alice -s /bin/sh -c "$U script -qfc 'appzones shell off' /dev/null" >/tmp/shell.out \
   || fail "appzones shell did not end: $(tr -d '\r' </tmp/shell.out)"
@@ -296,26 +303,19 @@ case $rc in
 esac
 
 # a server without the desktop's parts: a session bus is set (as over SSH with systemd),
-# but xdg-dbus-proxy and dbus-daemon are not there; and with the C zone-wayland also
-# WAYLAND_DISPLAY without zone-wayland (the Rust one is zone-init's binary: always there)
+# but xdg-dbus-proxy and dbus-daemon are not there (zone-wayland is appzones' own binary)
 mkdir /tmp/hidden && mv /usr/bin/xdg-dbus-proxy /usr/bin/dbus-daemon /tmp/hidden/
 U="$U DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
-if [ $rust = no ]; then
-  mv $prefix/lib/appzones/zone-wayland /tmp/hidden/
-  U="$U WAYLAND_DISPLAY=wayland-1"
-fi
 out=$(as_alice 'appzones run --wait off -- sh -c "echo works; echo bus=\$DBUS_SESSION_BUS_ADDRESS wl=\$WAYLAND_DISPLAY" </dev/null' 2>&1)
 echo "$out"
 echo "$out" | grep -qx works && echo "$out" | grep -qx "bus= wl=" || fail "a zone without the desktop's parts: $out"
 log=/home/alice/.local/state/appzones/off.log
 grep -q "xdg-dbus-proxy not found" $log || fail "no warning in the log: $(tail -5 $log)"
-[ $rust = yes ] || grep -q "zone-wayland not found" $log || fail "no zone-wayland warning: $(tail -5 $log)"
 if out=$(as_alice 'appzones run --wait --bus zone off -- true </dev/null' 2>&1); then fail "bus = zone without dbus-daemon: $out"; fi
 echo "$out" | grep -q "no dbus-daemon" || fail "bus = zone without dbus-daemon, not said: $out"
 as_alice 'appzones stop off'
-[ $rust = yes ] || mv /tmp/hidden/zone-wayland $prefix/lib/appzones/
 mv /tmp/hidden/xdg-dbus-proxy /tmp/hidden/dbus-daemon /usr/bin/
-pass "a server without zone-wayland, xdg-dbus-proxy, dbus-daemon: the zone starts, says why, bus = zone says what is missing"
+pass "a server without xdg-dbus-proxy and dbus-daemon: the zone starts, says why, bus = zone says what is missing"
 
 if [ "$deb" = pacman ]; then
   pacman -Rn --noconfirm appzones >/dev/null 2>&1 || fail "pacman -Rn"
@@ -326,7 +326,7 @@ elif [ -n "$deb" ]; then
 else
   make uninstall $mflags >/dev/null 2>&1 || fail "make uninstall"
 fi
-left=$(ls -d $prefix/lib/appzones $prefix/bin/appzones $prefix/share/appzones /etc/sudoers.d/appzones \
+left=$(ls -d $libdir $prefix/bin/appzones $prefix/share/appzones /etc/sudoers.d/appzones \
   /etc/apparmor.d/appzones $prefix/lib/systemd/user/appzones@.service 2>/dev/null || true)
 [ -z "$left" ] || fail "left after uninstall: $left"
 pass "uninstall removes it all"

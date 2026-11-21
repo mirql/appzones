@@ -6,14 +6,13 @@ pkgbase = appzones
 	install = appzones.install
 	arch = x86_64
 	license = MIT
-	makedepends = pkgconf
-	makedepends = wayland
-	depends = python>=3.11
+	makedepends = cargo
 	depends = bubblewrap
 	depends = passt
 	depends = nftables
 	depends = iproute2
-	optdepends = wayland: desktop apps (each zone's own Wayland socket, zone-wayland)
+	depends = glibc
+	depends = gcc-libs
 	optdepends = xdg-dbus-proxy: the session bus in zones (portals, notifications, tray)
 	optdepends = dbus: apps with bus = "zone" (their own bus in the zone)
 	optdepends = sudo: appzones mount (for members of the appzones group)

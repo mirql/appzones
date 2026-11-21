@@ -13,20 +13,17 @@
     in
     {
       packages = forAll (pkgs: rec {
+        # appzones: one Rust binary (helper/), and the root step of `appzones mount`
         appzones = pkgs.callPackage ./nix/package.nix { };
         default = appzones;
-        # the Rust helpers (optional, design/rust.md): static, with musl
-        helper = pkgs.pkgsStatic.callPackage ./nix/helper.nix { };
-        # appzones with them
-        # the root step of `appzones mount` in Rust: linked against glibc, not static
-        mount-helper = pkgs.callPackage ./nix/helper.nix { bin = "appzones-mount-helper"; };
-        appzones-rust = appzones.override {
-          inherit helper;
-          rustMountHelper = mount-helper;
-        };
-        # the .deb for Debian 12 and Ubuntu 24.04 (built in a Debian 12 image)
+        # the binary alone (static, with musl), its tests run in its build
+        helper = appzones.helper;
+        mount-helper = appzones.mountHelperPackage;
+        # both for other distributions (glibc 2.17 and later): the .deb, the RPM, the AUR
+        portable = pkgs.callPackage ./nix/portable.nix { };
+        # the .deb for Debian 12 and Ubuntu 24.04
         deb = import ./nix/deb.nix {
-          inherit pkgs;
+          inherit pkgs portable;
           epoch = self.lastModified or 1;
         };
       });
@@ -42,94 +39,51 @@
 
       checks = forAll (
         pkgs:
+        let
+          p = self.packages.${pkgs.stdenv.hostPlatform.system};
+          bins = "HELPER_BIN=${p.portable}/bin/appzones-helper MOUNT_HELPER_BIN=${p.portable}/bin/appzones-mount-helper";
+        in
         {
-          # the unit tests run inside the package build
-          package = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          package = p.default;
+          # cargo test in the build: the units, the commands from the outside (tests/cli.rs),
+          # the agent protocol (tests/agent.rs), Python's answers (tests/golden.rs)
+          helper = p.helper;
+          mount-helper = p.mount-helper;
+          portable = p.portable;
           # `make install` (outside Nix) into a staging directory
-          make-install = import ./tests/make-install.nix { inherit pkgs; };
-          # the Rust helper builds, statically, and its tests pass (cargo test in the build)
-          helper = self.packages.${pkgs.stdenv.hostPlatform.system}.helper;
-          mount-helper = self.packages.${pkgs.stdenv.hostPlatform.system}.mount-helper;
-          # the Rust zone-init meets the agent protocol's specification (AgentProtocolTest)
-          agent-protocol-rust =
-            pkgs.runCommand "appzones-agent-protocol-rust"
-              {
-                nativeBuildInputs = [ pkgs.python3 ];
-                src = ./.;
-              }
-              ''
-                cp -r --no-preserve=mode $src/src $src/examples $src/contrib . && cd src
-                APPZONES_TEST_ZONE_INIT="${
-                  self.packages.${pkgs.stdenv.hostPlatform.system}.helper
-                }/bin/appzones-helper zone-init" \
-                  HOME=$TMPDIR python3 -B -m unittest -v test_zonecfg.AgentProtocolTest
-                touch $out
-              '';
-          # the never-list in Rust (the root step's) answers as zonecfg's, path by path
-          policy-rust =
-            pkgs.runCommand "appzones-policy-rust"
-              {
-                nativeBuildInputs = [ pkgs.python3 ];
-                src = ./.;
-              }
-              ''
-                cp -r --no-preserve=mode $src/src $src/examples $src/contrib . && cd src
-                APPZONES_TEST_HELPER="${
-                  self.packages.${pkgs.stdenv.hostPlatform.system}.helper
-                }/bin/appzones-helper" HOME=$TMPDIR python3 -B -m unittest -v test_zonecfg.DifferentialPolicyTest
-                touch $out
-              '';
-          # appzones on other distributions, in their disk images (offline, ~3 min each)
+          make-install = import ./tests/make-install.nix {
+            inherit pkgs;
+            helper = p.helper;
+            mountHelper = p.mount-helper;
+          };
+          # what holds the repository together: the Hyprland hook's pre-0.6 copy, the docs catalog
+          repo = import ./tests/repo.nix { inherit pkgs; };
+          # appzones on other distributions, in their disk images (offline, ~3 min each):
+          # `make install` with the portable binaries (Ubuntu's outside /usr), and the .deb
           debian12 = import ./tests/distro.nix {
             inherit pkgs;
             image = "debian12x86_64";
+            makeFlags = bins;
           };
           ubuntu2404 = import ./tests/distro.nix {
             inherit pkgs;
             image = "ubuntu2404x86_64";
+            makeFlags = "PREFIX=/opt/appzones ${bins}";
           };
-          # the same with the .deb (nix/deb.nix) instead of `make install`
           debian12-deb = import ./tests/distro.nix {
             inherit pkgs;
             image = "debian12x86_64";
-            deb = self.packages.${pkgs.stdenv.hostPlatform.system}.deb;
+            deb = p.deb;
           };
           ubuntu2404-deb = import ./tests/distro.nix {
             inherit pkgs;
             image = "ubuntu2404x86_64";
-            deb = self.packages.${pkgs.stdenv.hostPlatform.system}.deb;
+            deb = p.deb;
           };
-          # the same with the Rust helper (the static build), installed outside /usr
-          debian12-rust = import ./tests/distro.nix {
-            inherit pkgs;
-            image = "debian12x86_64";
-            makeFlags = "PREFIX=/opt/appzones HELPER=rust HELPER_BIN=${
-              self.packages.${pkgs.stdenv.hostPlatform.system}.helper
-            }/bin/appzones-helper MOUNT_HELPER_BIN=${
-              self.packages.${pkgs.stdenv.hostPlatform.system}.mount-helper
-            }/bin/appzones-mount-helper";
-          };
-          ubuntu2404-rust = import ./tests/distro.nix {
-            inherit pkgs;
-            image = "ubuntu2404x86_64";
-            makeFlags = "PREFIX=/opt/appzones HELPER=rust HELPER_BIN=${
-              self.packages.${pkgs.stdenv.hostPlatform.system}.helper
-            }/bin/appzones-helper MOUNT_HELPER_BIN=${
-              self.packages.${pkgs.stdenv.hostPlatform.system}.mount-helper
-            }/bin/appzones-mount-helper";
-          };
-        }
-        // {
           # NixOS VM test (needs /dev/kvm, ~6 min)
           vm = import ./tests/vm.nix {
             inherit pkgs;
             module = self.nixosModules.default;
-          };
-          # the same VM test with the Rust helpers
-          vm-rust = import ./tests/vm.nix {
-            inherit pkgs;
-            module = self.nixosModules.default;
-            package = self.packages.${pkgs.stdenv.hostPlatform.system}.appzones-rust;
           };
         }
       );
@@ -145,7 +99,10 @@
       devShells = forAll (pkgs: {
         default = pkgs.mkShell {
           packages = [
-            pkgs.python3
+            pkgs.cargo
+            pkgs.rustc
+            pkgs.clippy
+            pkgs.rustfmt
             pkgs.just
             pkgs.nixfmt
           ];

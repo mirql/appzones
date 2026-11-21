@@ -28,12 +28,22 @@ const DENIED_IN_HOME: &[&str] = &[
     ".config/uwsm", ".local/share/applications", ".local/bin", ".bin", ".bashrc", ".bash_profile", ".profile",
     ".zshrc", ".zshenv", ".zprofile", ".config/fish", ".config/nix", ".config/git", ".gitconfig",
     ".config/kwalletrc",
+    // what the host runs or reads at login, and the live config files themselves (a
+    // zones.toml symlinked elsewhere: its target, so the folder holding it cannot be bound)
+    ".config/appzones/zones.toml", ".config/zones/zones.toml", ".local/share/dbus-1", ".local/share/systemd",
+    ".config/user-tmpfiles.d", ".config/plasma-workspace", ".xprofile", ".xsession", ".xsessionrc", ".xinitrc",
+    ".bash_login", ".bash_logout", ".pam_environment", ".config/sway", ".config/niri", ".config/river",
+    ".config/labwc", ".tmux.conf", ".config/tmux",
 ];
 const DENIED_SYSTEM: &[&str] = &["/run/secrets", "/run/user", "/var/lib/sops-nix", "/etc/ssh", "/nix/var"];
 /// Never bound whole ("~": the home).
 const FORBIDDEN_WHOLE: &[&str] = &["/", "/home", "~", "/nix", "/etc", "/proc", "/sys", "/dev", "/run", "/tmp", "/var"];
 /// Never the source of a runtime mount, nor anything inside them (outside the home).
-pub const MOUNT_NEVER_INSIDE: &[&str] = &["/proc", "/sys", "/dev", "/run", "/etc", "/nix", "/boot", "/root", "/var", "/tmp"];
+pub const MOUNT_NEVER_INSIDE: &[&str] = &["/proc", "/sys", "/dev", "/run", "/etc", "/nix", "/boot", "/root", "/var", "/tmp",
+    "/usr"];
+/// Never named by a bind at all, even when the path would resolve elsewhere: /proc/PID/root
+/// and its kind resolve into another process's mount namespace (another zone's files).
+pub const NEVER_NAMED: &[&str] = &["/proc", "/sys", "/dev"];
 /// More symlinks than this on one path: a loop, or as good as one. Refused.
 const MAX_LINKS: usize = 256;
 
@@ -43,6 +53,25 @@ pub struct Policy {
     pub code_dir: OsString,
     /// None: the host's file (HOST_DENIED_FILE, or the legacy one when it is absent)
     pub denied_file: Option<OsString>,
+    /// A custom state directory ($XDG_STATE_HOME, absolute): its appzones/ (the logs) is on
+    /// the never-list too. None for the mount helper, which reads no environment.
+    pub state_dir: Option<OsString>,
+    /// Where this user's config and state really are, when moved by the environment
+    /// ($APPZONES_CONFIG, $APPZONES_STATE): never in a zone either. Empty for the mount helper.
+    pub extra: Vec<OsString>,
+}
+
+/// An OSError as Python shows it: "[Errno N] Message: 'path'".
+pub fn py_oserror(e: &std::io::Error, path: &str) -> String {
+    match e.raw_os_error() {
+        Some(n) => {
+            // std words it "Message (os error N)": the message is C's strerror, as Python's
+            let text = e.to_string();
+            let msg = text.strip_suffix(&format!(" (os error {n})")).unwrap_or(&text);
+            format!("[Errno {n}] {msg}: {}", py_repr(path))
+        }
+        None => e.to_string(),
+    }
 }
 
 fn show(p: &[u8]) -> String {
@@ -160,21 +189,21 @@ fn parts(p: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// pathlib's == and is_relative_to, part by part.
-fn same(a: &[u8], b: &[u8]) -> bool {
+pub fn same(a: &[u8], b: &[u8]) -> bool {
     parts(a) == parts(b)
 }
 
-fn inside(p: &[u8], dir: &[u8]) -> bool {
+pub fn inside(p: &[u8], dir: &[u8]) -> bool {
     Path::new(OsStr::from_bytes(p)).starts_with(Path::new(OsStr::from_bytes(dir)))
 }
 
 /// Python's str.strip(): its whitespace is Unicode's and \x1c-\x1f.
-fn py_strip(s: &str) -> &str {
+pub fn py_strip(s: &str) -> &str {
     s.trim_matches(|c: char| c.is_whitespace() || ('\x1c'..='\x1f').contains(&c))
 }
 
 /// The line breaks Python's str.splitlines() knows ("\r\n" is one).
-fn split_lines(text: &str) -> Vec<&str> {
+pub fn split_lines(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = text;
     while !rest.is_empty() {
@@ -199,7 +228,7 @@ impl Policy {
     }
 
     /// zonecfg.expand: a leading "~" is the home.
-    fn expand(&self, raw: &[u8]) -> Vec<u8> {
+    pub fn expand(&self, raw: &[u8]) -> Vec<u8> {
         match raw.strip_prefix(b"~") {
             Some(rest) => py_path(&[self.home(), rest].concat()),
             None => py_path(raw),
@@ -221,7 +250,7 @@ impl Policy {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Err(format!("{shown} (APPZONES_DENIED_PATHS) does not exist"))
             }
-            Err(e) => return Err(format!("{shown}: cannot read the host's denied paths: {e}")),
+            Err(e) => return Err(format!("{shown}: cannot read the host's denied paths: {}", py_oserror(&e, &shown))),
         };
         let mut out = Vec::new();
         for (n, line) in split_lines(&text).into_iter().enumerate() {
@@ -251,6 +280,10 @@ impl Policy {
         let mut out: Vec<Vec<u8>> = DENIED_SYSTEM.iter().map(|s| s.as_bytes().to_vec()).collect();
         out.extend(DENIED_IN_HOME.iter().map(|r| join(&h, r.as_bytes())));
         out.push(py_path(self.code_dir.as_bytes()));
+        if let Some(state) = &self.state_dir {
+            out.push(join(&py_path(state.as_bytes()), b"appzones")); // the logs, at a custom state location
+        }
+        out.extend(self.extra.iter().map(|e| py_path(e.as_bytes())));
         out.extend(self.host_denied_paths()?);
         for (dir, prefix) in [(join(&h, b".local/share"), &b"opencode"[..]), (h.clone(), &b".claude"[..])] {
             let p = Path::new(OsStr::from_bytes(&dir));
@@ -261,13 +294,16 @@ impl Policy {
                 Err(e) => return Err(format!("{}: cannot look at it: {e}", show(&dir))),
             }
             let entries = fs::read_dir(p).map_err(|e| format!("{}: cannot list it: {e}", show(&dir)))?;
+            let mut names = Vec::new();
             for e in entries {
                 let e = e.map_err(|e| format!("{}: cannot list it: {e}", show(&dir)))?;
                 let name = e.file_name().into_vec();
                 if name.starts_with(prefix) {
-                    out.push(join(&dir, &name));
+                    names.push(name);
                 }
             }
+            names.sort(); // (by bytes: the same list on every file system)
+            out.extend(names.iter().map(|n| join(&dir, n)));
         }
         Ok(out)
     }
@@ -319,7 +355,7 @@ impl Policy {
     }
 
     /// zonecfg.kind_error: only directories and regular files are bound.
-    fn kind_error(meta: &fs::Metadata, raw: &str) -> Option<String> {
+    pub fn kind_error(meta: &fs::Metadata, raw: &str) -> Option<String> {
         let t = meta.file_type();
         if t.is_dir() || t.is_file() {
             return None;
@@ -340,9 +376,15 @@ impl Policy {
     #[allow(dead_code)] // appzones-helper's (check-mount-source), not the mount helper's
     pub fn bind_error(&self, raw_b: &[u8]) -> Option<String> {
         let raw = show(raw_b);
+        if raw_b.len() > 1 && raw_b[0] == b'~' && raw_b[1] != b'/' {
+            return Some(format!("{raw}: ~ must be followed by / (~user is not supported)"));
+        }
         let p = self.expand(raw_b);
         if !p.starts_with(b"/") {
             return Some(format!("{raw}: must be absolute or start with ~"));
+        }
+        if let Some(d) = NEVER_NAMED.iter().find(|d| inside(&p, d.as_bytes())) {
+            return Some(format!("{raw}: is inside {d}, which never enters a zone"));
         }
         let Some(real) = realpath(&p) else {
             return Some(format!("{raw}: its symlinks cannot be resolved (a loop?)"));
@@ -462,6 +504,37 @@ mod tests {
     }
 
     #[test]
+    fn review_refusals() {
+        // the live config file, symlinked out of ~/.config/appzones: the folder it lives in
+        // cannot be bound (a zone could rewrite its own settings for the next start)
+        let t = TempDir::new("refusals");
+        let h = t.0.join("home");
+        for d in ["dotfiles/appzones", ".config/appzones", "Docs", ".local/share/dbus-1"] {
+            fs::create_dir_all(h.join(d)).unwrap();
+        }
+        fs::write(h.join("dotfiles/appzones/zones.toml"), "").unwrap();
+        std::os::unix::fs::symlink(h.join("dotfiles/appzones/zones.toml"), h.join(".config/appzones/zones.toml")).unwrap();
+        fs::create_dir_all(t.0.join("elsewhere/state")).unwrap();
+        let mut policy = Policy { home: h.clone().into(), code_dir: t.0.join("code").into(), denied_file: Some(t.0.join("none").into()),
+                                  state_dir: None, extra: vec![] };
+        fs::write(t.0.join("none"), "").unwrap();
+        let e = |p: &Policy, x: &str| p.bind_error(x.as_bytes()).unwrap_or_default();
+        assert!(e(&policy, "~/dotfiles").contains("contains"), "{}", e(&policy, "~/dotfiles"));
+        assert_eq!(e(&policy, "~/Docs"), "");
+        assert!(e(&policy, "~/.local/share/dbus-1").contains("never enters a zone"));
+        // $APPZONES_STATE and $APPZONES_CONFIG elsewhere: never in a zone either
+        policy.extra = vec![t.0.join("elsewhere/state").into()];
+        assert!(e(&policy, &format!("{}/elsewhere", t.0.display())).contains("contains"));
+        // never named: /proc (its PID/root links reach other zones' files), /sys, /dev
+        for x in ["/proc/1/root/home", "/proc/self/cwd", "/sys/kernel", "/dev/shm"] {
+            assert!(e(&policy, x).contains("which never enters a zone"), "{x}: {}", e(&policy, x));
+        }
+        // nothing under /usr (the host runs what is there); ~user is not a path here
+        assert!(e(&policy, "/usr/share").contains("is inside /usr"), "{}", e(&policy, "/usr/share"));
+        assert!(e(&policy, "~root/x").contains("~user is not supported"));
+    }
+
+    #[test]
     fn py_paths() {
         assert_eq!(s(py_path(b"/a//b/./c/")), "/a/b/c");
         assert_eq!(s(py_path(b"//etc")), "//etc");
@@ -503,7 +576,7 @@ mod tests {
         assert_eq!(rp(format!("{tr}/link/missing/x")), Some(format!("{tr}/real/missing/x")));
         assert_eq!(rp(format!("{tr}/real/sub/..")), Some(format!("{tr}/real")));
         assert_eq!(rp(format!("{tr}/loop/x")), None);
-        let policy = Policy { home: t.0.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None };
+        let policy = Policy { home: t.0.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None, state_dir: None, extra: vec![] };
         assert!(policy.mount_source_error(format!("{tr}/loop").as_bytes()).unwrap().contains("cannot be resolved"));
     }
 
@@ -514,7 +587,7 @@ mod tests {
         for d in ["proj/sub", ".ssh/inner", "data"] {
             fs::create_dir_all(home.join(d)).unwrap();
         }
-        let policy = Policy { home: home.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None };
+        let policy = Policy { home: home.clone().into(), code_dir: "/nonexistent-code".into(), denied_file: None, state_dir: None, extra: vec![] };
         for p in [home.join("proj"), home.join("proj/sub"), home.join(".ssh"), home.join(".ssh/inner"), home.clone(),
                   "/etc".into(), "/usr".into(), "/tmp".into()] {
             let Ok(meta) = fs::metadata(&p) else { continue };
@@ -527,7 +600,7 @@ mod tests {
     fn host_file_errors() {
         let t = TempDir::new("denied");
         let f = t.0.join("denied-paths");
-        let policy = Policy { home: "/home/u".into(), code_dir: "/c".into(), denied_file: Some(f.clone().into()) };
+        let policy = Policy { home: "/home/u".into(), code_dir: "/c".into(), denied_file: Some(f.clone().into()), state_dir: None, extra: vec![] };
         fs::write(&f, "~//srv/private\n~/Secrets # mine\n/abs\n").unwrap();
         let got: Vec<String> = policy.host_denied_paths().unwrap().into_iter().map(s).collect();
         assert_eq!(got, vec!["/srv/private", "/home/u/Secrets", "/abs"]);

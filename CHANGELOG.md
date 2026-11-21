@@ -1,9 +1,41 @@
 # Changelog
 
 The config schema has its own release number (`requires = N` in
-`zones.toml`, `RELEASE` in `src/zonecfg.py`), separate from the version.
+`zones.toml`, `RELEASE` in `helper/src/config.rs`), separate from the version.
 
 ## Unreleased
+
+- **appzones is written in Rust** (#157): one binary, `appzones-helper`, is every command
+  (`appzones` runs its `cli`), the server, zone-init inside a zone and zone-wayland; the
+  root step of `appzones mount` is its own small binary. The Python and the C zone-wayland
+  are gone. The config, the commands and their output, the runtime layout and
+  `settings_hash` are unchanged: Python's answers are kept as golden files that the
+  build checks (937 configurations, zone plans, the never-list). `appzones list` takes
+  about 16 ms instead of 200, and the server holding a zone about 1.5 MB instead of 26.
+- **Installing**: building from a checkout needs Rust 1.85 or newer. `make install` puts
+  the binaries in `PREFIX/libexec/appzones`, and any `PREFIX` works now (a zone gets a
+  read-only copy of the binary). The .deb's binaries run on glibc 2.17 and later; the RPM
+  (binaries in `/usr/libexec/appzones`, where Fedora's pasta may run them) and the AUR
+  package build with their distribution's cargo. The sway hook is `appzones _sway-marks`
+  (`contrib/sway/appzones-sway` starts it). Restart running zones after the update.
+- **Tighter by default**: a zone's D-Bus proxy gives notifications and the tray their own
+  interfaces only, not the whole connection that owns the name (on GNOME, gnome-shell's).
+  The never-list adds the live config file wherever it points (and `$APPZONES_CONFIG`,
+  `$APPZONES_STATE`), more files the host runs at login, binds under `/usr` and any path
+  in `/proc`, `/sys` or `/dev` (also through a symlink: bind and mount sources are opened
+  without following magic links). `env` refuses `LD_*`, `ZONE_*`, `NIX_LD*`, `HYPRLAND_*`
+  and malformed names; `dbus` refuses the portal itself, Mutter, kglobalaccel and other
+  zones' names. The nft deny list covers the same addresses through NAT64.
+  `/etc/environment` is no longer bound into zones. `network = "host"`'s warning says it
+  shares the host's abstract sockets (Xwayland's).
+- **More robust**: a zone ends with its server also when a zone process stops zone-init;
+  zone-init's memory for an app's output is bounded, and a shell (or its client) that
+  stops reading no longer stalls it; DNS over TCP cannot take the slots UDP queries need;
+  links opened from a zone no longer hold up the server; runtime mounts and a zone's
+  teardown no longer race, and a mount whose target was moved while it was made is
+  detached again; `appzones shell` restores the terminal on a hangup; `restart`,
+  `stop --all`, `run --restart`, `check --probe` and `apps` are more careful; a command
+  killed by a signal under `run --wait` exits as with Python (241 for SIGTERM), never 0.
 
 - **openSUSE Leap 16 tested** (`just test-opensuse`, #22): `make install` and the whole
   distro test pass with SELinux enforcing, once pasta may run: on Leap 16

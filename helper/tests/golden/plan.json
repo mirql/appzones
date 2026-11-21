@@ -1,0 +1,4176 @@
+[
+{
+"layout": "nixos",
+"zone": "alpha",
+"env": {
+"HOME": "{T}/home",
+"PATH": "{T}/bin:{PATH}",
+"USER": "alice",
+"XDG_RUNTIME_DIR": "{T}/rt",
+"APPZONES_CONFIG": "{T}/zones.toml",
+"APPZONES_DENIED_PATHS": "{T}/denied-paths",
+"APPZONES_DBUS_SERVICE_DIRS": "",
+"APPZONES_INSTANCE_FOR_TESTS": "zone-x-1",
+"APPZONES_NETBIRD_IFACE": "wt0",
+"WAYLAND_DISPLAY": "wayland-9",
+"DBUS_SESSION_BUS_ADDRESS": "unix:path={T}/rt/bus",
+"XDG_CURRENT_DESKTOP": "Hyprland",
+"LANG": "C.UTF-8",
+"APPZONES_DNS_HOST": "192.0.2.53",
+"APPZONES_BIN_BWRAP": "{T}/bin/bwrap",
+"APPZONES_BIN_PASTA": "{T}/bin/pasta",
+"APPZONES_BIN_XDG_DBUS_PROXY": "{T}/bin/xdg-dbus-proxy",
+"APPZONES_BIN_ZONE_WAYLAND": "{T}/bin/zone-wayland",
+"APPZONES_BIN_DBUS_DAEMON": "{T}/bin/dbus-daemon",
+"APPZONES_LAYOUT": "nixos",
+"APPZONES_HELPER": "rust",
+"APPZONES_BIN_APPZONES_HELPER": "{HELPER}"
+},
+"tree": [
+{
+"path": "bin",
+"dir": 493
+},
+{
+"path": "home",
+"dir": 493
+},
+{
+"path": "rt",
+"dir": 493
+},
+{
+"path": "denied-paths",
+"mode": 420,
+"age": 0,
+"data": "fi9TZWNyZXRzCg=="
+},
+{
+"path": "zones.toml",
+"mode": 420,
+"age": 0,
+"data": "dmVyc2lvbiA9IDEKcmVxdWlyZXMgPSA2Clt6b25lcy5hbHBoYV0KY29sb3VyID0gIiNhNmUzYTEiCmxpbmtzID0gInpvbmUiCnRoZW1lID0gdHJ1ZQp0bXAgPSAiZGlzayIKZGV2aWNlcyA9IFsiZ3B1IiwgImF1ZGlvIiwgImNhbWVyYSIsICJ1c2IiXQpjYW1lcmEgPSAiZGV2aWNlIgp1c2IgPSBbImFiY2QiXQp3YXlsYW5kID0gImhvc3QiCmxpbmdlciA9ICIxMG0iCm5ldGJpcmQgPSB0cnVlCmF1dG9zdGFydF9hcHBzID0gWyJ3ZWIiXQplbnYgPSB7IEZPTyA9ICJiYXIiLCBMQU5HID0gImRlX0RFLlVURi04IiB9CmJpbmRzID0gW3sgcGF0aCA9ICJ+L3Byb2oiIH0sIHsgcGF0aCA9ICJ+L2RhdGEiLCBtb2RlID0gInJvIiB9XQpkYnVzID0geyB0YWxrID0gWyJjb20uZXhhbXBsZS5UYWxrIl0sIG93biA9IFsiY29tLmV4YW1wbGUuYXBwLk93biJdIH0KW3pvbmVzLmJldGFdCmNvbG91ciA9ICIjODliNGZhIgpuZXR3b3JrID0gIm5vbmUiCmRucyA9ICJwdWJsaWMiCm1hY2hpbmVfaWQgPSAiaG9zdCIKdXNlcm5zID0gZmFsc2UKaG9tZSA9ICJ+L2Job21lIgp3YXlsYW5kID0gIm5vbmUiCmxpbmtzID0gInpvbmU6YWxwaGEiCnRoZW1lID0gZmFsc2UKW3pvbmVzLmdhbW1hXQpjb2xvdXIgPSAiI2YzOGJhOCIKbmV0d29yayA9ICJob3N0IgpzdXBlcnZpc29yID0gInNwYXduIgpzdGFydF90aW1lb3V0ID0gNDUKYnVzID0gInpvbmUiClthcHBzLndlYl0KY29tbWFuZCA9IFsiZmlyZWZveCIsICItLW5ldy1pbnN0YW5jZSJdCnpvbmVzID0gWyJhbHBoYSIsICJiZXRhIl0KYXJncyA9IHsgYWxwaGEgPSBbIi1QIiwgImFscGhhIl0gfQo="
+},
+{
+"path": "home/.config",
+"dir": 493
+},
+{
+"path": "home/.icons",
+"dir": 493
+},
+{
+"path": "home/.local",
+"dir": 493
+},
+{
+"path": "home/.ssh",
+"dir": 493
+},
+{
+"path": "home/bhome",
+"dir": 493
+},
+{
+"path": "home/data",
+"dir": 493
+},
+{
+"path": "home/proj",
+"dir": 493
+},
+{
+"path": "home/.ssh/id",
+"mode": 420,
+"age": 0,
+"data": "c2VjcmV0"
+},
+{
+"path": "home/.config/fontconfig",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0/settings.ini",
+"mode": 420,
+"age": 0,
+"data": "W1NldHRpbmdzXQo="
+},
+{
+"path": "home/.config/fontconfig/fonts.conf",
+"mode": 420,
+"age": 0,
+"data": "PGZvbnRjb25maWcvPg=="
+},
+{
+"path": "home/.config/fontconfig/key",
+"link": "{T}/home/.ssh/id"
+},
+{
+"path": "home/.icons/Theme",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/cursors",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/index.theme",
+"mode": 420,
+"age": 0,
+"data": "W0ljb24gVGhlbWVdCg=="
+},
+{
+"path": "home/.icons/Theme/cursors/x.lock",
+"mode": 420,
+"age": 0,
+"data": "c2tpcA=="
+},
+{
+"path": "home/.local/share",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts/f.ttf",
+"mode": 420,
+"age": 0,
+"data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+},
+{
+"path": "home/.local/share/appzones/alpha",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/beta",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/gamma",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp/old",
+"mode": 420,
+"age": 3456000,
+"data": "eA=="
+},
+{
+"path": "home/.local/share/appzones/beta/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/gamma/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "rt/pipewire-0",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "rt/wayland-9",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "bin/bwrap",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/dbus-daemon",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/ip",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmNhdCA8PCdKJwpbeyJpZm5hbWUiOiAibG8iLCAiYWRkcl9pbmZvIjogW3sibG9jYWwiOiAiMTI3LjAuMC4xIiwgInByZWZpeGxlbiI6IDh9LCB7ImxvY2FsIjogIjo6MSIsICJwcmVmaXhsZW4iOiAxMjh9XX0sCiB7ImlmbmFtZSI6ICJldGgwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE5Mi4xNjguMS4yMCIsICJwcmVmaXhsZW4iOiAyNH0sIHsibG9jYWwiOiAiMjAwMTpkYjg6MTo6MjAiLCAicHJlZml4bGVuIjogNjR9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsb2NhbCI6ICJmZTgwOjoxIiwgInByZWZpeGxlbiI6IDY0fSwgeyJsb2NhbCI6ICIyMDMuMC4xMTMuNyIsICJwcmVmaXhsZW4iOiAyNX1dfSwKIHsiaWZuYW1lIjogInd0MCIsICJhZGRyX2luZm8iOiBbeyJsb2NhbCI6ICIxMDAuNzAuMTIuMzQiLCAicHJlZml4bGVuIjogMTZ9XX0sCiB7ImlmbmFtZSI6ICJkb2NrZXIwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE3Mi4xNy4wLjEiLCAicHJlZml4bGVuIjogMTZ9LCB7ImxvY2FsIjogIjE3Mi4xOC4wLjEiLCAicHJlZml4bGVuIjogMTZ9XX1dCkoK"
+},
+{
+"path": "bin/pasta",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/xdg-dbus-proxy",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/zone-wayland",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+}
+],
+"want": {
+"rc": 0,
+"stdout": [
+"[zone] tmp: removed 1 file(s) unused for 14 days from {T}/home/.local/share/appzones/alpha/tmp",
+"{T}/rt/appzones/alpha/plan.json"
+],
+"stderr": [
+"appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
+"appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
+"appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)",
+"appzones: theme: not copying {T}/home/.config/fontconfig/key (it resolves to a path that never enters a zone)",
+"appzones: usb: no device matches abcd now; the zone starts without one (plug it in, then `appzones restart alpha`)"
+],
+"files": {
+"rt/.flatpak": [
+"dir",
+"0o755"
+],
+"rt/.flatpak/zone-x-1": [
+"dir",
+"0o755"
+],
+"rt/appzones": [
+"dir",
+"0o700"
+],
+"rt/appzones/alpha": [
+"dir",
+"0o755"
+],
+"rt/appzones/alpha/config.sha256": [
+"file",
+"0o644",
+"d59e0eb8df39529bbe233eee867966a17faccd62d9a1299933746360b3f37e9f\n"
+],
+"rt/appzones/alpha/ctl": [
+"dir",
+"0o700"
+],
+"rt/appzones/alpha/ctl/bin": [
+"dir",
+"0o755"
+],
+"rt/appzones/alpha/ctl/bin/xdg-open": [
+"file",
+"0o755",
+"#!/bin/sh\n# zone xdg-open (links = \"zone\"): http(s) URLs open in zone alpha's\n# browser through the zone's link socket; anything else goes to the real xdg-open.\ncase \"$1\" in\n  http://*|https://*)\n    exec /run/appzones-helper open-link \"$1\" ;;\nesac\nexec /run/current-system/sw/bin/xdg-open \"$@\"\n"
+],
+"rt/appzones/alpha/flatpak-info": [
+"file",
+"0o644",
+"[Application]\nname=dev.mirql.zone.alpha\nruntime=runtime/dev.mirql.zones/x86_64/1\n\n[Instance]\ninstance-id=zone-x-1\nsession-bus-proxy=true\nsystem-bus-proxy=false\nsandbox-engine=dev.mirql.zones\n"
+],
+"rt/appzones/alpha/hosts": [
+"file",
+"0o644",
+"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 alpha-zone\n"
+],
+"rt/appzones/alpha/nft.rules": [
+"file",
+"0o644",
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16 } accept\n    ip daddr { 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
+],
+"rt/appzones/alpha/plan.json": [
+"plan",
+{
+"version": 1,
+"name": "alpha",
+"zrt": "{T}/rt/appzones/alpha",
+"start_timeout": 30.0,
+"linger": 600.0,
+"linger_text": "10m",
+"network": "internet",
+"dns": "host",
+"devices": [
+"gpu",
+"audio",
+"camera",
+"usb"
+],
+"flatpak_dir": "{T}/rt/.flatpak/zone-x-1",
+"wayland": {
+"mode": "host",
+"helper": [
+"{T}/bin/zone-wayland",
+"{T}/rt/appzones/alpha/wayland-0",
+"dev.mirql.zone.alpha",
+"zone-x-1"
+]
+},
+"dbus_proxy": [
+"{T}/bin/bwrap",
+"--unshare-all",
+"--share-net",
+"--die-with-parent",
+"--ro-bind",
+"/nix/store",
+"/nix/store",
+"--bind",
+"{T}/rt",
+"{T}/rt",
+"--ro-bind",
+"{T}/rt/appzones/alpha/flatpak-info",
+"/.flatpak-info",
+"--",
+"{T}/bin/xdg-dbus-proxy",
+"unix:path={T}/rt/bus",
+"{T}/rt/appzones/alpha/bus",
+"--filter",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Properties.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Introspectable.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Peer.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.FileChooser.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.OpenURI.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Notification.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Settings.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Email.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Print.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Trash.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Inhibit.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.NetworkMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.ProxyResolver.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.PowerProfileMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.MemoryMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GameMode.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Realtime.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Secret.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Request.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Session.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Camera.*",
+"--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
+"--talk=org.freedesktop.portal.Documents",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--own=dev.mirql.zone.alpha.*",
+"--own=org.mozilla.firefox_zone_alpha.*",
+"--own=org.mozilla.firefox_esr_zone_alpha.*",
+"--own=org.mozilla.firefox_beta_zone_alpha.*",
+"--own=org.mozilla.firefox_devedition_zone_alpha.*",
+"--own=org.mozilla.firefox_nightly_zone_alpha.*",
+"--own=org.mozilla.librewolf_zone_alpha.*",
+"--talk=com.example.Talk",
+"--own=com.example.app.Own"
+],
+"argv": [
+"{T}/bin/pasta",
+"--config-net",
+"--no-map-gw",
+"-t",
+"none",
+"-u",
+"none",
+"-T",
+"none",
+"-U",
+"none",
+"--dns",
+"none",
+"-q",
+"-f",
+"--",
+"{HELPER}",
+"cli",
+"_netsetup",
+"{T}/rt/appzones/alpha/nft.rules",
+"{T}/rt/.flatpak/zone-x-1/bwrapinfo.json",
+"alpha",
+"--",
+"{T}/bin/bwrap",
+"--unshare-user",
+"--unshare-ipc",
+"--unshare-pid",
+"--unshare-uts",
+"--unshare-cgroup",
+"--uid",
+"1000",
+"--gid",
+"100",
+"--hostname",
+"alpha-zone",
+"--die-with-parent",
+"--new-session",
+"--cap-drop",
+"ALL",
+"--clearenv",
+"--proc",
+"/proc",
+"--dev",
+"/dev",
+"--bind",
+"{T}/home/.local/share/appzones/alpha/tmp",
+"/tmp",
+"--bind",
+"{T}/home/.local/share/appzones/alpha/var-tmp",
+"/var/tmp",
+"--tmpfs",
+"/run",
+"--perms",
+"0700",
+"--tmpfs",
+"/run/user/1000",
+"--dir",
+"/run/zone",
+"--ro-bind",
+"/nix/store",
+"/nix/store",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/mnt",
+"/mnt/host",
+"--symlink",
+"/run/current-system/sw/bin",
+"/bin",
+"--symlink",
+"/run/current-system/sw/bin/env",
+"/usr/bin/env",
+"--ro-bind",
+"/etc/passwd",
+"/etc/passwd",
+"--ro-bind",
+"/etc/group",
+"/etc/group",
+"--ro-bind",
+"/etc/hosts",
+"/etc/hosts",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/machine-id",
+"/etc/machine-id",
+"--ro-bind",
+"{T}/rt/appzones/alpha/resolv.conf",
+"/etc/resolv.conf",
+"--bind",
+"{T}/home/.local/share/appzones/alpha/home",
+"{T}/home",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/theme/.config/gtk-3.0/settings.ini",
+"{T}/home/.config/gtk-3.0/settings.ini",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/theme/.config/fontconfig",
+"{T}/home/.config/fontconfig",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/theme/.icons",
+"{T}/home/.icons",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/theme/.local/share/fonts",
+"{T}/home/.local/share/fonts",
+"--zones-pin",
+"rw",
+"~/proj",
+"{T}/home/proj",
+"--zones-pin",
+"ro",
+"~/data",
+"{T}/home/data",
+"--ro-bind-try",
+"/sys/devices/system/cpu",
+"/sys/devices/system/cpu",
+"--ro-bind",
+"{T}/rt/appzones/alpha/ctl",
+"/run/zone",
+"--ro-bind",
+"{T}/rt/appzones/alpha/ctl/bin",
+"/run/zone/bin",
+"\u0000if:wayland-0",
+"--bind",
+"{T}/rt/appzones/alpha/wayland-0",
+"/run/user/1000/wayland-0",
+"--setenv",
+"WAYLAND_DISPLAY",
+"wayland-0",
+"\u0000end",
+"\u0000if:wayland-host",
+"--bind",
+"\u0000host-wayland",
+"/run/user/1000/wayland-0",
+"--setenv",
+"WAYLAND_DISPLAY",
+"wayland-0",
+"\u0000end",
+"\u0000if:bus",
+"--bind",
+"{T}/rt/appzones/alpha/bus",
+"/run/user/1000/bus",
+"--setenv",
+"DBUS_SESSION_BUS_ADDRESS",
+"unix:path=/run/user/1000/bus",
+"\u0000end",
+"--bind",
+"{T}/rt/pipewire-0",
+"/run/user/1000/pipewire-0",
+"--ro-bind",
+"{T}/rt/appzones/alpha/flatpak-info",
+"/.flatpak-info",
+"--info-fd",
+"3",
+"--lock-file",
+"/.flatpak-info",
+"--setenv",
+"HOME",
+"{T}/home",
+"--setenv",
+"USER",
+"alice",
+"--setenv",
+"LOGNAME",
+"alice",
+"--setenv",
+"PATH",
+"/run/zone/bin:/etc/profiles/per-user/alice/bin:/run/current-system/sw/bin",
+"--setenv",
+"LANG",
+"de_DE.UTF-8",
+"--setenv",
+"TZ",
+":/etc/localtime",
+"--setenv",
+"XDG_RUNTIME_DIR",
+"/run/user/1000",
+"--setenv",
+"ZONE",
+"alpha",
+"--setenv",
+"TERM",
+"xterm-256color",
+"--setenv",
+"ZONE_DNS",
+"127.0.0.53",
+"--setenv",
+"XDG_DATA_DIRS",
+"/etc/profiles/per-user/alice/share:/run/current-system/sw/share",
+"--setenv",
+"XDG_CONFIG_DIRS",
+"/etc/xdg",
+"--setenv",
+"XDG_SESSION_TYPE",
+"wayland",
+"--setenv",
+"NIXOS_OZONE_WL",
+"1",
+"--setenv",
+"MOZ_ENABLE_WAYLAND",
+"1",
+"--setenv",
+"QT_QPA_PLATFORM",
+"wayland;xcb",
+"--setenv",
+"SDL_VIDEODRIVER",
+"wayland",
+"--setenv",
+"ELECTRON_OZONE_PLATFORM_HINT",
+"wayland",
+"--setenv",
+"TZDIR",
+"/etc/zoneinfo",
+"--setenv",
+"XDG_CURRENT_DESKTOP",
+"Hyprland",
+"--setenv",
+"ZONE_DBUS_DAEMON",
+"{T}/bin/dbus-daemon",
+"--setenv",
+"ZONE_BWRAP",
+"{T}/bin/bwrap",
+"--setenv",
+"FOO",
+"bar",
+"--ro-bind",
+"{HELPER}",
+"/run/appzones-helper",
+"--",
+"/run/appzones-helper",
+"zone-init"
+],
+"log_socket": true,
+"dns_upstreams": [
+"192.0.2.53"
+],
+"links": {
+"socket": "{T}/rt/appzones/alpha/ctl/links.sock",
+"command": [
+"{HELPER}",
+"cli",
+"_link",
+"alpha"
+]
+},
+"autostart": [
+{
+"app": "web",
+"argv": [
+"firefox",
+"--new-instance",
+"-P",
+"alpha"
+],
+"bus": "host"
+}
+],
+"cleanup": [
+"{HELPER}",
+"cli",
+"_cleanup",
+"alpha"
+]
+}
+],
+"rt/appzones/alpha/resolv.conf": [
+"file",
+"0o644",
+"nameserver 127.0.0.53\n"
+],
+"rt/appzones/colours": [
+"file",
+"0o600",
+"alpha #a6e3a1\nbeta #89b4fa\ngamma #f38ba8\n"
+],
+"rt/pipewire-0": [
+"file",
+"0o644",
+""
+],
+"rt/wayland-9": [
+"file",
+"0o644",
+""
+],
+"home/.local/share/appzones/alpha": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/home": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/alpha/mnt": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/alpha/theme": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.config": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.config/fontconfig": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.config/fontconfig/fonts.conf": [
+"file",
+"0o644",
+"<fontconfig/>"
+],
+"home/.local/share/appzones/alpha/theme/.config/gtk-3.0": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.config/gtk-3.0/settings.ini": [
+"file",
+"0o644",
+"[Settings]\n"
+],
+"home/.local/share/appzones/alpha/theme/.icons": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.icons/Theme": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.icons/Theme/index.theme": [
+"file",
+"0o644",
+"[Icon Theme]\n"
+],
+"home/.local/share/appzones/alpha/theme/.local": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.local/share": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.local/share/fonts": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.local/share/fonts/f.ttf": [
+"file",
+"0o644",
+"\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+],
+"home/.local/share/appzones/alpha/tmp": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/alpha/var-tmp": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/beta": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/beta/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/gamma": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+]
+}
+}
+},
+{
+"layout": "nixos",
+"zone": "beta",
+"env": {
+"HOME": "{T}/home",
+"PATH": "{T}/bin:{PATH}",
+"USER": "alice",
+"XDG_RUNTIME_DIR": "{T}/rt",
+"APPZONES_CONFIG": "{T}/zones.toml",
+"APPZONES_DENIED_PATHS": "{T}/denied-paths",
+"APPZONES_DBUS_SERVICE_DIRS": "",
+"APPZONES_INSTANCE_FOR_TESTS": "zone-x-1",
+"APPZONES_NETBIRD_IFACE": "wt0",
+"WAYLAND_DISPLAY": "wayland-9",
+"DBUS_SESSION_BUS_ADDRESS": "unix:path={T}/rt/bus",
+"XDG_CURRENT_DESKTOP": "Hyprland",
+"LANG": "C.UTF-8",
+"APPZONES_DNS_HOST": "192.0.2.53",
+"APPZONES_BIN_BWRAP": "{T}/bin/bwrap",
+"APPZONES_BIN_PASTA": "{T}/bin/pasta",
+"APPZONES_BIN_XDG_DBUS_PROXY": "{T}/bin/xdg-dbus-proxy",
+"APPZONES_BIN_ZONE_WAYLAND": "{T}/bin/zone-wayland",
+"APPZONES_BIN_DBUS_DAEMON": "{T}/bin/dbus-daemon",
+"APPZONES_LAYOUT": "nixos",
+"APPZONES_HELPER": "rust",
+"APPZONES_BIN_APPZONES_HELPER": "{HELPER}"
+},
+"tree": [
+{
+"path": "bin",
+"dir": 493
+},
+{
+"path": "home",
+"dir": 493
+},
+{
+"path": "rt",
+"dir": 493
+},
+{
+"path": "denied-paths",
+"mode": 420,
+"age": 0,
+"data": "fi9TZWNyZXRzCg=="
+},
+{
+"path": "zones.toml",
+"mode": 420,
+"age": 0,
+"data": "dmVyc2lvbiA9IDEKcmVxdWlyZXMgPSA2Clt6b25lcy5hbHBoYV0KY29sb3VyID0gIiNhNmUzYTEiCmxpbmtzID0gInpvbmUiCnRoZW1lID0gdHJ1ZQp0bXAgPSAiZGlzayIKZGV2aWNlcyA9IFsiZ3B1IiwgImF1ZGlvIiwgImNhbWVyYSIsICJ1c2IiXQpjYW1lcmEgPSAiZGV2aWNlIgp1c2IgPSBbImFiY2QiXQp3YXlsYW5kID0gImhvc3QiCmxpbmdlciA9ICIxMG0iCm5ldGJpcmQgPSB0cnVlCmF1dG9zdGFydF9hcHBzID0gWyJ3ZWIiXQplbnYgPSB7IEZPTyA9ICJiYXIiLCBMQU5HID0gImRlX0RFLlVURi04IiB9CmJpbmRzID0gW3sgcGF0aCA9ICJ+L3Byb2oiIH0sIHsgcGF0aCA9ICJ+L2RhdGEiLCBtb2RlID0gInJvIiB9XQpkYnVzID0geyB0YWxrID0gWyJjb20uZXhhbXBsZS5UYWxrIl0sIG93biA9IFsiY29tLmV4YW1wbGUuYXBwLk93biJdIH0KW3pvbmVzLmJldGFdCmNvbG91ciA9ICIjODliNGZhIgpuZXR3b3JrID0gIm5vbmUiCmRucyA9ICJwdWJsaWMiCm1hY2hpbmVfaWQgPSAiaG9zdCIKdXNlcm5zID0gZmFsc2UKaG9tZSA9ICJ+L2Job21lIgp3YXlsYW5kID0gIm5vbmUiCmxpbmtzID0gInpvbmU6YWxwaGEiCnRoZW1lID0gZmFsc2UKW3pvbmVzLmdhbW1hXQpjb2xvdXIgPSAiI2YzOGJhOCIKbmV0d29yayA9ICJob3N0IgpzdXBlcnZpc29yID0gInNwYXduIgpzdGFydF90aW1lb3V0ID0gNDUKYnVzID0gInpvbmUiClthcHBzLndlYl0KY29tbWFuZCA9IFsiZmlyZWZveCIsICItLW5ldy1pbnN0YW5jZSJdCnpvbmVzID0gWyJhbHBoYSIsICJiZXRhIl0KYXJncyA9IHsgYWxwaGEgPSBbIi1QIiwgImFscGhhIl0gfQo="
+},
+{
+"path": "home/.config",
+"dir": 493
+},
+{
+"path": "home/.icons",
+"dir": 493
+},
+{
+"path": "home/.local",
+"dir": 493
+},
+{
+"path": "home/.ssh",
+"dir": 493
+},
+{
+"path": "home/bhome",
+"dir": 493
+},
+{
+"path": "home/data",
+"dir": 493
+},
+{
+"path": "home/proj",
+"dir": 493
+},
+{
+"path": "home/.ssh/id",
+"mode": 420,
+"age": 0,
+"data": "c2VjcmV0"
+},
+{
+"path": "home/.config/fontconfig",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0/settings.ini",
+"mode": 420,
+"age": 0,
+"data": "W1NldHRpbmdzXQo="
+},
+{
+"path": "home/.config/fontconfig/fonts.conf",
+"mode": 420,
+"age": 0,
+"data": "PGZvbnRjb25maWcvPg=="
+},
+{
+"path": "home/.config/fontconfig/key",
+"link": "{T}/home/.ssh/id"
+},
+{
+"path": "home/.icons/Theme",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/cursors",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/index.theme",
+"mode": 420,
+"age": 0,
+"data": "W0ljb24gVGhlbWVdCg=="
+},
+{
+"path": "home/.icons/Theme/cursors/x.lock",
+"mode": 420,
+"age": 0,
+"data": "c2tpcA=="
+},
+{
+"path": "home/.local/share",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts/f.ttf",
+"mode": 420,
+"age": 0,
+"data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+},
+{
+"path": "home/.local/share/appzones/alpha",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/beta",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/gamma",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp/old",
+"mode": 420,
+"age": 3456000,
+"data": "eA=="
+},
+{
+"path": "home/.local/share/appzones/beta/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/gamma/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "rt/pipewire-0",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "rt/wayland-9",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "bin/bwrap",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/dbus-daemon",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/ip",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmNhdCA8PCdKJwpbeyJpZm5hbWUiOiAibG8iLCAiYWRkcl9pbmZvIjogW3sibG9jYWwiOiAiMTI3LjAuMC4xIiwgInByZWZpeGxlbiI6IDh9LCB7ImxvY2FsIjogIjo6MSIsICJwcmVmaXhsZW4iOiAxMjh9XX0sCiB7ImlmbmFtZSI6ICJldGgwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE5Mi4xNjguMS4yMCIsICJwcmVmaXhsZW4iOiAyNH0sIHsibG9jYWwiOiAiMjAwMTpkYjg6MTo6MjAiLCAicHJlZml4bGVuIjogNjR9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsb2NhbCI6ICJmZTgwOjoxIiwgInByZWZpeGxlbiI6IDY0fSwgeyJsb2NhbCI6ICIyMDMuMC4xMTMuNyIsICJwcmVmaXhsZW4iOiAyNX1dfSwKIHsiaWZuYW1lIjogInd0MCIsICJhZGRyX2luZm8iOiBbeyJsb2NhbCI6ICIxMDAuNzAuMTIuMzQiLCAicHJlZml4bGVuIjogMTZ9XX0sCiB7ImlmbmFtZSI6ICJkb2NrZXIwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE3Mi4xNy4wLjEiLCAicHJlZml4bGVuIjogMTZ9LCB7ImxvY2FsIjogIjE3Mi4xOC4wLjEiLCAicHJlZml4bGVuIjogMTZ9XX1dCkoK"
+},
+{
+"path": "bin/pasta",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/xdg-dbus-proxy",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/zone-wayland",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+}
+],
+"want": {
+"rc": 0,
+"stdout": [
+"[zone] beta: wayland = \"none\": no Wayland socket",
+"{T}/rt/appzones/beta/plan.json"
+],
+"stderr": [
+"appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
+"appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
+"appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)"
+],
+"files": {
+"rt/.flatpak": [
+"dir",
+"0o755"
+],
+"rt/.flatpak/zone-x-1": [
+"dir",
+"0o755"
+],
+"rt/appzones": [
+"dir",
+"0o700"
+],
+"rt/appzones/beta": [
+"dir",
+"0o755"
+],
+"rt/appzones/beta/config.sha256": [
+"file",
+"0o644",
+"470cbfac60949466b7472e24790c24fbc6db77aef0ac658c4475b319f80a4573\n"
+],
+"rt/appzones/beta/ctl": [
+"dir",
+"0o700"
+],
+"rt/appzones/beta/ctl/bin": [
+"dir",
+"0o755"
+],
+"rt/appzones/beta/ctl/bin/xdg-open": [
+"file",
+"0o755",
+"#!/bin/sh\n# zone xdg-open (links = \"zone:alpha\"): http(s) URLs open in zone alpha's\n# browser through the zone's link socket; anything else goes to the real xdg-open.\ncase \"$1\" in\n  http://*|https://*)\n    exec /run/appzones-helper open-link \"$1\" ;;\nesac\nexec /run/current-system/sw/bin/xdg-open \"$@\"\n"
+],
+"rt/appzones/beta/flatpak-info": [
+"file",
+"0o644",
+"[Application]\nname=dev.mirql.zone.beta\nruntime=runtime/dev.mirql.zones/x86_64/1\n\n[Instance]\ninstance-id=zone-x-1\nsession-bus-proxy=true\nsystem-bus-proxy=false\nsandbox-engine=dev.mirql.zones\n"
+],
+"rt/appzones/beta/hosts": [
+"file",
+"0o644",
+"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 beta-zone\n"
+],
+"rt/appzones/beta/nft.rules": [
+"file",
+"0o644",
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::6446:0/112, 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
+],
+"rt/appzones/beta/plan.json": [
+"plan",
+{
+"version": 1,
+"name": "beta",
+"zrt": "{T}/rt/appzones/beta",
+"start_timeout": 30.0,
+"linger": null,
+"linger_text": "",
+"network": "none",
+"dns": "public",
+"devices": [
+"gpu",
+"audio"
+],
+"flatpak_dir": "{T}/rt/.flatpak/zone-x-1",
+"wayland": {
+"mode": "none",
+"helper": null
+},
+"dbus_proxy": [
+"{T}/bin/bwrap",
+"--unshare-all",
+"--share-net",
+"--die-with-parent",
+"--ro-bind",
+"/nix/store",
+"/nix/store",
+"--bind",
+"{T}/rt",
+"{T}/rt",
+"--ro-bind",
+"{T}/rt/appzones/beta/flatpak-info",
+"/.flatpak-info",
+"--",
+"{T}/bin/xdg-dbus-proxy",
+"unix:path={T}/rt/bus",
+"{T}/rt/appzones/beta/bus",
+"--filter",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Properties.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Introspectable.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Peer.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.FileChooser.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.OpenURI.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Notification.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Settings.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Email.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Print.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Trash.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Inhibit.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.NetworkMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.ProxyResolver.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.PowerProfileMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.MemoryMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GameMode.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Realtime.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Secret.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Request.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Session.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
+"--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
+"--talk=org.freedesktop.portal.Documents",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--own=dev.mirql.zone.beta.*",
+"--own=org.mozilla.firefox_zone_beta.*",
+"--own=org.mozilla.firefox_esr_zone_beta.*",
+"--own=org.mozilla.firefox_beta_zone_beta.*",
+"--own=org.mozilla.firefox_devedition_zone_beta.*",
+"--own=org.mozilla.firefox_nightly_zone_beta.*",
+"--own=org.mozilla.librewolf_zone_beta.*"
+],
+"argv": [
+"{HELPER}",
+"cli",
+"_netsetup",
+"-",
+"{T}/rt/.flatpak/zone-x-1/bwrapinfo.json",
+"beta",
+"--",
+"{T}/bin/bwrap",
+"--unshare-user",
+"--unshare-ipc",
+"--unshare-pid",
+"--unshare-uts",
+"--unshare-cgroup",
+"--uid",
+"1000",
+"--gid",
+"100",
+"--hostname",
+"beta-zone",
+"--die-with-parent",
+"--new-session",
+"--cap-drop",
+"ALL",
+"--clearenv",
+"--unshare-net",
+"--disable-userns",
+"--assert-userns-disabled",
+"--proc",
+"/proc",
+"--dev",
+"/dev",
+"--tmpfs",
+"/tmp",
+"--tmpfs",
+"/run",
+"--perms",
+"0700",
+"--tmpfs",
+"/run/user/1000",
+"--dir",
+"/run/zone",
+"--ro-bind",
+"/nix/store",
+"/nix/store",
+"--ro-bind",
+"{T}/home/.local/share/appzones/beta/mnt",
+"/mnt/host",
+"--symlink",
+"/run/current-system/sw/bin",
+"/bin",
+"--symlink",
+"/run/current-system/sw/bin/env",
+"/usr/bin/env",
+"--ro-bind",
+"/etc/passwd",
+"/etc/passwd",
+"--ro-bind",
+"/etc/group",
+"/etc/group",
+"--ro-bind",
+"{T}/home/.local/share/appzones/beta/machine-id",
+"/etc/machine-id",
+"--ro-bind",
+"{T}/rt/appzones/beta/resolv.conf",
+"/etc/resolv.conf",
+"--ro-bind",
+"{T}/rt/appzones/beta/hosts",
+"/etc/hosts",
+"--zones-pin",
+"rw",
+"~/bhome",
+"{T}/home",
+"--ro-bind-try",
+"/sys/devices/system/cpu",
+"/sys/devices/system/cpu",
+"--ro-bind",
+"{T}/rt/appzones/beta/ctl",
+"/run/zone",
+"--ro-bind",
+"{T}/rt/appzones/beta/ctl/bin",
+"/run/zone/bin",
+"\u0000if:bus",
+"--bind",
+"{T}/rt/appzones/beta/bus",
+"/run/user/1000/bus",
+"--setenv",
+"DBUS_SESSION_BUS_ADDRESS",
+"unix:path=/run/user/1000/bus",
+"\u0000end",
+"--bind",
+"{T}/rt/pipewire-0",
+"/run/user/1000/pipewire-0",
+"--ro-bind",
+"{T}/rt/appzones/beta/flatpak-info",
+"/.flatpak-info",
+"--info-fd",
+"3",
+"--lock-file",
+"/.flatpak-info",
+"--setenv",
+"HOME",
+"{T}/home",
+"--setenv",
+"USER",
+"alice",
+"--setenv",
+"LOGNAME",
+"alice",
+"--setenv",
+"PATH",
+"/run/zone/bin:/etc/profiles/per-user/alice/bin:/run/current-system/sw/bin",
+"--setenv",
+"LANG",
+"C.UTF-8",
+"--setenv",
+"TZ",
+":/etc/localtime",
+"--setenv",
+"XDG_RUNTIME_DIR",
+"/run/user/1000",
+"--setenv",
+"ZONE",
+"beta",
+"--setenv",
+"TERM",
+"xterm-256color",
+"--setenv",
+"XDG_DATA_DIRS",
+"/etc/profiles/per-user/alice/share:/run/current-system/sw/share",
+"--setenv",
+"XDG_CONFIG_DIRS",
+"/etc/xdg",
+"--setenv",
+"XDG_SESSION_TYPE",
+"wayland",
+"--setenv",
+"NIXOS_OZONE_WL",
+"1",
+"--setenv",
+"MOZ_ENABLE_WAYLAND",
+"1",
+"--setenv",
+"QT_QPA_PLATFORM",
+"wayland;xcb",
+"--setenv",
+"SDL_VIDEODRIVER",
+"wayland",
+"--setenv",
+"ELECTRON_OZONE_PLATFORM_HINT",
+"wayland",
+"--setenv",
+"TZDIR",
+"/etc/zoneinfo",
+"--setenv",
+"XDG_CURRENT_DESKTOP",
+"Hyprland",
+"--setenv",
+"ZONE_DBUS_DAEMON",
+"{T}/bin/dbus-daemon",
+"--setenv",
+"ZONE_BWRAP",
+"{T}/bin/bwrap",
+"--ro-bind",
+"{HELPER}",
+"/run/appzones-helper",
+"--",
+"/run/appzones-helper",
+"zone-init"
+],
+"log_socket": false,
+"dns_upstreams": null,
+"links": {
+"socket": "{T}/rt/appzones/beta/ctl/links.sock",
+"command": [
+"{HELPER}",
+"cli",
+"_link",
+"alpha"
+]
+},
+"autostart": [],
+"cleanup": [
+"{HELPER}",
+"cli",
+"_cleanup",
+"beta"
+]
+}
+],
+"rt/appzones/beta/resolv.conf": [
+"file",
+"0o644",
+""
+],
+"rt/appzones/colours": [
+"file",
+"0o600",
+"alpha #a6e3a1\nbeta #89b4fa\ngamma #f38ba8\n"
+],
+"rt/pipewire-0": [
+"file",
+"0o644",
+""
+],
+"rt/wayland-9": [
+"file",
+"0o644",
+""
+],
+"home/.local/share/appzones/alpha": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/alpha/tmp": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/tmp/old": [
+"file",
+"0o644",
+"x"
+],
+"home/.local/share/appzones/beta": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/beta/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/beta/mnt": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/gamma": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+]
+}
+}
+},
+{
+"layout": "nixos",
+"zone": "gamma",
+"env": {
+"HOME": "{T}/home",
+"PATH": "{T}/bin:{PATH}",
+"USER": "alice",
+"XDG_RUNTIME_DIR": "{T}/rt",
+"APPZONES_CONFIG": "{T}/zones.toml",
+"APPZONES_DENIED_PATHS": "{T}/denied-paths",
+"APPZONES_DBUS_SERVICE_DIRS": "",
+"APPZONES_INSTANCE_FOR_TESTS": "zone-x-1",
+"APPZONES_NETBIRD_IFACE": "wt0",
+"WAYLAND_DISPLAY": "wayland-9",
+"DBUS_SESSION_BUS_ADDRESS": "unix:path={T}/rt/bus",
+"XDG_CURRENT_DESKTOP": "Hyprland",
+"LANG": "C.UTF-8",
+"APPZONES_DNS_HOST": "192.0.2.53",
+"APPZONES_BIN_BWRAP": "{T}/bin/bwrap",
+"APPZONES_BIN_PASTA": "{T}/bin/pasta",
+"APPZONES_BIN_XDG_DBUS_PROXY": "{T}/bin/xdg-dbus-proxy",
+"APPZONES_BIN_ZONE_WAYLAND": "{T}/bin/zone-wayland",
+"APPZONES_BIN_DBUS_DAEMON": "{T}/bin/dbus-daemon",
+"APPZONES_LAYOUT": "nixos",
+"APPZONES_HELPER": "rust",
+"APPZONES_BIN_APPZONES_HELPER": "{HELPER}"
+},
+"tree": [
+{
+"path": "bin",
+"dir": 493
+},
+{
+"path": "home",
+"dir": 493
+},
+{
+"path": "rt",
+"dir": 493
+},
+{
+"path": "denied-paths",
+"mode": 420,
+"age": 0,
+"data": "fi9TZWNyZXRzCg=="
+},
+{
+"path": "zones.toml",
+"mode": 420,
+"age": 0,
+"data": "dmVyc2lvbiA9IDEKcmVxdWlyZXMgPSA2Clt6b25lcy5hbHBoYV0KY29sb3VyID0gIiNhNmUzYTEiCmxpbmtzID0gInpvbmUiCnRoZW1lID0gdHJ1ZQp0bXAgPSAiZGlzayIKZGV2aWNlcyA9IFsiZ3B1IiwgImF1ZGlvIiwgImNhbWVyYSIsICJ1c2IiXQpjYW1lcmEgPSAiZGV2aWNlIgp1c2IgPSBbImFiY2QiXQp3YXlsYW5kID0gImhvc3QiCmxpbmdlciA9ICIxMG0iCm5ldGJpcmQgPSB0cnVlCmF1dG9zdGFydF9hcHBzID0gWyJ3ZWIiXQplbnYgPSB7IEZPTyA9ICJiYXIiLCBMQU5HID0gImRlX0RFLlVURi04IiB9CmJpbmRzID0gW3sgcGF0aCA9ICJ+L3Byb2oiIH0sIHsgcGF0aCA9ICJ+L2RhdGEiLCBtb2RlID0gInJvIiB9XQpkYnVzID0geyB0YWxrID0gWyJjb20uZXhhbXBsZS5UYWxrIl0sIG93biA9IFsiY29tLmV4YW1wbGUuYXBwLk93biJdIH0KW3pvbmVzLmJldGFdCmNvbG91ciA9ICIjODliNGZhIgpuZXR3b3JrID0gIm5vbmUiCmRucyA9ICJwdWJsaWMiCm1hY2hpbmVfaWQgPSAiaG9zdCIKdXNlcm5zID0gZmFsc2UKaG9tZSA9ICJ+L2Job21lIgp3YXlsYW5kID0gIm5vbmUiCmxpbmtzID0gInpvbmU6YWxwaGEiCnRoZW1lID0gZmFsc2UKW3pvbmVzLmdhbW1hXQpjb2xvdXIgPSAiI2YzOGJhOCIKbmV0d29yayA9ICJob3N0IgpzdXBlcnZpc29yID0gInNwYXduIgpzdGFydF90aW1lb3V0ID0gNDUKYnVzID0gInpvbmUiClthcHBzLndlYl0KY29tbWFuZCA9IFsiZmlyZWZveCIsICItLW5ldy1pbnN0YW5jZSJdCnpvbmVzID0gWyJhbHBoYSIsICJiZXRhIl0KYXJncyA9IHsgYWxwaGEgPSBbIi1QIiwgImFscGhhIl0gfQo="
+},
+{
+"path": "home/.config",
+"dir": 493
+},
+{
+"path": "home/.icons",
+"dir": 493
+},
+{
+"path": "home/.local",
+"dir": 493
+},
+{
+"path": "home/.ssh",
+"dir": 493
+},
+{
+"path": "home/bhome",
+"dir": 493
+},
+{
+"path": "home/data",
+"dir": 493
+},
+{
+"path": "home/proj",
+"dir": 493
+},
+{
+"path": "home/.ssh/id",
+"mode": 420,
+"age": 0,
+"data": "c2VjcmV0"
+},
+{
+"path": "home/.config/fontconfig",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0/settings.ini",
+"mode": 420,
+"age": 0,
+"data": "W1NldHRpbmdzXQo="
+},
+{
+"path": "home/.config/fontconfig/fonts.conf",
+"mode": 420,
+"age": 0,
+"data": "PGZvbnRjb25maWcvPg=="
+},
+{
+"path": "home/.config/fontconfig/key",
+"link": "{T}/home/.ssh/id"
+},
+{
+"path": "home/.icons/Theme",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/cursors",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/index.theme",
+"mode": 420,
+"age": 0,
+"data": "W0ljb24gVGhlbWVdCg=="
+},
+{
+"path": "home/.icons/Theme/cursors/x.lock",
+"mode": 420,
+"age": 0,
+"data": "c2tpcA=="
+},
+{
+"path": "home/.local/share",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts/f.ttf",
+"mode": 420,
+"age": 0,
+"data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+},
+{
+"path": "home/.local/share/appzones/alpha",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/beta",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/gamma",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp/old",
+"mode": 420,
+"age": 3456000,
+"data": "eA=="
+},
+{
+"path": "home/.local/share/appzones/beta/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/gamma/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "rt/pipewire-0",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "rt/wayland-9",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "bin/bwrap",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/dbus-daemon",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/ip",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmNhdCA8PCdKJwpbeyJpZm5hbWUiOiAibG8iLCAiYWRkcl9pbmZvIjogW3sibG9jYWwiOiAiMTI3LjAuMC4xIiwgInByZWZpeGxlbiI6IDh9LCB7ImxvY2FsIjogIjo6MSIsICJwcmVmaXhsZW4iOiAxMjh9XX0sCiB7ImlmbmFtZSI6ICJldGgwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE5Mi4xNjguMS4yMCIsICJwcmVmaXhsZW4iOiAyNH0sIHsibG9jYWwiOiAiMjAwMTpkYjg6MTo6MjAiLCAicHJlZml4bGVuIjogNjR9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsb2NhbCI6ICJmZTgwOjoxIiwgInByZWZpeGxlbiI6IDY0fSwgeyJsb2NhbCI6ICIyMDMuMC4xMTMuNyIsICJwcmVmaXhsZW4iOiAyNX1dfSwKIHsiaWZuYW1lIjogInd0MCIsICJhZGRyX2luZm8iOiBbeyJsb2NhbCI6ICIxMDAuNzAuMTIuMzQiLCAicHJlZml4bGVuIjogMTZ9XX0sCiB7ImlmbmFtZSI6ICJkb2NrZXIwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE3Mi4xNy4wLjEiLCAicHJlZml4bGVuIjogMTZ9LCB7ImxvY2FsIjogIjE3Mi4xOC4wLjEiLCAicHJlZml4bGVuIjogMTZ9XX1dCkoK"
+},
+{
+"path": "bin/pasta",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/xdg-dbus-proxy",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/zone-wayland",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+}
+],
+"want": {
+"rc": 0,
+"stdout": [
+"{T}/rt/appzones/gamma/plan.json"
+],
+"stderr": [
+"appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
+"appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
+"appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)",
+"appzones: theme: not copying {T}/home/.config/fontconfig/key (it resolves to a path that never enters a zone)"
+],
+"files": {
+"rt/.flatpak": [
+"dir",
+"0o755"
+],
+"rt/.flatpak/zone-x-1": [
+"dir",
+"0o755"
+],
+"rt/appzones": [
+"dir",
+"0o700"
+],
+"rt/appzones/colours": [
+"file",
+"0o600",
+"alpha #a6e3a1\nbeta #89b4fa\ngamma #f38ba8\n"
+],
+"rt/appzones/gamma": [
+"dir",
+"0o755"
+],
+"rt/appzones/gamma/config.sha256": [
+"file",
+"0o644",
+"35c2eb73f80f273e584b4356341af3114a0288090a326ee8e6773774375d84e9\n"
+],
+"rt/appzones/gamma/ctl": [
+"dir",
+"0o700"
+],
+"rt/appzones/gamma/flatpak-info": [
+"file",
+"0o644",
+"[Application]\nname=dev.mirql.zone.gamma\nruntime=runtime/dev.mirql.zones/x86_64/1\n\n[Instance]\ninstance-id=zone-x-1\nsession-bus-proxy=true\nsystem-bus-proxy=false\nsandbox-engine=dev.mirql.zones\n"
+],
+"rt/appzones/gamma/hosts": [
+"file",
+"0o644",
+"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 gamma-zone\n"
+],
+"rt/appzones/gamma/nft.rules": [
+"file",
+"0o644",
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::6446:0/112, 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
+],
+"rt/appzones/gamma/plan.json": [
+"plan",
+{
+"version": 1,
+"name": "gamma",
+"zrt": "{T}/rt/appzones/gamma",
+"start_timeout": 45.0,
+"linger": null,
+"linger_text": "",
+"network": "host",
+"dns": "host",
+"devices": [
+"gpu",
+"audio"
+],
+"flatpak_dir": "{T}/rt/.flatpak/zone-x-1",
+"wayland": {
+"mode": "zone",
+"helper": [
+"{T}/bin/zone-wayland",
+"{T}/rt/appzones/gamma/wayland-0",
+"dev.mirql.zone.gamma",
+"zone-x-1"
+]
+},
+"dbus_proxy": [
+"{T}/bin/bwrap",
+"--unshare-all",
+"--share-net",
+"--die-with-parent",
+"--ro-bind",
+"/nix/store",
+"/nix/store",
+"--bind",
+"{T}/rt",
+"{T}/rt",
+"--ro-bind",
+"{T}/rt/appzones/gamma/flatpak-info",
+"/.flatpak-info",
+"--",
+"{T}/bin/xdg-dbus-proxy",
+"unix:path={T}/rt/bus",
+"{T}/rt/appzones/gamma/bus",
+"--filter",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Properties.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Introspectable.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Peer.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.FileChooser.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.OpenURI.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Notification.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Settings.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Email.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Print.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Trash.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Inhibit.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.NetworkMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.ProxyResolver.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.PowerProfileMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.MemoryMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GameMode.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Realtime.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Secret.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Request.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Session.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
+"--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
+"--talk=org.freedesktop.portal.Documents",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--own=dev.mirql.zone.gamma.*",
+"--own=org.mozilla.firefox_zone_gamma.*",
+"--own=org.mozilla.firefox_esr_zone_gamma.*",
+"--own=org.mozilla.firefox_beta_zone_gamma.*",
+"--own=org.mozilla.firefox_devedition_zone_gamma.*",
+"--own=org.mozilla.firefox_nightly_zone_gamma.*",
+"--own=org.mozilla.librewolf_zone_gamma.*"
+],
+"argv": [
+"{HELPER}",
+"cli",
+"_netsetup",
+"-",
+"{T}/rt/.flatpak/zone-x-1/bwrapinfo.json",
+"gamma",
+"--",
+"{T}/bin/bwrap",
+"--unshare-user",
+"--unshare-ipc",
+"--unshare-pid",
+"--unshare-uts",
+"--unshare-cgroup",
+"--uid",
+"1000",
+"--gid",
+"100",
+"--hostname",
+"gamma-zone",
+"--die-with-parent",
+"--new-session",
+"--cap-drop",
+"ALL",
+"--clearenv",
+"--proc",
+"/proc",
+"--dev",
+"/dev",
+"--tmpfs",
+"/tmp",
+"--tmpfs",
+"/run",
+"--perms",
+"0700",
+"--tmpfs",
+"/run/user/1000",
+"--dir",
+"/run/zone",
+"--ro-bind",
+"/nix/store",
+"/nix/store",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/mnt",
+"/mnt/host",
+"--symlink",
+"/run/current-system/sw/bin",
+"/bin",
+"--symlink",
+"/run/current-system/sw/bin/env",
+"/usr/bin/env",
+"--ro-bind",
+"/etc/passwd",
+"/etc/passwd",
+"--ro-bind",
+"/etc/group",
+"/etc/group",
+"--ro-bind",
+"/etc/hosts",
+"/etc/hosts",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/machine-id",
+"/etc/machine-id",
+"--ro-bind",
+"{T}/rt/appzones/gamma/resolv.conf",
+"/etc/resolv.conf",
+"--bind",
+"{T}/home/.local/share/appzones/gamma/home",
+"{T}/home",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/theme/.config/gtk-3.0/settings.ini",
+"{T}/home/.config/gtk-3.0/settings.ini",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/theme/.config/fontconfig",
+"{T}/home/.config/fontconfig",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/theme/.icons",
+"{T}/home/.icons",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/theme/.local/share/fonts",
+"{T}/home/.local/share/fonts",
+"--ro-bind-try",
+"/sys/devices/system/cpu",
+"/sys/devices/system/cpu",
+"--ro-bind",
+"{T}/rt/appzones/gamma/ctl",
+"/run/zone",
+"\u0000if:wayland-0",
+"--bind",
+"{T}/rt/appzones/gamma/wayland-0",
+"/run/user/1000/wayland-0",
+"--setenv",
+"WAYLAND_DISPLAY",
+"wayland-0",
+"\u0000end",
+"\u0000if:bus",
+"--bind",
+"{T}/rt/appzones/gamma/bus",
+"/run/user/1000/bus",
+"--setenv",
+"DBUS_SESSION_BUS_ADDRESS",
+"unix:path=/run/user/1000/bus",
+"\u0000end",
+"--bind",
+"{T}/rt/pipewire-0",
+"/run/user/1000/pipewire-0",
+"--ro-bind",
+"{T}/rt/appzones/gamma/flatpak-info",
+"/.flatpak-info",
+"--info-fd",
+"3",
+"--lock-file",
+"/.flatpak-info",
+"--setenv",
+"HOME",
+"{T}/home",
+"--setenv",
+"USER",
+"alice",
+"--setenv",
+"LOGNAME",
+"alice",
+"--setenv",
+"PATH",
+"/run/zone/bin:/etc/profiles/per-user/alice/bin:/run/current-system/sw/bin",
+"--setenv",
+"LANG",
+"C.UTF-8",
+"--setenv",
+"TZ",
+":/etc/localtime",
+"--setenv",
+"XDG_RUNTIME_DIR",
+"/run/user/1000",
+"--setenv",
+"ZONE",
+"gamma",
+"--setenv",
+"TERM",
+"xterm-256color",
+"--setenv",
+"XDG_DATA_DIRS",
+"/etc/profiles/per-user/alice/share:/run/current-system/sw/share",
+"--setenv",
+"XDG_CONFIG_DIRS",
+"/etc/xdg",
+"--setenv",
+"XDG_SESSION_TYPE",
+"wayland",
+"--setenv",
+"NIXOS_OZONE_WL",
+"1",
+"--setenv",
+"MOZ_ENABLE_WAYLAND",
+"1",
+"--setenv",
+"QT_QPA_PLATFORM",
+"wayland;xcb",
+"--setenv",
+"SDL_VIDEODRIVER",
+"wayland",
+"--setenv",
+"ELECTRON_OZONE_PLATFORM_HINT",
+"wayland",
+"--setenv",
+"TZDIR",
+"/etc/zoneinfo",
+"--setenv",
+"XDG_CURRENT_DESKTOP",
+"Hyprland",
+"--setenv",
+"ZONE_DBUS_DAEMON",
+"{T}/bin/dbus-daemon",
+"--setenv",
+"ZONE_BWRAP",
+"{T}/bin/bwrap",
+"--ro-bind",
+"{HELPER}",
+"/run/appzones-helper",
+"--",
+"/run/appzones-helper",
+"zone-init"
+],
+"log_socket": false,
+"dns_upstreams": null,
+"links": null,
+"autostart": [],
+"cleanup": [
+"{HELPER}",
+"cli",
+"_cleanup",
+"gamma"
+]
+}
+],
+"rt/appzones/gamma/resolv.conf": [
+"file",
+"0o644",
+"nameserver 192.0.2.53\n"
+],
+"rt/pipewire-0": [
+"file",
+"0o644",
+""
+],
+"rt/wayland-9": [
+"file",
+"0o644",
+""
+],
+"home/.local/share/appzones/alpha": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/alpha/tmp": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/tmp/old": [
+"file",
+"0o644",
+"x"
+],
+"home/.local/share/appzones/beta": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/beta/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/gamma": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/home": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/gamma/mnt": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/gamma/theme": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.config": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.config/fontconfig": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.config/fontconfig/fonts.conf": [
+"file",
+"0o644",
+"<fontconfig/>"
+],
+"home/.local/share/appzones/gamma/theme/.config/gtk-3.0": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.config/gtk-3.0/settings.ini": [
+"file",
+"0o644",
+"[Settings]\n"
+],
+"home/.local/share/appzones/gamma/theme/.icons": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.icons/Theme": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.icons/Theme/index.theme": [
+"file",
+"0o644",
+"[Icon Theme]\n"
+],
+"home/.local/share/appzones/gamma/theme/.local": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.local/share": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.local/share/fonts": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.local/share/fonts/f.ttf": [
+"file",
+"0o644",
+"\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+]
+}
+}
+},
+{
+"layout": "fhs",
+"zone": "alpha",
+"env": {
+"HOME": "{T}/home",
+"PATH": "{T}/bin:{PATH}",
+"USER": "alice",
+"XDG_RUNTIME_DIR": "{T}/rt",
+"APPZONES_CONFIG": "{T}/zones.toml",
+"APPZONES_DENIED_PATHS": "{T}/denied-paths",
+"APPZONES_DBUS_SERVICE_DIRS": "",
+"APPZONES_INSTANCE_FOR_TESTS": "zone-x-1",
+"APPZONES_NETBIRD_IFACE": "wt0",
+"WAYLAND_DISPLAY": "wayland-9",
+"DBUS_SESSION_BUS_ADDRESS": "unix:path={T}/rt/bus",
+"XDG_CURRENT_DESKTOP": "Hyprland",
+"LANG": "C.UTF-8",
+"APPZONES_DNS_HOST": "192.0.2.53",
+"APPZONES_BIN_BWRAP": "{T}/bin/bwrap",
+"APPZONES_BIN_PASTA": "{T}/bin/pasta",
+"APPZONES_BIN_XDG_DBUS_PROXY": "{T}/bin/xdg-dbus-proxy",
+"APPZONES_BIN_ZONE_WAYLAND": "{T}/bin/zone-wayland",
+"APPZONES_BIN_DBUS_DAEMON": "{T}/bin/dbus-daemon",
+"APPZONES_LAYOUT": "fhs",
+"APPZONES_HELPER": "rust",
+"APPZONES_BIN_APPZONES_HELPER": "{HELPER}"
+},
+"tree": [
+{
+"path": "bin",
+"dir": 493
+},
+{
+"path": "home",
+"dir": 493
+},
+{
+"path": "rt",
+"dir": 493
+},
+{
+"path": "denied-paths",
+"mode": 420,
+"age": 0,
+"data": "fi9TZWNyZXRzCg=="
+},
+{
+"path": "zones.toml",
+"mode": 420,
+"age": 0,
+"data": "dmVyc2lvbiA9IDEKcmVxdWlyZXMgPSA2Clt6b25lcy5hbHBoYV0KY29sb3VyID0gIiNhNmUzYTEiCmxpbmtzID0gInpvbmUiCnRoZW1lID0gdHJ1ZQp0bXAgPSAiZGlzayIKZGV2aWNlcyA9IFsiZ3B1IiwgImF1ZGlvIiwgImNhbWVyYSIsICJ1c2IiXQpjYW1lcmEgPSAiZGV2aWNlIgp1c2IgPSBbImFiY2QiXQp3YXlsYW5kID0gImhvc3QiCmxpbmdlciA9ICIxMG0iCm5ldGJpcmQgPSB0cnVlCmF1dG9zdGFydF9hcHBzID0gWyJ3ZWIiXQplbnYgPSB7IEZPTyA9ICJiYXIiLCBMQU5HID0gImRlX0RFLlVURi04IiB9CmJpbmRzID0gW3sgcGF0aCA9ICJ+L3Byb2oiIH0sIHsgcGF0aCA9ICJ+L2RhdGEiLCBtb2RlID0gInJvIiB9XQpkYnVzID0geyB0YWxrID0gWyJjb20uZXhhbXBsZS5UYWxrIl0sIG93biA9IFsiY29tLmV4YW1wbGUuYXBwLk93biJdIH0KW3pvbmVzLmJldGFdCmNvbG91ciA9ICIjODliNGZhIgpuZXR3b3JrID0gIm5vbmUiCmRucyA9ICJwdWJsaWMiCm1hY2hpbmVfaWQgPSAiaG9zdCIKdXNlcm5zID0gZmFsc2UKaG9tZSA9ICJ+L2Job21lIgp3YXlsYW5kID0gIm5vbmUiCmxpbmtzID0gInpvbmU6YWxwaGEiCnRoZW1lID0gZmFsc2UKW3pvbmVzLmdhbW1hXQpjb2xvdXIgPSAiI2YzOGJhOCIKbmV0d29yayA9ICJob3N0IgpzdXBlcnZpc29yID0gInNwYXduIgpzdGFydF90aW1lb3V0ID0gNDUKYnVzID0gInpvbmUiClthcHBzLndlYl0KY29tbWFuZCA9IFsiZmlyZWZveCIsICItLW5ldy1pbnN0YW5jZSJdCnpvbmVzID0gWyJhbHBoYSIsICJiZXRhIl0KYXJncyA9IHsgYWxwaGEgPSBbIi1QIiwgImFscGhhIl0gfQo="
+},
+{
+"path": "home/.config",
+"dir": 493
+},
+{
+"path": "home/.icons",
+"dir": 493
+},
+{
+"path": "home/.local",
+"dir": 493
+},
+{
+"path": "home/.ssh",
+"dir": 493
+},
+{
+"path": "home/bhome",
+"dir": 493
+},
+{
+"path": "home/data",
+"dir": 493
+},
+{
+"path": "home/proj",
+"dir": 493
+},
+{
+"path": "home/.ssh/id",
+"mode": 420,
+"age": 0,
+"data": "c2VjcmV0"
+},
+{
+"path": "home/.config/fontconfig",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0/settings.ini",
+"mode": 420,
+"age": 0,
+"data": "W1NldHRpbmdzXQo="
+},
+{
+"path": "home/.config/fontconfig/fonts.conf",
+"mode": 420,
+"age": 0,
+"data": "PGZvbnRjb25maWcvPg=="
+},
+{
+"path": "home/.config/fontconfig/key",
+"link": "{T}/home/.ssh/id"
+},
+{
+"path": "home/.icons/Theme",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/cursors",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/index.theme",
+"mode": 420,
+"age": 0,
+"data": "W0ljb24gVGhlbWVdCg=="
+},
+{
+"path": "home/.icons/Theme/cursors/x.lock",
+"mode": 420,
+"age": 0,
+"data": "c2tpcA=="
+},
+{
+"path": "home/.local/share",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts/f.ttf",
+"mode": 420,
+"age": 0,
+"data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+},
+{
+"path": "home/.local/share/appzones/alpha",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/beta",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/gamma",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp/old",
+"mode": 420,
+"age": 3456000,
+"data": "eA=="
+},
+{
+"path": "home/.local/share/appzones/beta/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/gamma/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "rt/pipewire-0",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "rt/wayland-9",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "bin/bwrap",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/dbus-daemon",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/ip",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmNhdCA8PCdKJwpbeyJpZm5hbWUiOiAibG8iLCAiYWRkcl9pbmZvIjogW3sibG9jYWwiOiAiMTI3LjAuMC4xIiwgInByZWZpeGxlbiI6IDh9LCB7ImxvY2FsIjogIjo6MSIsICJwcmVmaXhsZW4iOiAxMjh9XX0sCiB7ImlmbmFtZSI6ICJldGgwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE5Mi4xNjguMS4yMCIsICJwcmVmaXhsZW4iOiAyNH0sIHsibG9jYWwiOiAiMjAwMTpkYjg6MTo6MjAiLCAicHJlZml4bGVuIjogNjR9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsb2NhbCI6ICJmZTgwOjoxIiwgInByZWZpeGxlbiI6IDY0fSwgeyJsb2NhbCI6ICIyMDMuMC4xMTMuNyIsICJwcmVmaXhsZW4iOiAyNX1dfSwKIHsiaWZuYW1lIjogInd0MCIsICJhZGRyX2luZm8iOiBbeyJsb2NhbCI6ICIxMDAuNzAuMTIuMzQiLCAicHJlZml4bGVuIjogMTZ9XX0sCiB7ImlmbmFtZSI6ICJkb2NrZXIwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE3Mi4xNy4wLjEiLCAicHJlZml4bGVuIjogMTZ9LCB7ImxvY2FsIjogIjE3Mi4xOC4wLjEiLCAicHJlZml4bGVuIjogMTZ9XX1dCkoK"
+},
+{
+"path": "bin/pasta",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/xdg-dbus-proxy",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/zone-wayland",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+}
+],
+"want": {
+"rc": 0,
+"stdout": [
+"[zone] tmp: removed 1 file(s) unused for 14 days from {T}/home/.local/share/appzones/alpha/tmp",
+"{T}/rt/appzones/alpha/plan.json"
+],
+"stderr": [
+"appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
+"appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
+"appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)",
+"appzones: theme: not copying {T}/home/.config/fontconfig/key (it resolves to a path that never enters a zone)",
+"appzones: usb: no device matches abcd now; the zone starts without one (plug it in, then `appzones restart alpha`)"
+],
+"files": {
+"rt/.flatpak": [
+"dir",
+"0o755"
+],
+"rt/.flatpak/zone-x-1": [
+"dir",
+"0o755"
+],
+"rt/appzones": [
+"dir",
+"0o700"
+],
+"rt/appzones/alpha": [
+"dir",
+"0o755"
+],
+"rt/appzones/alpha/config.sha256": [
+"file",
+"0o644",
+"d59e0eb8df39529bbe233eee867966a17faccd62d9a1299933746360b3f37e9f\n"
+],
+"rt/appzones/alpha/ctl": [
+"dir",
+"0o700"
+],
+"rt/appzones/alpha/ctl/bin": [
+"dir",
+"0o755"
+],
+"rt/appzones/alpha/ctl/bin/xdg-open": [
+"file",
+"0o755",
+"#!/bin/sh\n# zone xdg-open (links = \"zone\"): http(s) URLs open in zone alpha's\n# browser through the zone's link socket; anything else goes to the real xdg-open.\ncase \"$1\" in\n  http://*|https://*)\n    exec /run/appzones-helper open-link \"$1\" ;;\nesac\nexec /usr/bin/xdg-open \"$@\"\n"
+],
+"rt/appzones/alpha/flatpak-info": [
+"file",
+"0o644",
+"[Application]\nname=dev.mirql.zone.alpha\nruntime=runtime/dev.mirql.zones/x86_64/1\n\n[Instance]\ninstance-id=zone-x-1\nsession-bus-proxy=true\nsystem-bus-proxy=false\nsandbox-engine=dev.mirql.zones\n"
+],
+"rt/appzones/alpha/hosts": [
+"file",
+"0o644",
+"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 alpha-zone\n"
+],
+"rt/appzones/alpha/nft.rules": [
+"file",
+"0o644",
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16 } accept\n    ip daddr { 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
+],
+"rt/appzones/alpha/plan.json": [
+"plan",
+{
+"version": 1,
+"name": "alpha",
+"zrt": "{T}/rt/appzones/alpha",
+"start_timeout": 30.0,
+"linger": 600.0,
+"linger_text": "10m",
+"network": "internet",
+"dns": "host",
+"devices": [
+"gpu",
+"audio",
+"camera",
+"usb"
+],
+"flatpak_dir": "{T}/rt/.flatpak/zone-x-1",
+"wayland": {
+"mode": "host",
+"helper": [
+"{T}/bin/zone-wayland",
+"{T}/rt/appzones/alpha/wayland-0",
+"dev.mirql.zone.alpha",
+"zone-x-1"
+]
+},
+"dbus_proxy": [
+"{T}/bin/bwrap",
+"--unshare-all",
+"--share-net",
+"--die-with-parent",
+"--ro-bind",
+"/usr",
+"/usr",
+"--ro-bind",
+"/bin",
+"/bin",
+"--bind",
+"{T}/rt",
+"{T}/rt",
+"--ro-bind",
+"{T}/rt/appzones/alpha/flatpak-info",
+"/.flatpak-info",
+"--",
+"{T}/bin/xdg-dbus-proxy",
+"unix:path={T}/rt/bus",
+"{T}/rt/appzones/alpha/bus",
+"--filter",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Properties.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Introspectable.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Peer.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.FileChooser.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.OpenURI.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Notification.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Settings.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Email.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Print.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Trash.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Inhibit.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.NetworkMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.ProxyResolver.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.PowerProfileMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.MemoryMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GameMode.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Realtime.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Secret.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Request.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Session.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Camera.*",
+"--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
+"--talk=org.freedesktop.portal.Documents",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--own=dev.mirql.zone.alpha.*",
+"--own=org.mozilla.firefox_zone_alpha.*",
+"--own=org.mozilla.firefox_esr_zone_alpha.*",
+"--own=org.mozilla.firefox_beta_zone_alpha.*",
+"--own=org.mozilla.firefox_devedition_zone_alpha.*",
+"--own=org.mozilla.firefox_nightly_zone_alpha.*",
+"--own=org.mozilla.librewolf_zone_alpha.*",
+"--talk=com.example.Talk",
+"--own=com.example.app.Own"
+],
+"argv": [
+"{T}/bin/pasta",
+"--config-net",
+"--no-map-gw",
+"-t",
+"none",
+"-u",
+"none",
+"-T",
+"none",
+"-U",
+"none",
+"--dns",
+"none",
+"-q",
+"-f",
+"--",
+"{HELPER}",
+"cli",
+"_netsetup",
+"{T}/rt/appzones/alpha/nft.rules",
+"{T}/rt/.flatpak/zone-x-1/bwrapinfo.json",
+"alpha",
+"--",
+"{T}/bin/bwrap",
+"--unshare-user",
+"--unshare-ipc",
+"--unshare-pid",
+"--unshare-uts",
+"--unshare-cgroup",
+"--uid",
+"1000",
+"--gid",
+"100",
+"--hostname",
+"alpha-zone",
+"--die-with-parent",
+"--new-session",
+"--cap-drop",
+"ALL",
+"--clearenv",
+"--proc",
+"/proc",
+"--dev",
+"/dev",
+"--bind",
+"{T}/home/.local/share/appzones/alpha/tmp",
+"/tmp",
+"--bind",
+"{T}/home/.local/share/appzones/alpha/var-tmp",
+"/var/tmp",
+"--tmpfs",
+"/run",
+"--perms",
+"0700",
+"--tmpfs",
+"/run/user/1000",
+"--dir",
+"/run/zone",
+"--ro-bind",
+"/usr",
+"/usr",
+"--ro-bind",
+"/bin",
+"/bin",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/mnt",
+"/mnt/host",
+"--ro-bind",
+"/etc/passwd",
+"/etc/passwd",
+"--ro-bind",
+"/etc/group",
+"/etc/group",
+"--ro-bind",
+"/etc/hosts",
+"/etc/hosts",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/machine-id",
+"/etc/machine-id",
+"--ro-bind",
+"{T}/rt/appzones/alpha/resolv.conf",
+"/etc/resolv.conf",
+"--bind",
+"{T}/home/.local/share/appzones/alpha/home",
+"{T}/home",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/theme/.config/gtk-3.0/settings.ini",
+"{T}/home/.config/gtk-3.0/settings.ini",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/theme/.config/fontconfig",
+"{T}/home/.config/fontconfig",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/theme/.icons",
+"{T}/home/.icons",
+"--ro-bind",
+"{T}/home/.local/share/appzones/alpha/theme/.local/share/fonts",
+"{T}/home/.local/share/fonts",
+"--zones-pin",
+"rw",
+"~/proj",
+"{T}/home/proj",
+"--zones-pin",
+"ro",
+"~/data",
+"{T}/home/data",
+"--ro-bind-try",
+"/sys/devices/system/cpu",
+"/sys/devices/system/cpu",
+"--ro-bind",
+"{T}/rt/appzones/alpha/ctl",
+"/run/zone",
+"--ro-bind",
+"{T}/rt/appzones/alpha/ctl/bin",
+"/run/zone/bin",
+"\u0000if:wayland-0",
+"--bind",
+"{T}/rt/appzones/alpha/wayland-0",
+"/run/user/1000/wayland-0",
+"--setenv",
+"WAYLAND_DISPLAY",
+"wayland-0",
+"\u0000end",
+"\u0000if:wayland-host",
+"--bind",
+"\u0000host-wayland",
+"/run/user/1000/wayland-0",
+"--setenv",
+"WAYLAND_DISPLAY",
+"wayland-0",
+"\u0000end",
+"\u0000if:bus",
+"--bind",
+"{T}/rt/appzones/alpha/bus",
+"/run/user/1000/bus",
+"--setenv",
+"DBUS_SESSION_BUS_ADDRESS",
+"unix:path=/run/user/1000/bus",
+"\u0000end",
+"--bind",
+"{T}/rt/pipewire-0",
+"/run/user/1000/pipewire-0",
+"--ro-bind",
+"{T}/rt/appzones/alpha/flatpak-info",
+"/.flatpak-info",
+"--info-fd",
+"3",
+"--lock-file",
+"/.flatpak-info",
+"--setenv",
+"HOME",
+"{T}/home",
+"--setenv",
+"USER",
+"alice",
+"--setenv",
+"LOGNAME",
+"alice",
+"--setenv",
+"PATH",
+"/run/zone/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/bin:/sbin",
+"--setenv",
+"LANG",
+"de_DE.UTF-8",
+"--setenv",
+"TZ",
+":/etc/localtime",
+"--setenv",
+"XDG_RUNTIME_DIR",
+"/run/user/1000",
+"--setenv",
+"ZONE",
+"alpha",
+"--setenv",
+"TERM",
+"xterm-256color",
+"--setenv",
+"ZONE_DNS",
+"127.0.0.53",
+"--setenv",
+"XDG_DATA_DIRS",
+"/usr/local/share:/usr/share",
+"--setenv",
+"XDG_CONFIG_DIRS",
+"/etc/xdg",
+"--setenv",
+"XDG_SESSION_TYPE",
+"wayland",
+"--setenv",
+"NIXOS_OZONE_WL",
+"1",
+"--setenv",
+"MOZ_ENABLE_WAYLAND",
+"1",
+"--setenv",
+"QT_QPA_PLATFORM",
+"wayland;xcb",
+"--setenv",
+"SDL_VIDEODRIVER",
+"wayland",
+"--setenv",
+"ELECTRON_OZONE_PLATFORM_HINT",
+"wayland",
+"--setenv",
+"TZDIR",
+"/usr/share/zoneinfo",
+"--setenv",
+"XDG_CURRENT_DESKTOP",
+"Hyprland",
+"--setenv",
+"ZONE_DBUS_DAEMON",
+"{T}/bin/dbus-daemon",
+"--setenv",
+"ZONE_BWRAP",
+"{T}/bin/bwrap",
+"--setenv",
+"FOO",
+"bar",
+"--ro-bind",
+"{HELPER}",
+"/run/appzones-helper",
+"--",
+"/run/appzones-helper",
+"zone-init"
+],
+"log_socket": true,
+"dns_upstreams": [
+"192.0.2.53"
+],
+"links": {
+"socket": "{T}/rt/appzones/alpha/ctl/links.sock",
+"command": [
+"{HELPER}",
+"cli",
+"_link",
+"alpha"
+]
+},
+"autostart": [
+{
+"app": "web",
+"argv": [
+"firefox",
+"--new-instance",
+"-P",
+"alpha"
+],
+"bus": "host"
+}
+],
+"cleanup": [
+"{HELPER}",
+"cli",
+"_cleanup",
+"alpha"
+]
+}
+],
+"rt/appzones/alpha/resolv.conf": [
+"file",
+"0o644",
+"nameserver 127.0.0.53\n"
+],
+"rt/appzones/colours": [
+"file",
+"0o600",
+"alpha #a6e3a1\nbeta #89b4fa\ngamma #f38ba8\n"
+],
+"rt/pipewire-0": [
+"file",
+"0o644",
+""
+],
+"rt/wayland-9": [
+"file",
+"0o644",
+""
+],
+"home/.local/share/appzones/alpha": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/home": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/alpha/mnt": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/alpha/theme": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.config": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.config/fontconfig": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.config/fontconfig/fonts.conf": [
+"file",
+"0o644",
+"<fontconfig/>"
+],
+"home/.local/share/appzones/alpha/theme/.config/gtk-3.0": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.config/gtk-3.0/settings.ini": [
+"file",
+"0o644",
+"[Settings]\n"
+],
+"home/.local/share/appzones/alpha/theme/.icons": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.icons/Theme": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.icons/Theme/index.theme": [
+"file",
+"0o644",
+"[Icon Theme]\n"
+],
+"home/.local/share/appzones/alpha/theme/.local": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.local/share": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.local/share/fonts": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/theme/.local/share/fonts/f.ttf": [
+"file",
+"0o644",
+"\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+],
+"home/.local/share/appzones/alpha/tmp": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/alpha/var-tmp": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/beta": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/beta/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/gamma": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+]
+}
+}
+},
+{
+"layout": "fhs",
+"zone": "beta",
+"env": {
+"HOME": "{T}/home",
+"PATH": "{T}/bin:{PATH}",
+"USER": "alice",
+"XDG_RUNTIME_DIR": "{T}/rt",
+"APPZONES_CONFIG": "{T}/zones.toml",
+"APPZONES_DENIED_PATHS": "{T}/denied-paths",
+"APPZONES_DBUS_SERVICE_DIRS": "",
+"APPZONES_INSTANCE_FOR_TESTS": "zone-x-1",
+"APPZONES_NETBIRD_IFACE": "wt0",
+"WAYLAND_DISPLAY": "wayland-9",
+"DBUS_SESSION_BUS_ADDRESS": "unix:path={T}/rt/bus",
+"XDG_CURRENT_DESKTOP": "Hyprland",
+"LANG": "C.UTF-8",
+"APPZONES_DNS_HOST": "192.0.2.53",
+"APPZONES_BIN_BWRAP": "{T}/bin/bwrap",
+"APPZONES_BIN_PASTA": "{T}/bin/pasta",
+"APPZONES_BIN_XDG_DBUS_PROXY": "{T}/bin/xdg-dbus-proxy",
+"APPZONES_BIN_ZONE_WAYLAND": "{T}/bin/zone-wayland",
+"APPZONES_BIN_DBUS_DAEMON": "{T}/bin/dbus-daemon",
+"APPZONES_LAYOUT": "fhs",
+"APPZONES_HELPER": "rust",
+"APPZONES_BIN_APPZONES_HELPER": "{HELPER}"
+},
+"tree": [
+{
+"path": "bin",
+"dir": 493
+},
+{
+"path": "home",
+"dir": 493
+},
+{
+"path": "rt",
+"dir": 493
+},
+{
+"path": "denied-paths",
+"mode": 420,
+"age": 0,
+"data": "fi9TZWNyZXRzCg=="
+},
+{
+"path": "zones.toml",
+"mode": 420,
+"age": 0,
+"data": "dmVyc2lvbiA9IDEKcmVxdWlyZXMgPSA2Clt6b25lcy5hbHBoYV0KY29sb3VyID0gIiNhNmUzYTEiCmxpbmtzID0gInpvbmUiCnRoZW1lID0gdHJ1ZQp0bXAgPSAiZGlzayIKZGV2aWNlcyA9IFsiZ3B1IiwgImF1ZGlvIiwgImNhbWVyYSIsICJ1c2IiXQpjYW1lcmEgPSAiZGV2aWNlIgp1c2IgPSBbImFiY2QiXQp3YXlsYW5kID0gImhvc3QiCmxpbmdlciA9ICIxMG0iCm5ldGJpcmQgPSB0cnVlCmF1dG9zdGFydF9hcHBzID0gWyJ3ZWIiXQplbnYgPSB7IEZPTyA9ICJiYXIiLCBMQU5HID0gImRlX0RFLlVURi04IiB9CmJpbmRzID0gW3sgcGF0aCA9ICJ+L3Byb2oiIH0sIHsgcGF0aCA9ICJ+L2RhdGEiLCBtb2RlID0gInJvIiB9XQpkYnVzID0geyB0YWxrID0gWyJjb20uZXhhbXBsZS5UYWxrIl0sIG93biA9IFsiY29tLmV4YW1wbGUuYXBwLk93biJdIH0KW3pvbmVzLmJldGFdCmNvbG91ciA9ICIjODliNGZhIgpuZXR3b3JrID0gIm5vbmUiCmRucyA9ICJwdWJsaWMiCm1hY2hpbmVfaWQgPSAiaG9zdCIKdXNlcm5zID0gZmFsc2UKaG9tZSA9ICJ+L2Job21lIgp3YXlsYW5kID0gIm5vbmUiCmxpbmtzID0gInpvbmU6YWxwaGEiCnRoZW1lID0gZmFsc2UKW3pvbmVzLmdhbW1hXQpjb2xvdXIgPSAiI2YzOGJhOCIKbmV0d29yayA9ICJob3N0IgpzdXBlcnZpc29yID0gInNwYXduIgpzdGFydF90aW1lb3V0ID0gNDUKYnVzID0gInpvbmUiClthcHBzLndlYl0KY29tbWFuZCA9IFsiZmlyZWZveCIsICItLW5ldy1pbnN0YW5jZSJdCnpvbmVzID0gWyJhbHBoYSIsICJiZXRhIl0KYXJncyA9IHsgYWxwaGEgPSBbIi1QIiwgImFscGhhIl0gfQo="
+},
+{
+"path": "home/.config",
+"dir": 493
+},
+{
+"path": "home/.icons",
+"dir": 493
+},
+{
+"path": "home/.local",
+"dir": 493
+},
+{
+"path": "home/.ssh",
+"dir": 493
+},
+{
+"path": "home/bhome",
+"dir": 493
+},
+{
+"path": "home/data",
+"dir": 493
+},
+{
+"path": "home/proj",
+"dir": 493
+},
+{
+"path": "home/.ssh/id",
+"mode": 420,
+"age": 0,
+"data": "c2VjcmV0"
+},
+{
+"path": "home/.config/fontconfig",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0/settings.ini",
+"mode": 420,
+"age": 0,
+"data": "W1NldHRpbmdzXQo="
+},
+{
+"path": "home/.config/fontconfig/fonts.conf",
+"mode": 420,
+"age": 0,
+"data": "PGZvbnRjb25maWcvPg=="
+},
+{
+"path": "home/.config/fontconfig/key",
+"link": "{T}/home/.ssh/id"
+},
+{
+"path": "home/.icons/Theme",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/cursors",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/index.theme",
+"mode": 420,
+"age": 0,
+"data": "W0ljb24gVGhlbWVdCg=="
+},
+{
+"path": "home/.icons/Theme/cursors/x.lock",
+"mode": 420,
+"age": 0,
+"data": "c2tpcA=="
+},
+{
+"path": "home/.local/share",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts/f.ttf",
+"mode": 420,
+"age": 0,
+"data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+},
+{
+"path": "home/.local/share/appzones/alpha",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/beta",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/gamma",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp/old",
+"mode": 420,
+"age": 3456000,
+"data": "eA=="
+},
+{
+"path": "home/.local/share/appzones/beta/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/gamma/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "rt/pipewire-0",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "rt/wayland-9",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "bin/bwrap",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/dbus-daemon",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/ip",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmNhdCA8PCdKJwpbeyJpZm5hbWUiOiAibG8iLCAiYWRkcl9pbmZvIjogW3sibG9jYWwiOiAiMTI3LjAuMC4xIiwgInByZWZpeGxlbiI6IDh9LCB7ImxvY2FsIjogIjo6MSIsICJwcmVmaXhsZW4iOiAxMjh9XX0sCiB7ImlmbmFtZSI6ICJldGgwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE5Mi4xNjguMS4yMCIsICJwcmVmaXhsZW4iOiAyNH0sIHsibG9jYWwiOiAiMjAwMTpkYjg6MTo6MjAiLCAicHJlZml4bGVuIjogNjR9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsb2NhbCI6ICJmZTgwOjoxIiwgInByZWZpeGxlbiI6IDY0fSwgeyJsb2NhbCI6ICIyMDMuMC4xMTMuNyIsICJwcmVmaXhsZW4iOiAyNX1dfSwKIHsiaWZuYW1lIjogInd0MCIsICJhZGRyX2luZm8iOiBbeyJsb2NhbCI6ICIxMDAuNzAuMTIuMzQiLCAicHJlZml4bGVuIjogMTZ9XX0sCiB7ImlmbmFtZSI6ICJkb2NrZXIwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE3Mi4xNy4wLjEiLCAicHJlZml4bGVuIjogMTZ9LCB7ImxvY2FsIjogIjE3Mi4xOC4wLjEiLCAicHJlZml4bGVuIjogMTZ9XX1dCkoK"
+},
+{
+"path": "bin/pasta",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/xdg-dbus-proxy",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/zone-wayland",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+}
+],
+"want": {
+"rc": 0,
+"stdout": [
+"[zone] beta: wayland = \"none\": no Wayland socket",
+"{T}/rt/appzones/beta/plan.json"
+],
+"stderr": [
+"appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
+"appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
+"appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)"
+],
+"files": {
+"rt/.flatpak": [
+"dir",
+"0o755"
+],
+"rt/.flatpak/zone-x-1": [
+"dir",
+"0o755"
+],
+"rt/appzones": [
+"dir",
+"0o700"
+],
+"rt/appzones/beta": [
+"dir",
+"0o755"
+],
+"rt/appzones/beta/config.sha256": [
+"file",
+"0o644",
+"470cbfac60949466b7472e24790c24fbc6db77aef0ac658c4475b319f80a4573\n"
+],
+"rt/appzones/beta/ctl": [
+"dir",
+"0o700"
+],
+"rt/appzones/beta/ctl/bin": [
+"dir",
+"0o755"
+],
+"rt/appzones/beta/ctl/bin/xdg-open": [
+"file",
+"0o755",
+"#!/bin/sh\n# zone xdg-open (links = \"zone:alpha\"): http(s) URLs open in zone alpha's\n# browser through the zone's link socket; anything else goes to the real xdg-open.\ncase \"$1\" in\n  http://*|https://*)\n    exec /run/appzones-helper open-link \"$1\" ;;\nesac\nexec /usr/bin/xdg-open \"$@\"\n"
+],
+"rt/appzones/beta/flatpak-info": [
+"file",
+"0o644",
+"[Application]\nname=dev.mirql.zone.beta\nruntime=runtime/dev.mirql.zones/x86_64/1\n\n[Instance]\ninstance-id=zone-x-1\nsession-bus-proxy=true\nsystem-bus-proxy=false\nsandbox-engine=dev.mirql.zones\n"
+],
+"rt/appzones/beta/hosts": [
+"file",
+"0o644",
+"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 beta-zone\n"
+],
+"rt/appzones/beta/nft.rules": [
+"file",
+"0o644",
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::6446:0/112, 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
+],
+"rt/appzones/beta/plan.json": [
+"plan",
+{
+"version": 1,
+"name": "beta",
+"zrt": "{T}/rt/appzones/beta",
+"start_timeout": 30.0,
+"linger": null,
+"linger_text": "",
+"network": "none",
+"dns": "public",
+"devices": [
+"gpu",
+"audio"
+],
+"flatpak_dir": "{T}/rt/.flatpak/zone-x-1",
+"wayland": {
+"mode": "none",
+"helper": null
+},
+"dbus_proxy": [
+"{T}/bin/bwrap",
+"--unshare-all",
+"--share-net",
+"--die-with-parent",
+"--ro-bind",
+"/usr",
+"/usr",
+"--ro-bind",
+"/bin",
+"/bin",
+"--bind",
+"{T}/rt",
+"{T}/rt",
+"--ro-bind",
+"{T}/rt/appzones/beta/flatpak-info",
+"/.flatpak-info",
+"--",
+"{T}/bin/xdg-dbus-proxy",
+"unix:path={T}/rt/bus",
+"{T}/rt/appzones/beta/bus",
+"--filter",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Properties.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Introspectable.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Peer.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.FileChooser.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.OpenURI.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Notification.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Settings.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Email.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Print.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Trash.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Inhibit.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.NetworkMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.ProxyResolver.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.PowerProfileMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.MemoryMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GameMode.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Realtime.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Secret.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Request.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Session.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
+"--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
+"--talk=org.freedesktop.portal.Documents",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--own=dev.mirql.zone.beta.*",
+"--own=org.mozilla.firefox_zone_beta.*",
+"--own=org.mozilla.firefox_esr_zone_beta.*",
+"--own=org.mozilla.firefox_beta_zone_beta.*",
+"--own=org.mozilla.firefox_devedition_zone_beta.*",
+"--own=org.mozilla.firefox_nightly_zone_beta.*",
+"--own=org.mozilla.librewolf_zone_beta.*"
+],
+"argv": [
+"{HELPER}",
+"cli",
+"_netsetup",
+"-",
+"{T}/rt/.flatpak/zone-x-1/bwrapinfo.json",
+"beta",
+"--",
+"{T}/bin/bwrap",
+"--unshare-user",
+"--unshare-ipc",
+"--unshare-pid",
+"--unshare-uts",
+"--unshare-cgroup",
+"--uid",
+"1000",
+"--gid",
+"100",
+"--hostname",
+"beta-zone",
+"--die-with-parent",
+"--new-session",
+"--cap-drop",
+"ALL",
+"--clearenv",
+"--unshare-net",
+"--disable-userns",
+"--assert-userns-disabled",
+"--proc",
+"/proc",
+"--dev",
+"/dev",
+"--tmpfs",
+"/tmp",
+"--tmpfs",
+"/run",
+"--perms",
+"0700",
+"--tmpfs",
+"/run/user/1000",
+"--dir",
+"/run/zone",
+"--ro-bind",
+"/usr",
+"/usr",
+"--ro-bind",
+"/bin",
+"/bin",
+"--ro-bind",
+"{T}/home/.local/share/appzones/beta/mnt",
+"/mnt/host",
+"--ro-bind",
+"/etc/passwd",
+"/etc/passwd",
+"--ro-bind",
+"/etc/group",
+"/etc/group",
+"--ro-bind",
+"{T}/home/.local/share/appzones/beta/machine-id",
+"/etc/machine-id",
+"--ro-bind",
+"{T}/rt/appzones/beta/resolv.conf",
+"/etc/resolv.conf",
+"--ro-bind",
+"{T}/rt/appzones/beta/hosts",
+"/etc/hosts",
+"--zones-pin",
+"rw",
+"~/bhome",
+"{T}/home",
+"--ro-bind-try",
+"/sys/devices/system/cpu",
+"/sys/devices/system/cpu",
+"--ro-bind",
+"{T}/rt/appzones/beta/ctl",
+"/run/zone",
+"--ro-bind",
+"{T}/rt/appzones/beta/ctl/bin",
+"/run/zone/bin",
+"\u0000if:bus",
+"--bind",
+"{T}/rt/appzones/beta/bus",
+"/run/user/1000/bus",
+"--setenv",
+"DBUS_SESSION_BUS_ADDRESS",
+"unix:path=/run/user/1000/bus",
+"\u0000end",
+"--bind",
+"{T}/rt/pipewire-0",
+"/run/user/1000/pipewire-0",
+"--ro-bind",
+"{T}/rt/appzones/beta/flatpak-info",
+"/.flatpak-info",
+"--info-fd",
+"3",
+"--lock-file",
+"/.flatpak-info",
+"--setenv",
+"HOME",
+"{T}/home",
+"--setenv",
+"USER",
+"alice",
+"--setenv",
+"LOGNAME",
+"alice",
+"--setenv",
+"PATH",
+"/run/zone/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/bin:/sbin",
+"--setenv",
+"LANG",
+"C.UTF-8",
+"--setenv",
+"TZ",
+":/etc/localtime",
+"--setenv",
+"XDG_RUNTIME_DIR",
+"/run/user/1000",
+"--setenv",
+"ZONE",
+"beta",
+"--setenv",
+"TERM",
+"xterm-256color",
+"--setenv",
+"XDG_DATA_DIRS",
+"/usr/local/share:/usr/share",
+"--setenv",
+"XDG_CONFIG_DIRS",
+"/etc/xdg",
+"--setenv",
+"XDG_SESSION_TYPE",
+"wayland",
+"--setenv",
+"NIXOS_OZONE_WL",
+"1",
+"--setenv",
+"MOZ_ENABLE_WAYLAND",
+"1",
+"--setenv",
+"QT_QPA_PLATFORM",
+"wayland;xcb",
+"--setenv",
+"SDL_VIDEODRIVER",
+"wayland",
+"--setenv",
+"ELECTRON_OZONE_PLATFORM_HINT",
+"wayland",
+"--setenv",
+"TZDIR",
+"/usr/share/zoneinfo",
+"--setenv",
+"XDG_CURRENT_DESKTOP",
+"Hyprland",
+"--setenv",
+"ZONE_DBUS_DAEMON",
+"{T}/bin/dbus-daemon",
+"--setenv",
+"ZONE_BWRAP",
+"{T}/bin/bwrap",
+"--ro-bind",
+"{HELPER}",
+"/run/appzones-helper",
+"--",
+"/run/appzones-helper",
+"zone-init"
+],
+"log_socket": false,
+"dns_upstreams": null,
+"links": {
+"socket": "{T}/rt/appzones/beta/ctl/links.sock",
+"command": [
+"{HELPER}",
+"cli",
+"_link",
+"alpha"
+]
+},
+"autostart": [],
+"cleanup": [
+"{HELPER}",
+"cli",
+"_cleanup",
+"beta"
+]
+}
+],
+"rt/appzones/beta/resolv.conf": [
+"file",
+"0o644",
+""
+],
+"rt/appzones/colours": [
+"file",
+"0o600",
+"alpha #a6e3a1\nbeta #89b4fa\ngamma #f38ba8\n"
+],
+"rt/pipewire-0": [
+"file",
+"0o644",
+""
+],
+"rt/wayland-9": [
+"file",
+"0o644",
+""
+],
+"home/.local/share/appzones/alpha": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/alpha/tmp": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/tmp/old": [
+"file",
+"0o644",
+"x"
+],
+"home/.local/share/appzones/beta": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/beta/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/beta/mnt": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/gamma": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+]
+}
+}
+},
+{
+"layout": "fhs",
+"zone": "gamma",
+"env": {
+"HOME": "{T}/home",
+"PATH": "{T}/bin:{PATH}",
+"USER": "alice",
+"XDG_RUNTIME_DIR": "{T}/rt",
+"APPZONES_CONFIG": "{T}/zones.toml",
+"APPZONES_DENIED_PATHS": "{T}/denied-paths",
+"APPZONES_DBUS_SERVICE_DIRS": "",
+"APPZONES_INSTANCE_FOR_TESTS": "zone-x-1",
+"APPZONES_NETBIRD_IFACE": "wt0",
+"WAYLAND_DISPLAY": "wayland-9",
+"DBUS_SESSION_BUS_ADDRESS": "unix:path={T}/rt/bus",
+"XDG_CURRENT_DESKTOP": "Hyprland",
+"LANG": "C.UTF-8",
+"APPZONES_DNS_HOST": "192.0.2.53",
+"APPZONES_BIN_BWRAP": "{T}/bin/bwrap",
+"APPZONES_BIN_PASTA": "{T}/bin/pasta",
+"APPZONES_BIN_XDG_DBUS_PROXY": "{T}/bin/xdg-dbus-proxy",
+"APPZONES_BIN_ZONE_WAYLAND": "{T}/bin/zone-wayland",
+"APPZONES_BIN_DBUS_DAEMON": "{T}/bin/dbus-daemon",
+"APPZONES_LAYOUT": "fhs",
+"APPZONES_HELPER": "rust",
+"APPZONES_BIN_APPZONES_HELPER": "{HELPER}"
+},
+"tree": [
+{
+"path": "bin",
+"dir": 493
+},
+{
+"path": "home",
+"dir": 493
+},
+{
+"path": "rt",
+"dir": 493
+},
+{
+"path": "denied-paths",
+"mode": 420,
+"age": 0,
+"data": "fi9TZWNyZXRzCg=="
+},
+{
+"path": "zones.toml",
+"mode": 420,
+"age": 0,
+"data": "dmVyc2lvbiA9IDEKcmVxdWlyZXMgPSA2Clt6b25lcy5hbHBoYV0KY29sb3VyID0gIiNhNmUzYTEiCmxpbmtzID0gInpvbmUiCnRoZW1lID0gdHJ1ZQp0bXAgPSAiZGlzayIKZGV2aWNlcyA9IFsiZ3B1IiwgImF1ZGlvIiwgImNhbWVyYSIsICJ1c2IiXQpjYW1lcmEgPSAiZGV2aWNlIgp1c2IgPSBbImFiY2QiXQp3YXlsYW5kID0gImhvc3QiCmxpbmdlciA9ICIxMG0iCm5ldGJpcmQgPSB0cnVlCmF1dG9zdGFydF9hcHBzID0gWyJ3ZWIiXQplbnYgPSB7IEZPTyA9ICJiYXIiLCBMQU5HID0gImRlX0RFLlVURi04IiB9CmJpbmRzID0gW3sgcGF0aCA9ICJ+L3Byb2oiIH0sIHsgcGF0aCA9ICJ+L2RhdGEiLCBtb2RlID0gInJvIiB9XQpkYnVzID0geyB0YWxrID0gWyJjb20uZXhhbXBsZS5UYWxrIl0sIG93biA9IFsiY29tLmV4YW1wbGUuYXBwLk93biJdIH0KW3pvbmVzLmJldGFdCmNvbG91ciA9ICIjODliNGZhIgpuZXR3b3JrID0gIm5vbmUiCmRucyA9ICJwdWJsaWMiCm1hY2hpbmVfaWQgPSAiaG9zdCIKdXNlcm5zID0gZmFsc2UKaG9tZSA9ICJ+L2Job21lIgp3YXlsYW5kID0gIm5vbmUiCmxpbmtzID0gInpvbmU6YWxwaGEiCnRoZW1lID0gZmFsc2UKW3pvbmVzLmdhbW1hXQpjb2xvdXIgPSAiI2YzOGJhOCIKbmV0d29yayA9ICJob3N0IgpzdXBlcnZpc29yID0gInNwYXduIgpzdGFydF90aW1lb3V0ID0gNDUKYnVzID0gInpvbmUiClthcHBzLndlYl0KY29tbWFuZCA9IFsiZmlyZWZveCIsICItLW5ldy1pbnN0YW5jZSJdCnpvbmVzID0gWyJhbHBoYSIsICJiZXRhIl0KYXJncyA9IHsgYWxwaGEgPSBbIi1QIiwgImFscGhhIl0gfQo="
+},
+{
+"path": "home/.config",
+"dir": 493
+},
+{
+"path": "home/.icons",
+"dir": 493
+},
+{
+"path": "home/.local",
+"dir": 493
+},
+{
+"path": "home/.ssh",
+"dir": 493
+},
+{
+"path": "home/bhome",
+"dir": 493
+},
+{
+"path": "home/data",
+"dir": 493
+},
+{
+"path": "home/proj",
+"dir": 493
+},
+{
+"path": "home/.ssh/id",
+"mode": 420,
+"age": 0,
+"data": "c2VjcmV0"
+},
+{
+"path": "home/.config/fontconfig",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0",
+"dir": 493
+},
+{
+"path": "home/.config/gtk-3.0/settings.ini",
+"mode": 420,
+"age": 0,
+"data": "W1NldHRpbmdzXQo="
+},
+{
+"path": "home/.config/fontconfig/fonts.conf",
+"mode": 420,
+"age": 0,
+"data": "PGZvbnRjb25maWcvPg=="
+},
+{
+"path": "home/.config/fontconfig/key",
+"link": "{T}/home/.ssh/id"
+},
+{
+"path": "home/.icons/Theme",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/cursors",
+"dir": 493
+},
+{
+"path": "home/.icons/Theme/index.theme",
+"mode": 420,
+"age": 0,
+"data": "W0ljb24gVGhlbWVdCg=="
+},
+{
+"path": "home/.icons/Theme/cursors/x.lock",
+"mode": 420,
+"age": 0,
+"data": "c2tpcA=="
+},
+{
+"path": "home/.local/share",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts",
+"dir": 493
+},
+{
+"path": "home/.local/share/fonts/f.ttf",
+"mode": 420,
+"age": 0,
+"data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+},
+{
+"path": "home/.local/share/appzones/alpha",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/beta",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/gamma",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp",
+"dir": 493
+},
+{
+"path": "home/.local/share/appzones/alpha/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/alpha/tmp/old",
+"mode": 420,
+"age": 3456000,
+"data": "eA=="
+},
+{
+"path": "home/.local/share/appzones/beta/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "home/.local/share/appzones/gamma/machine-id",
+"mode": 420,
+"age": 0,
+"data": "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAK"
+},
+{
+"path": "rt/pipewire-0",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "rt/wayland-9",
+"mode": 420,
+"age": 0,
+"data": ""
+},
+{
+"path": "bin/bwrap",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/dbus-daemon",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/ip",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmNhdCA8PCdKJwpbeyJpZm5hbWUiOiAibG8iLCAiYWRkcl9pbmZvIjogW3sibG9jYWwiOiAiMTI3LjAuMC4xIiwgInByZWZpeGxlbiI6IDh9LCB7ImxvY2FsIjogIjo6MSIsICJwcmVmaXhsZW4iOiAxMjh9XX0sCiB7ImlmbmFtZSI6ICJldGgwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE5Mi4xNjguMS4yMCIsICJwcmVmaXhsZW4iOiAyNH0sIHsibG9jYWwiOiAiMjAwMTpkYjg6MTo6MjAiLCAicHJlZml4bGVuIjogNjR9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsb2NhbCI6ICJmZTgwOjoxIiwgInByZWZpeGxlbiI6IDY0fSwgeyJsb2NhbCI6ICIyMDMuMC4xMTMuNyIsICJwcmVmaXhsZW4iOiAyNX1dfSwKIHsiaWZuYW1lIjogInd0MCIsICJhZGRyX2luZm8iOiBbeyJsb2NhbCI6ICIxMDAuNzAuMTIuMzQiLCAicHJlZml4bGVuIjogMTZ9XX0sCiB7ImlmbmFtZSI6ICJkb2NrZXIwIiwgImFkZHJfaW5mbyI6IFt7ImxvY2FsIjogIjE3Mi4xNy4wLjEiLCAicHJlZml4bGVuIjogMTZ9LCB7ImxvY2FsIjogIjE3Mi4xOC4wLjEiLCAicHJlZml4bGVuIjogMTZ9XX1dCkoK"
+},
+{
+"path": "bin/pasta",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/xdg-dbus-proxy",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+},
+{
+"path": "bin/zone-wayland",
+"mode": 493,
+"age": 0,
+"data": "IyEvYmluL3NoCmV4aXQgMAo="
+}
+],
+"want": {
+"rc": 0,
+"stdout": [
+"{T}/rt/appzones/gamma/plan.json"
+],
+"stderr": [
+"appzones: warning: [zones.beta] userns = false: Chromium/Electron refuse to start, Firefox runs with a weaker sandbox without saying so",
+"appzones: warning: [zones.alpha] wayland = \"host\": where the compositor has no security context (GNOME, Weston), the zone's apps get the host's Wayland socket: whatever it offers any app, and windows not marked as the zone's (elsewhere the zone gets its own context)",
+"appzones: warning: [zones.beta] machine_id = \"host\": apps can link this zone to the host and to other zones by it",
+"appzones: warning: [zones.gamma] network = \"host\": the zone reaches everything the host reaches, localhost and the tailnet included, and the host's abstract sockets (Xwayland's among them: X11 apps of the host can be read and driven)",
+"appzones: theme: not copying {T}/home/.config/fontconfig/key (it resolves to a path that never enters a zone)"
+],
+"files": {
+"rt/.flatpak": [
+"dir",
+"0o755"
+],
+"rt/.flatpak/zone-x-1": [
+"dir",
+"0o755"
+],
+"rt/appzones": [
+"dir",
+"0o700"
+],
+"rt/appzones/colours": [
+"file",
+"0o600",
+"alpha #a6e3a1\nbeta #89b4fa\ngamma #f38ba8\n"
+],
+"rt/appzones/gamma": [
+"dir",
+"0o755"
+],
+"rt/appzones/gamma/config.sha256": [
+"file",
+"0o644",
+"35c2eb73f80f273e584b4356341af3114a0288090a326ee8e6773774375d84e9\n"
+],
+"rt/appzones/gamma/ctl": [
+"dir",
+"0o700"
+],
+"rt/appzones/gamma/flatpak-info": [
+"file",
+"0o644",
+"[Application]\nname=dev.mirql.zone.gamma\nruntime=runtime/dev.mirql.zones/x86_64/1\n\n[Instance]\ninstance-id=zone-x-1\nsession-bus-proxy=true\nsystem-bus-proxy=false\nsandbox-engine=dev.mirql.zones\n"
+],
+"rt/appzones/gamma/hosts": [
+"file",
+"0o644",
+"127.0.0.1 localhost\n::1 localhost\n127.0.0.2 gamma-zone\n"
+],
+"rt/appzones/gamma/nft.rules": [
+"file",
+"0o644",
+"table inet zone {\n  chain out {\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n    ip daddr { 100.70.12.34, 172.17.0.1, 172.18.0.1, 192.168.1.20, 203.0.113.7 } reject\n    ip6 daddr { 64:ff9b::6446:c22, 64:ff9b::ac11:1, 64:ff9b::ac12:1, 64:ff9b::c0a8:114, 64:ff9b::cb00:7107, 2001:db8:1::20, fe80::1 } reject\n    ip daddr { 100.70.0.0/16, 172.17.0.0/16, 172.18.0.0/16, 192.168.1.0/24, 203.0.113.0/25 } reject\n    ip6 daddr { 64:ff9b::6446:0/112, 64:ff9b::ac11:0/112, 64:ff9b::ac12:0/112, 64:ff9b::c0a8:100/120, 64:ff9b::cb00:7100/121, 2001:db8:1::/64 } reject\n    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12,\n               192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject\n    ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8,\n                ::, 64:ff9b:1::/48, 64:ff9b::/104, 64:ff9b::a00:0/104, 64:ff9b::6440:0/106, 64:ff9b::7f00:0/104,\n                64:ff9b::a9fe:0/112, 64:ff9b::ac10:0/108, 64:ff9b::c000:0/120, 64:ff9b::c0a8:0/112, 64:ff9b::c612:0/111,\n                64:ff9b::e000:0/99 } reject\n  }\n}\n"
+],
+"rt/appzones/gamma/plan.json": [
+"plan",
+{
+"version": 1,
+"name": "gamma",
+"zrt": "{T}/rt/appzones/gamma",
+"start_timeout": 45.0,
+"linger": null,
+"linger_text": "",
+"network": "host",
+"dns": "host",
+"devices": [
+"gpu",
+"audio"
+],
+"flatpak_dir": "{T}/rt/.flatpak/zone-x-1",
+"wayland": {
+"mode": "zone",
+"helper": [
+"{T}/bin/zone-wayland",
+"{T}/rt/appzones/gamma/wayland-0",
+"dev.mirql.zone.gamma",
+"zone-x-1"
+]
+},
+"dbus_proxy": [
+"{T}/bin/bwrap",
+"--unshare-all",
+"--share-net",
+"--die-with-parent",
+"--ro-bind",
+"/usr",
+"/usr",
+"--ro-bind",
+"/bin",
+"/bin",
+"--bind",
+"{T}/rt",
+"{T}/rt",
+"--ro-bind",
+"{T}/rt/appzones/gamma/flatpak-info",
+"/.flatpak-info",
+"--",
+"{T}/bin/xdg-dbus-proxy",
+"unix:path={T}/rt/bus",
+"{T}/rt/appzones/gamma/bus",
+"--filter",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Properties.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Introspectable.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Peer.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.FileChooser.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.OpenURI.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Notification.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Settings.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Email.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Print.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Trash.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Inhibit.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.NetworkMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.ProxyResolver.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.PowerProfileMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.MemoryMonitor.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GameMode.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Realtime.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Secret.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Request.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Session.*",
+"--call=org.freedesktop.portal.Desktop=org.freedesktop.portal.GlobalShortcuts.*",
+"--broadcast=org.freedesktop.portal.Desktop=@/org/freedesktop/portal/*",
+"--talk=org.freedesktop.portal.Documents",
+"--call=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.freedesktop.Notifications=org.freedesktop.DBus.Properties.*@/org/freedesktop/Notifications",
+"--broadcast=org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications",
+"--call=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--call=org.kde.StatusNotifierWatcher=org.freedesktop.DBus.Properties.*@/StatusNotifierWatcher",
+"--broadcast=org.kde.StatusNotifierWatcher=org.kde.StatusNotifierWatcher.*@/StatusNotifierWatcher",
+"--own=dev.mirql.zone.gamma.*",
+"--own=org.mozilla.firefox_zone_gamma.*",
+"--own=org.mozilla.firefox_esr_zone_gamma.*",
+"--own=org.mozilla.firefox_beta_zone_gamma.*",
+"--own=org.mozilla.firefox_devedition_zone_gamma.*",
+"--own=org.mozilla.firefox_nightly_zone_gamma.*",
+"--own=org.mozilla.librewolf_zone_gamma.*"
+],
+"argv": [
+"{HELPER}",
+"cli",
+"_netsetup",
+"-",
+"{T}/rt/.flatpak/zone-x-1/bwrapinfo.json",
+"gamma",
+"--",
+"{T}/bin/bwrap",
+"--unshare-user",
+"--unshare-ipc",
+"--unshare-pid",
+"--unshare-uts",
+"--unshare-cgroup",
+"--uid",
+"1000",
+"--gid",
+"100",
+"--hostname",
+"gamma-zone",
+"--die-with-parent",
+"--new-session",
+"--cap-drop",
+"ALL",
+"--clearenv",
+"--proc",
+"/proc",
+"--dev",
+"/dev",
+"--tmpfs",
+"/tmp",
+"--tmpfs",
+"/run",
+"--perms",
+"0700",
+"--tmpfs",
+"/run/user/1000",
+"--dir",
+"/run/zone",
+"--ro-bind",
+"/usr",
+"/usr",
+"--ro-bind",
+"/bin",
+"/bin",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/mnt",
+"/mnt/host",
+"--ro-bind",
+"/etc/passwd",
+"/etc/passwd",
+"--ro-bind",
+"/etc/group",
+"/etc/group",
+"--ro-bind",
+"/etc/hosts",
+"/etc/hosts",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/machine-id",
+"/etc/machine-id",
+"--ro-bind",
+"{T}/rt/appzones/gamma/resolv.conf",
+"/etc/resolv.conf",
+"--bind",
+"{T}/home/.local/share/appzones/gamma/home",
+"{T}/home",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/theme/.config/gtk-3.0/settings.ini",
+"{T}/home/.config/gtk-3.0/settings.ini",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/theme/.config/fontconfig",
+"{T}/home/.config/fontconfig",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/theme/.icons",
+"{T}/home/.icons",
+"--ro-bind",
+"{T}/home/.local/share/appzones/gamma/theme/.local/share/fonts",
+"{T}/home/.local/share/fonts",
+"--ro-bind-try",
+"/sys/devices/system/cpu",
+"/sys/devices/system/cpu",
+"--ro-bind",
+"{T}/rt/appzones/gamma/ctl",
+"/run/zone",
+"\u0000if:wayland-0",
+"--bind",
+"{T}/rt/appzones/gamma/wayland-0",
+"/run/user/1000/wayland-0",
+"--setenv",
+"WAYLAND_DISPLAY",
+"wayland-0",
+"\u0000end",
+"\u0000if:bus",
+"--bind",
+"{T}/rt/appzones/gamma/bus",
+"/run/user/1000/bus",
+"--setenv",
+"DBUS_SESSION_BUS_ADDRESS",
+"unix:path=/run/user/1000/bus",
+"\u0000end",
+"--bind",
+"{T}/rt/pipewire-0",
+"/run/user/1000/pipewire-0",
+"--ro-bind",
+"{T}/rt/appzones/gamma/flatpak-info",
+"/.flatpak-info",
+"--info-fd",
+"3",
+"--lock-file",
+"/.flatpak-info",
+"--setenv",
+"HOME",
+"{T}/home",
+"--setenv",
+"USER",
+"alice",
+"--setenv",
+"LOGNAME",
+"alice",
+"--setenv",
+"PATH",
+"/run/zone/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/bin:/sbin",
+"--setenv",
+"LANG",
+"C.UTF-8",
+"--setenv",
+"TZ",
+":/etc/localtime",
+"--setenv",
+"XDG_RUNTIME_DIR",
+"/run/user/1000",
+"--setenv",
+"ZONE",
+"gamma",
+"--setenv",
+"TERM",
+"xterm-256color",
+"--setenv",
+"XDG_DATA_DIRS",
+"/usr/local/share:/usr/share",
+"--setenv",
+"XDG_CONFIG_DIRS",
+"/etc/xdg",
+"--setenv",
+"XDG_SESSION_TYPE",
+"wayland",
+"--setenv",
+"NIXOS_OZONE_WL",
+"1",
+"--setenv",
+"MOZ_ENABLE_WAYLAND",
+"1",
+"--setenv",
+"QT_QPA_PLATFORM",
+"wayland;xcb",
+"--setenv",
+"SDL_VIDEODRIVER",
+"wayland",
+"--setenv",
+"ELECTRON_OZONE_PLATFORM_HINT",
+"wayland",
+"--setenv",
+"TZDIR",
+"/usr/share/zoneinfo",
+"--setenv",
+"XDG_CURRENT_DESKTOP",
+"Hyprland",
+"--setenv",
+"ZONE_DBUS_DAEMON",
+"{T}/bin/dbus-daemon",
+"--setenv",
+"ZONE_BWRAP",
+"{T}/bin/bwrap",
+"--ro-bind",
+"{HELPER}",
+"/run/appzones-helper",
+"--",
+"/run/appzones-helper",
+"zone-init"
+],
+"log_socket": false,
+"dns_upstreams": null,
+"links": null,
+"autostart": [],
+"cleanup": [
+"{HELPER}",
+"cli",
+"_cleanup",
+"gamma"
+]
+}
+],
+"rt/appzones/gamma/resolv.conf": [
+"file",
+"0o644",
+"nameserver 192.0.2.53\n"
+],
+"rt/pipewire-0": [
+"file",
+"0o644",
+""
+],
+"rt/wayland-9": [
+"file",
+"0o644",
+""
+],
+"home/.local/share/appzones/alpha": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/alpha/tmp": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/alpha/tmp/old": [
+"file",
+"0o644",
+"x"
+],
+"home/.local/share/appzones/beta": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/beta/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/gamma": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/home": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/machine-id": [
+"file",
+"0o644",
+"00000000000000000000000000000000\n"
+],
+"home/.local/share/appzones/gamma/mnt": [
+"dir",
+"0o700"
+],
+"home/.local/share/appzones/gamma/theme": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.config": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.config/fontconfig": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.config/fontconfig/fonts.conf": [
+"file",
+"0o644",
+"<fontconfig/>"
+],
+"home/.local/share/appzones/gamma/theme/.config/gtk-3.0": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.config/gtk-3.0/settings.ini": [
+"file",
+"0o644",
+"[Settings]\n"
+],
+"home/.local/share/appzones/gamma/theme/.icons": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.icons/Theme": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.icons/Theme/index.theme": [
+"file",
+"0o644",
+"[Icon Theme]\n"
+],
+"home/.local/share/appzones/gamma/theme/.local": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.local/share": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.local/share/fonts": [
+"dir",
+"0o755"
+],
+"home/.local/share/appzones/gamma/theme/.local/share/fonts/f.ttf": [
+"file",
+"0o644",
+"\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+]
+}
+}
+}
+]
