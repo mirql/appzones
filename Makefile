@@ -75,6 +75,7 @@ preflight:
 		|| { echo "install bubblewrap and passt first: the AppArmor profile names them (or APPARMOR=no)"; exit 1; }
 
 install: preflight
+	@mkdir -p build
 	install -d $(DESTDIR)$(LIBDIR) $(DESTDIR)$(BINDIR) $(DESTDIR)$(DATADIR)
 	install -m 755 "$(HELPER_BIN)" $(DESTDIR)$(LIBDIR)/appzones-helper
 	@# the root step of `appzones mount` (the sudo rule names this file)

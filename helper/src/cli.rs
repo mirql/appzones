@@ -1170,7 +1170,7 @@ impl Cli {
             out(&format!("{}  {title}{}", if ok { "PASS" } else { "FAIL" }, if ran { "" } else { " (the probe did not run)" }));
         }
         let host_id = std::fs::read_to_string("/etc/machine-id").map(|m| m.trim().to_string()).unwrap_or_default();
-        let zone_id = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/cat", "/etc/machine-id"])
+        let zone_id = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", "cat /etc/machine-id"])
             .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).output().ok()
             .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
         let ok = match (&zone_id, z.get("machine_id").as_str() == Some("zone")) {
