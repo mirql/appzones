@@ -1,6 +1,9 @@
+//! (Linux: zone-init runs on macOS from stage 2 of design/macos.md.)
 //! The agent protocol of zone-init (helper/src/zone_init.rs), as a specification: zone-init
 //! runs outside a zone here, gets its control socket and its server's pidfd as the host
 //! gives them, and is spoken to over the socket as `appzones` does.
+
+#![cfg(target_os = "linux")]
 
 use serde_json::{json, Value};
 use std::ffi::OsStr;

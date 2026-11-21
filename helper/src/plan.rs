@@ -1573,10 +1573,14 @@ mod tests {
         std::fs::write(h.join(".gitconfig.new"), "new").unwrap();
         std::fs::rename(h.join(".gitconfig.new"), &secret).unwrap(); // an atomic save
         assert_eq!(fd_path_bytes(f.as_raw_fd()), None);
-        // an O_PATH descriptor of a directory removed after it was opened
+        // a descriptor of a directory removed after it was opened (O_PATH on Linux)
         let d = h.join("Docs/gone");
         std::fs::create_dir(&d).unwrap();
-        let g = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_PATH).open(&d).unwrap();
+        #[cfg(target_os = "linux")]
+        let flags = libc::O_PATH;
+        #[cfg(not(target_os = "linux"))]
+        let flags = libc::O_DIRECTORY;
+        let g = std::fs::OpenOptions::new().read(true).custom_flags(flags).open(&d).unwrap();
         std::fs::remove_dir(&d).unwrap();
         assert_eq!(fd_path_bytes(g.as_raw_fd()), None);
         let _ = std::fs::remove_dir_all(&t);

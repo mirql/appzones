@@ -23,9 +23,12 @@ mod host_dns;
 #[cfg(target_os = "linux")]
 mod netsetup;
 mod open_link;
+// (on macOS only partly used until zones run there: design/macos.md, stage 2)
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod plan;
 mod policy;
 mod pyfmt;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod serve;
 mod sys;
 // what runs in a zone and beside it on Linux; zone-init comes to macOS in stage 2
