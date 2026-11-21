@@ -4,15 +4,15 @@
 default:
     @just --list
 
-# Unit tests of the validator and parts of the appzones modules (fast, no Nix)
+# The Rust tests and clippy (fast, no Nix; the golden tests run in `just build`)
 test:
-    cd src && python3 -B -m unittest -q test_zonecfg
+    cd helper && cargo test --release -q && cargo clippy --release -q --all-targets -- -D warnings
 
 # Validate a zones.toml (default: the example)
 check file="examples/zones.toml":
-    python3 -B src/zonecfg.py check {{file}}
+    cd helper && cargo run --release -q --bin appzones-helper -- cli check "$(realpath ../{{file}})"
 
-# Build the package (runs the unit tests too)
+# Build the package (every Rust test runs in its build, the golden files' too)
 build:
     nix build -L .#default
 
@@ -25,7 +25,7 @@ test-distros:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.debian12 .#checks.x86_64-linux.ubuntu2404 \
         .#checks.x86_64-linux.debian12-deb .#checks.x86_64-linux.ubuntu2404-deb
 
-# The .deb (amd64, built in a Debian 12 image): result-deb/appzones_VERSION-1_amd64.deb
+# The .deb (amd64, glibc 2.17 and later): result-deb/appzones_VERSION-1_amd64.deb
 deb:
     nice -n 19 nix build -L -o result-deb .#deb
 
@@ -45,13 +45,11 @@ test-fedora:
 test-vm:
     nice -n 19 nix build -L --no-link .#checks.x86_64-linux.vm
 
-# The Rust helpers (helper/): cargo test, the protocol and never-list tests, the VM and distro tests with them (~15 min)
-test-rust:
-    nice -n 19 nix build -L --no-link .#checks.x86_64-linux.helper .#checks.x86_64-linux.policy-rust \
-        .#checks.x86_64-linux.agent-protocol-rust .#checks.x86_64-linux.vm-rust \
-        .#checks.x86_64-linux.debian12-rust .#checks.x86_64-linux.ubuntu2404-rust
+# Every offline check: the builds and their tests, make install, the repository, the distributions, the VM (~25 min)
+test-all:
+    nice -n 19 nix flake check -L
 
-# The Rust helpers' dependencies: advisories, licenses, sources (cargo deny; needs the network)
+# The Rust dependencies: advisories, licenses, sources (cargo deny; needs the network)
 audit:
     cd helper && nix shell --inputs-from .. nixpkgs#cargo nixpkgs#cargo-deny -c cargo deny check
 

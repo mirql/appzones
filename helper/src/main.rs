@@ -1,13 +1,17 @@
-//! appzones-helper: the parts of appzones that run inside a zone, and zone-wayland.
+//! appzones-helper: all of appzones in one binary (the mount helper is its own).
 //!
+//!   appzones-helper cli ARGS...        `appzones` itself: every command, `serve` included
 //!   appzones-helper zone-init          the agent inside a zone (pid 2, after bwrap)
 //!   appzones-helper open-link URL      in a zone: hand an http(s) link to the host
 //!   appzones-helper zone-wayland SOCKET APP_ID INSTANCE
 //!   appzones-helper serve --plan FILE --lock-fd L [--notify-fd N]
-//!                                      the part of `appzones serve` that holds a zone
+//!                                      run a plan written by `appzones-helper plan ZONE`
+//!   appzones-helper config-json FILE, check-mount-source ...   for tests: the config and
+//!                                      the never-list as JSON
 //!
-//! Optional (design/rust.md): installed with `make install HELPER=rust` or the Nix package
-//! appzones-rust. Each command keeps the interface of the Python or C part it replaces.
+//! The interfaces are those of the Python implementation it replaced (0.11): the config,
+//! the commands and their outputs, the runtime layout, the agent protocol, settings_hash
+//! byte for byte (helper/tests/golden).
 
 use std::process::ExitCode;
 
@@ -26,8 +30,8 @@ mod zone_dns;
 mod zone_init;
 mod zone_wayland;
 
-const USAGE: &str = "usage: appzones-helper zone-init | open-link URL | zone-wayland SOCKET APP_ID INSTANCE | \
-                     serve --plan FILE --lock-fd L [--notify-fd N] | --version | --commands";
+const USAGE: &str = "usage: appzones-helper cli ARGS... | zone-init | open-link URL | zone-wayland SOCKET APP_ID INSTANCE | \
+                     plan ZONE | serve --plan FILE --lock-fd L [--notify-fd N] | --version | --commands";
 
 /// The commands this build implements (`--commands`).
 const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve", "plan", "cli"];

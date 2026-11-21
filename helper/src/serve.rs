@@ -32,7 +32,7 @@ pub const PLAN_IF: &str = "\0if:";
 pub const PLAN_END: &str = "\0end";
 pub const PLAN_HOST_WAYLAND: &str = "\0host-wayland";
 const WAYLAND_NO_PROTOCOL: i32 = 3;
-const USAGE: &str = "usage: appzones-helper serve (--plan FILE | --zone NAME --python EXE --code-dir DIR) --lock-fd L \
+const USAGE: &str = "usage: appzones-helper serve (--plan FILE | --zone NAME) --lock-fd L \
                      [--notify-fd N]";
 
 /// The last stop asked for (SIGTERM or SIGINT), 0 for none.
@@ -96,8 +96,13 @@ fn host_rt() -> PathBuf {
 /// The host compositor's socket ($WAYLAND_DISPLAY: a name in $XDG_RUNTIME_DIR, or a path),
 /// resolved, when it is a socket (common.host_wayland_socket).
 pub fn host_wayland_socket() -> Option<String> {
-    let d = std::env::var_os("WAYLAND_DISPLAY").filter(|d| !d.is_empty())?;
-    let p = if d.to_string_lossy().starts_with('/') { PathBuf::from(d) } else { host_rt().join(d) };
+    host_wayland_socket_for(std::env::var_os("WAYLAND_DISPLAY"), &host_rt())
+}
+
+/// host_wayland_socket for DISPLAY in the runtime directory RT.
+fn host_wayland_socket_for(display: Option<std::ffi::OsString>, rt: &Path) -> Option<String> {
+    let d = display.filter(|d| !d.is_empty())?;
+    let p = if d.to_string_lossy().starts_with('/') { PathBuf::from(d) } else { rt.join(d) };
     let real = std::fs::canonicalize(p).ok()?;
     let ok = std::fs::metadata(&real).ok()?.file_type().is_socket();
     ok.then(|| real.to_string_lossy().into_owned())
@@ -440,12 +445,12 @@ fn handle_link(listener: &UnixListener, command: &[String]) {
 /// Where the plan comes from: a file `appzones serve` wrote, or made here for a zone.
 enum Source {
     File(PathBuf),
-    Zone { name: String, python: String, code_dir: PathBuf },
+    Zone { name: String },
 }
 
 /// The arguments, raw: the plan's path byte for byte, the rest must be text.
 fn parse_args(args: &[std::ffi::OsString]) -> Result<(Source, RawFd, Option<RawFd>), String> {
-    let (mut plan, mut zone, mut python, mut code, mut lock, mut notify) = (None, None, None, None, None, None);
+    let (mut plan, mut zone, mut lock, mut notify) = (None, None, None, None);
     let mut it = args.iter();
     let fd = |v: &std::ffi::OsString| v.to_str().and_then(|v| v.parse::<RawFd>().ok()).ok_or(USAGE);
     while let Some(a) = it.next() {
@@ -453,16 +458,14 @@ fn parse_args(args: &[std::ffi::OsString]) -> Result<(Source, RawFd, Option<RawF
         match a.to_str() {
             Some("--plan") => plan = Some(PathBuf::from(v)),
             Some("--zone") => zone = Some(v.to_str().ok_or(USAGE)?.to_string()),
-            Some("--python") => python = Some(v.to_string_lossy().into_owned()),
-            Some("--code-dir") => code = Some(PathBuf::from(v)),
             Some("--lock-fd") => lock = Some(fd(v)?),
             Some("--notify-fd") => notify = Some(fd(v)?),
             _ => return Err(USAGE.into()),
         }
     }
-    let source = match (plan, zone, python, code) {
-        (Some(p), None, None, None) => Source::File(p),
-        (None, Some(name), Some(python), Some(code_dir)) => Source::Zone { name, python, code_dir },
+    let source = match (plan, zone) {
+        (Some(p), None) => Source::File(p),
+        (None, Some(name)) => Source::Zone { name },
         _ => return Err(USAGE.into()),
     };
     Ok((source, lock.ok_or(USAGE)?, notify))
@@ -480,8 +483,8 @@ pub fn main(args: &[std::ffi::OsString]) -> u8 {
 }
 
 /// `appzones serve NAME` in Rust (cli.rs): the lock taken, the plan made and run here.
-pub fn serve_zone(host: &crate::plan::Host, name: &str, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
-    serve_from(Source::Zone { name: name.into(), python: host.python.clone(), code_dir: host.here.clone() }, lock_fd, notify_fd)
+pub fn serve_zone(name: &str, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
+    serve_from(Source::Zone { name: name.into() }, lock_fd, notify_fd)
 }
 
 fn serve_from(source: Source, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
@@ -508,10 +511,10 @@ fn serve_from(source: Source, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
     }
     let plan_path = match source {
         Source::File(p) => p,
-        Source::Zone { name, python, code_dir } => {
+        Source::Zone { name } => {
             // the first part of `appzones serve`, here (plan.rs): a stop while it runs is
             // not a failure, as before any helper started
-            let host = crate::plan::Host::new(code_dir, python);
+            let host = crate::plan::Host::new(crate::plan::exe_dir());
             let made = crate::plan::make_plan(&host, &name);
             if stop() != 0 {
                 say(&format!("[zone] {name}: stopped while starting"));
@@ -801,6 +804,55 @@ mod tests {
     }
 
     #[test]
+    fn wayland_socket() {
+        let t = std::env::temp_dir().join(format!("az-wl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(&t).unwrap();
+        let t = std::fs::canonicalize(&t).unwrap();
+        let _l = std::os::unix::net::UnixListener::bind(t.join("wayland-5")).unwrap();
+        std::fs::write(t.join("plain"), "").unwrap();
+        let d = |x: &str| Some(std::ffi::OsString::from(x));
+        let want = Some(t.join("wayland-5").to_string_lossy().into_owned());
+        assert_eq!(host_wayland_socket_for(d("wayland-5"), &t), want);
+        assert_eq!(host_wayland_socket_for(d(&t.join("wayland-5").to_string_lossy()), &t), want); // a path too
+        assert_eq!(host_wayland_socket_for(d("wayland-404"), &t), None);
+        assert_eq!(host_wayland_socket_for(d("plain"), &t), None); // not a socket
+        assert_eq!(host_wayland_socket_for(None, &t), None);
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn apps_running_skips_the_helpers() {
+        // bwrap (1), zone-init and its helpers are not apps; no reply: not known
+        let t = std::env::temp_dir().join(format!("az-apps-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(&t).unwrap();
+        assert_eq!(apps_running(&t), None, "nothing listening");
+        let l = std::os::unix::net::UnixListener::bind(t.join("agent.sock")).unwrap();
+        let replies = [
+            r#"{"ok": true, "procs": [[1, "bwrap"], [2, "zone-init"], [5, "dbus-daemon"]], "init": 2, "helpers": [5]}"#,
+            r#"{"ok": true, "procs": [[1, "bwrap"], [2, "zone-init"], [7, "firefox"]], "init": 2}"#,
+            "",
+        ];
+        let server = std::thread::spawn(move || {
+            for r in replies {
+                let (mut c, _) = l.accept().unwrap();
+                let mut line = String::new();
+                BufReader::new(c.try_clone().unwrap()).read_line(&mut line).unwrap();
+                assert!(line.contains("\"ps\""), "{line}");
+                if !r.is_empty() {
+                    c.write_all(format!("{r}\n").as_bytes()).unwrap();
+                }
+            }
+        });
+        assert_eq!(apps_running(&t), Some(false));
+        assert_eq!(apps_running(&t), Some(true));
+        assert_eq!(apps_running(&t), None, "end of file without a reply: not idle");
+        server.join().unwrap();
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
     fn links() {
         for (url, ok) in [("https://example.com/a", true), ("http://x", true), ("file:///etc/passwd", false),
                           ("https://x\nrm", false), ("https://x\0", false), ("javascript:alert(1)", false)] {
@@ -823,10 +875,9 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
         let o = |a: &[&str]| a.iter().map(std::ffi::OsString::from).collect::<Vec<_>>();
         assert!(parse_args(&o(&["--plan", "/p", "--lock-fd", "4"])).is_ok());
-        assert!(parse_args(&o(&["--zone", "z", "--python", "/py", "--code-dir", "/c", "--lock-fd", "4"])).is_ok());
-        assert!(parse_args(&o(&["--zone", "z", "--lock-fd", "4"])).is_err(), "a zone without python and code dir");
-        assert!(parse_args(&o(&["--zone", "z", "--plan", "/p", "--python", "/py", "--code-dir", "/c", "--lock-fd", "4"]))
-                    .is_err(), "both sources");
+        assert!(parse_args(&o(&["--zone", "z", "--lock-fd", "4"])).is_ok());
+        assert!(parse_args(&o(&["--zone", "z", "--plan", "/p", "--lock-fd", "4"])).is_err(), "both sources");
+        assert!(parse_args(&o(&["--zone", "z", "--python", "/py", "--lock-fd", "4"])).is_err(), "no Python any more");
         assert_eq!(parse_args(&o(&["--plan", "/p", "--lock-fd", "4", "--notify-fd", "6"])).unwrap().2, Some(6));
         assert!(parse_args(&o(&["--plan", "/p"])).is_err(), "no lock");
         assert!(parse_args(&o(&["--plan", "/p", "--lock-fd", "x"])).is_err());

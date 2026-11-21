@@ -474,6 +474,27 @@ mod tests {
     }
 
     #[test]
+    fn mnt_dir_as_appzones_chooses() {
+        // ~/.local/share/appzones; the pre-0.6 ~/.local/share/zones only while the new one is not
+        // there (a symlink counts as there: chosen, and then refused by open_owned)
+        let t = std::env::temp_dir().join(format!("az-mnt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(&t).unwrap();
+        let c = Caller { uid: 0, gid: 0, name: b"alice".to_vec(), home: t.as_os_str().as_bytes().to_vec() };
+        let (new, old) = (t.join(".local/share/appzones"), t.join(".local/share/zones"));
+        let mnt = |base: &std::path::Path| [base.as_os_str().as_bytes(), b"/ta/mnt"].concat();
+        assert_eq!(c.mnt_dir("ta"), mnt(&new));
+        std::fs::create_dir_all(&old).unwrap();
+        assert_eq!(c.mnt_dir("ta"), mnt(&old));
+        std::os::unix::fs::symlink(&old, &new).unwrap();
+        assert_eq!(c.mnt_dir("ta"), mnt(&new));
+        std::fs::remove_file(&new).unwrap();
+        std::fs::create_dir(&new).unwrap();
+        assert_eq!(c.mnt_dir("ta"), mnt(&new));
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
     fn mountinfo_escapes() {
         assert_eq!(unescape(br"/home/u/my\040dir"), b"/home/u/my dir");
         assert_eq!(unescape(br"/a\134b"), b"/a\\b");

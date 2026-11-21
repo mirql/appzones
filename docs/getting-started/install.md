@@ -8,8 +8,8 @@
 | **Fedora 45** (preview) | the same, with SELinux enforcing | [the RPM, or `make install`](#fedora-preview) |
 | **openSUSE Leap 16** (preview) | the same, with SELinux enforcing; internet zones need one SELinux setting | [`make install`](#opensuse-preview) |
 
-Other distributions with systemd or another init, Python 3.11 and the same
-tools should work like these; they are not tested yet.
+Other x86_64 distributions with systemd or another init, glibc 2.17 or newer and the
+same tools should work like these; they are not tested yet.
 
 ## NixOS
 
@@ -39,7 +39,7 @@ Run `appzones check`.
 Tested on Ubuntu 24.04 and Debian 12, in VMs, for every change
 (`just test-distros`): command-line zones, and on Ubuntu a Wayland app from a
 zone under headless sway (its own security context: no screencopy, no
-clipboard snooping). Ubuntu 22.04 is too old (Python 3.10).
+clipboard snooping). Ubuntu 22.04 has no passt.
 
 **The package.** Each [release](https://github.com/mirql/appzones/releases/latest)
 has a `.deb` for amd64 (built on Debian 12; tested on Debian 12 and Ubuntu 24.04).
@@ -57,43 +57,42 @@ the mount helper for members of the group `appzones`, and on Ubuntu 23.10 and
 later the AppArmor profile (see below). apt also installs the recommended
 `xdg-dbus-proxy` and `dbus` (the desktop's parts); on a server,
 `--no-install-recommends` leaves them out. Remove it with `sudo apt purge
-appzones`. Then go on with step 3. The package has Python and the C
-zone-wayland, not the Rust helpers: for those, install from a checkout. To
-build it yourself: `nix build .#deb`, or `sh contrib/debian/build-deb.sh OUTDIR`
-on Debian 12.
+appzones`. Then go on with step 3. The package holds appzones' one binary and its
+mount helper, built to run on glibc 2.17 and later. To build it yourself:
+`nix build .#deb`, or `sh contrib/debian/build-deb.sh OUTDIR` (with cargo).
 
-**Or from a checkout** (for the Rust helpers, or any commit):
+**Or from a checkout** (for any commit):
 
-**1. The packages.**
+**1. The packages.** appzones is written in Rust; building it needs Rust 1.85 or
+newer. Debian 12 and Ubuntu 24.04 ship older ones, so take it from
+[rustup](https://rustup.rs) (as your user, not root).
 
 ```bash
-sudo apt install python3 bubblewrap passt nftables iproute2 git make # enough for a server
-sudo apt install xdg-dbus-proxy dbus gcc pkg-config libwayland-dev   # for a desktop
+sudo apt install bubblewrap passt nftables iproute2 git make gcc   # enough for a server
+sudo apt install xdg-dbus-proxy dbus                               # for a desktop
 ```
 
 **2. Install from a checkout.**
 
 ```bash
 git clone https://github.com/mirql/appzones && cd appzones
-make
-sudo make install
+make                 # as your user: cargo builds build/appzones-helper and build/appzones-mount-helper
+sudo make install    # installs what make built
 ```
 
-The second line is the desktop's part: `make` builds `zone-wayland` (each
-zone's own Wayland socket) when the build tools are there, `xdg-dbus-proxy`
-gives a zone the filtered session bus (portals, notifications, the tray), and
-`dbus-daemon` an app with `bus = "zone"` its own bus. Without `zone-wayland`
-or `xdg-dbus-proxy` a zone starts without that part and says so in its log
-(`appzones logs ZONE`). An app with `bus = "zone"` needs `dbus-daemon` (the
-`dbus` package), also on a server: without it that app does not start, and
-appzones says what is missing. Otherwise a server or a command-line zone needs
-only the first line.
+The second line is the desktop's part: `xdg-dbus-proxy` gives a zone the
+filtered session bus (portals, notifications, the tray), and `dbus-daemon` an
+app with `bus = "zone"` its own bus. Without `xdg-dbus-proxy` a zone starts
+without the bus and says so in its log (`appzones logs ZONE`). An app with
+`bus = "zone"` needs `dbus-daemon` (the `dbus` package), also on a server:
+without it that app does not start, and appzones says what is missing.
+Otherwise a server or a command-line zone needs only the first line. (Each
+zone's own Wayland socket needs nothing more: zone-wayland is part of the binary.)
 `sudo make install` puts:
 
-- the code in `/usr/local/lib/appzones` and the `appzones` command in
-  `/usr/local/bin`. It must be under `/usr`: a zone sees the host's `/usr`,
-  not your home or `/opt`, and appzones runs a small part of itself inside
-  each zone;
+- the binary (`appzones-helper`) and the mount helper in `/usr/local/libexec/appzones`,
+  and the `appzones` command in `/usr/local/bin`. Any `PREFIX` works: each zone
+  gets a read-only copy of the binary, and nothing else of appzones;
 - the systemd user units (`appzones@.service` and the autostart unit) in
   `/usr/local/lib/systemd/user`, where there is systemd;
 - a sudo rule for exactly the mount helper of `appzones mount`
@@ -106,7 +105,9 @@ only the first line.
 
 | Option | Default | |
 |---|---|---|
-| `PREFIX` | `/usr/local` | anywhere under `/usr` |
+| `PREFIX` | `/usr/local` | anywhere; outside `/usr` the sudo rule is written only when that directory and everything above it belong to root alone |
+| `LIBDIR` | `PREFIX/libexec/appzones` | where the two binaries go (the .deb and the AUR package: `/usr/lib/appzones`) |
+| `HELPER_BIN`, `MOUNT_HELPER_BIN` | built by `make` | the two binaries, built elsewhere (`nix build .#portable`: for glibc 2.17 and later) |
 | `MOUNT_USERS` | the user who ran `sudo`, else `%users` | who may run the mount helper: a user, or `%group` |
 | `SUDOERS` | `yes` | `no`: no sudo rule (`appzones mount` then does not work) |
 | `APPARMOR` | `auto` (where the kernel restricts user namespaces) | `yes`, `no` |
@@ -171,25 +172,8 @@ process manager ([Zones without systemd](../without-systemd.md)). For
 `appzones mount`, run `sudo mount --make-rshared /` at every boot, before zones
 start (systemd does this itself).
 
-**The Rust helpers (optional).** Everything that runs inside a zone (zone-init,
-and the part of the `xdg-open` shim that hands links out), zone-wayland, and the
-mount helper (the one step of `appzones mount` that runs as root, its own small
-executable) also exist in Rust (`design/rust.md`). With them a zone gets a
-read-only copy of the helper and no Python of the host's, so appzones can be
-installed outside `/usr` too
-(`make install HELPER=rust PREFIX=/opt/appzones`; the sudo rule for `appzones
-mount` is written only when that directory and everything above it belong to
-root alone).
-To use them: `make` with cargo and rustc 1.85 or newer, then `sudo make install
-HELPER=rust` (or `HELPER_BIN=PATH` and `MOUNT_HELPER_BIN=PATH` for helpers
-built elsewhere; without a Rust mount helper, the Python one is installed); on
-Nix, the package `appzones-rust`. The `appzones` command then runs the Rust
-helper for what it replaces; the mount helper keeps its path, so the sudo rule
-stays the same.
-
 **Update and remove.** In the checkout: `git pull && make && sudo make
-install` (with the same options as the first time, such as `HELPER=rust` or
-`PREFIX`), then `appzones restart ZONE` for running zones. `sudo make uninstall`
+install` (with the same options as the first time, such as `PREFIX`), then `appzones restart ZONE` for running zones. `sudo make uninstall`
 removes everything `make install` put there; your zones' homes and settings
 stay in `~/.local/share/appzones` and `~/.config/appzones`.
 
@@ -199,7 +183,7 @@ Tested on Arch with `just test-arch` (the package built from the checkout,
 then the same test as Ubuntu and Debian, in a VM): no AppArmor profile is
 needed, and sway 1.11 or later names a zone's windows also when the zone
 was started without systemd. From 0.8.2 on the package needs
-only what a server needs; for a desktop also install `wayland`,
+only what a server needs; for a desktop also install
 `xdg-dbus-proxy` and `dbus` (its optional dependencies). The package is on the AUR,
 [`appzones`](https://aur.archlinux.org/packages/appzones) (its `PKGBUILD` is
 kept in `contrib/arch/`):
@@ -211,7 +195,7 @@ systemctl --user daemon-reload
 sudo gpasswd -a "$USER" appzones     # for `appzones mount`; then log in again
 ```
 
-The package puts appzones under `/usr/lib/appzones`, the command in
+The package puts appzones' binaries under `/usr/lib/appzones`, the command in
 `/usr/bin`, the systemd user units in `/usr/lib/systemd/user`, and a sudo rule
 for the mount helper for the group `appzones` (created by sysusers), so only
 the users you add to it may use `appzones mount`. `pacman -R appzones` removes
@@ -237,8 +221,8 @@ sudo rule for exactly the mount helper for the group `appzones`. `sudo dnf
 remove appzones` removes it. Or from a checkout:
 
 ```bash
-sudo dnf install python3 bubblewrap passt nftables iproute git make   # enough for a server
-sudo dnf install xdg-dbus-proxy dbus-daemon gcc pkgconf-pkg-config wayland-devel  # for a desktop
+sudo dnf install bubblewrap passt nftables iproute git make gcc cargo   # enough for a server
+sudo dnf install xdg-dbus-proxy dbus-daemon                            # for a desktop
 git clone https://github.com/mirql/appzones && cd appzones
 make && sudo make install
 ```
@@ -253,8 +237,8 @@ checkout, then the same test as Ubuntu and Debian, in a VM), with SELinux
 enforcing. There is no package yet.
 
 ```bash
-sudo zypper install python3 bubblewrap passt nftables iproute2 git make   # enough for a server
-sudo zypper install xdg-dbus-proxy dbus-1-daemon gcc pkgconf-pkg-config wayland-devel  # for a desktop
+sudo zypper install bubblewrap passt nftables iproute2 git make gcc cargo   # enough for a server
+sudo zypper install xdg-dbus-proxy dbus-1-daemon                           # for a desktop
 git clone https://github.com/mirql/appzones && cd appzones
 make && sudo make install
 ```
@@ -275,8 +259,9 @@ Zones with `network = "none"` or `"host"` work without it. Then
 
 ## Requirements
 
-- x86_64 Linux: NixOS, or Ubuntu 24.04, Debian 12, Arch (preview, above).
-  Python 3.11 or newer.
+- x86_64 Linux: NixOS, or Ubuntu 24.04, Debian 12, Arch, Fedora, openSUSE
+  (preview, above). The release packages need glibc 2.17 or newer; building
+  needs Rust 1.85 or newer.
 - For desktop apps, a Wayland compositor with `wp_security_context_v1`
   (Hyprland, sway 1.9 and later, other wlroots 0.17+ compositors, KDE Plasma
   6's KWin): every zone gets its own security context. What the compositor

@@ -273,6 +273,27 @@ impl Cli {
         proc_argv(pid).and_then(|(a, c)| server_command(&a, &c, &self.host.here)).is_some_and(|(_, z)| z == name)
     }
 
+    /// $XDG_RUNTIME_DIR/appzones/.state.lock: servers hold it shared, the move of the
+    /// pre-0.6 state directory takes it exclusively (close-on-exec: never in a zone).
+    fn state_lock(&self) -> Option<std::fs::File> {
+        self.mkdir_rt();
+        open_lock(&self.rt().join(".state.lock")).ok()
+    }
+
+    /// The zones whose lock file a process of this user holds open (a server runs them, or
+    /// a client is starting one): by the processes' descriptors, never by taking the lock,
+    /// which would make a server starting in that instant give up.
+    fn locked_zones(&self) -> Vec<String> {
+        let Ok(it) = std::fs::read_dir(self.rt()) else { return vec![] };
+        it.filter_map(|e| e.ok()).filter_map(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            let zone = n.strip_suffix(".lock").filter(|z| zone_name_ok(z))?.to_string();
+            let m = std::fs::symlink_metadata(e.path()).ok().filter(|m| m.is_file())?;
+            let lock = (m.dev(), m.ino());
+            my_pids().iter().any(|(p, _)| Self::holds(p, lock)).then_some(zone)
+        }).collect()
+    }
+
     /// client.server_pids.
     fn server_pids(&self, name: &str) -> Vec<i32> {
         let lock = self.lock_id(name);
@@ -1224,7 +1245,12 @@ impl Cli {
     }
 
     fn propagation_shared(path: &Path) -> Option<bool> {
-        let text = std::fs::read_to_string("/proc/self/mountinfo").ok()?;
+        Self::propagation_shared_in(path, Path::new("/proc/self/mountinfo"))
+    }
+
+    /// Whether the mount holding PATH (by the mount table INFO) is shared: new mounts reach a running zone.
+    fn propagation_shared_in(path: &Path, info: &Path) -> Option<bool> {
+        let text = std::fs::read_to_string(info).ok()?;
         let p = sh(path);
         let (mut best, mut shared) = (String::new(), None);
         for line in text.lines() {
@@ -1428,7 +1454,23 @@ impl Cli {
             }
         }
         let lock = self.take_lock(name, lock);
-        crate::serve::serve_zone(&self.host, name, lock, notify) as i32
+        // held as long as this server runs (shared: other servers too), taken before the
+        // server chooses its state directory: the pre-0.6 move (migrate_state) waits for it
+        // (never without it: a server that could not take it does not start)
+        let state = self.state_lock().unwrap_or_else(|| die(&format!("{}: cannot open it", sh(&self.rt().join(".state.lock")))));
+        loop {
+            // Safety: flock on our own descriptor; blocking, as the move holds it only briefly.
+            if unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&state), libc::LOCK_SH) } == 0 {
+                break;
+            }
+            let e = std::io::Error::last_os_error();
+            if e.kind() != std::io::ErrorKind::Interrupted {
+                die(&format!("{}: {e}", sh(&self.rt().join(".state.lock"))));
+            }
+        }
+        let rc = crate::serve::serve_zone(name, lock, notify) as i32;
+        drop(state); // (held to here: the server's whole life)
+        rc
     }
 
     // ── upgrading from before 0.6 ────────────────────────────────────────
@@ -1438,7 +1480,7 @@ impl Cli {
             warn(&format!("reading {}: since 0.6 it belongs in ~/.config/appzones/zones.toml (mkdir -p ~/.config/appzones \
                            && mv ~/.config/zones/zones.toml ~/.config/appzones/)", self.config_path()));
         }
-        let running: Vec<String> = my_pids().into_iter().filter_map(|(p, _)| proc_argv(&p))
+        let mut running: Vec<String> = my_pids().into_iter().filter_map(|(p, _)| proc_argv(&p))
             .filter(|(a, c)| server_command(a, c, &self.host.here).is_some()).map(|(a, _)| a.join(" ")).collect();
         if running.iter().any(|r| r.contains("/libexec/zones/")) {
             warn("zones started by appzones before 0.6 are running and this version does not see them: `appzones stop \
@@ -1456,6 +1498,14 @@ impl Cli {
             }
             return;
         }
+        // no server may start until the move is done (they take it shared first), and none
+        // of this version runs when it can be had
+        let state_lock = self.state_lock();
+        if !state_lock.as_ref().is_some_and(|f| flock_nb(std::os::fd::AsRawFd::as_raw_fd(f))) {
+            running.push("a server (.state.lock)".into());
+        }
+        // and every server since the lock (0.7), whatever it is written in: a zone lock held
+        running.extend(self.locked_zones());
         let mounted = std::fs::read_to_string("/proc/self/mountinfo").map(|t| t.lines().filter_map(|l| l.split_whitespace().nth(4))
             .any(|m| m == sh(&legacy) || m.starts_with(&format!("{}/", sh(&legacy))))).unwrap_or(true);
         if !running.is_empty() || mounted {
@@ -1529,9 +1579,7 @@ pub fn main(args: &[OsString]) -> i32 {
         out(&format!("appzones {} (config release {})", env!("CARGO_PKG_VERSION"), config::RELEASE));
         return 0;
     }
-    let here = std::env::current_exe().ok().and_then(|e| std::fs::canonicalize(e).ok()).and_then(|e| e.parent().map(Path::to_path_buf))
-        .unwrap_or_else(|| PathBuf::from("/"));
-    let mut cli = Cli::new(Host::new(here, String::new()));
+    let mut cli = Cli::new(Host::new(crate::plan::exe_dir()));
     let (cmd, rest) = (argv[0].as_str(), &argv[1..]);
     if cmd == "_autostart" || (COMMANDS.contains(&cmd) && cmd != "active" && cmd != "serve") {
         cli.migrate_state();
@@ -1549,6 +1597,7 @@ pub fn main(args: &[OsString]) -> i32 {
             crate::netsetup::main(&cli.host, &rest[0], &rest[1], &rest[2], rest[i + 1..].to_vec())
         }
         "_autostart" => cli.autostart(),
+        "_sway-marks" => crate::active::sway_hook(),
         "_link" => {
             if rest.len() != 2 {
                 die("usage: appzones _link ZONE URL");
@@ -1708,5 +1757,91 @@ impl Cli {
             std::process::exit(code);
         }
         0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::fd::AsRawFd;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let t = std::env::temp_dir().join(format!("az-cli-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(&t).unwrap();
+        std::fs::canonicalize(&t).unwrap()
+    }
+
+    #[test]
+    fn servers_from_before_the_lock() {
+        // only the process's own script counts; an appzones installed in the store counts too
+        let here = tmp("server-command");
+        std::fs::write(here.join("zone.py"), "").unwrap();
+        let me = sh(&here.join("zone.py"));
+        let a = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let pair = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
+        for (argv, want) in [
+            (a(&["python3", "-B", &me, "serve", "aa"]), pair("serve", "aa")),
+            (a(&["python3", &me, "_supervise", "bb", "--x"]), pair("_supervise", "bb")),
+            (a(&["python3", "-c", "x", &me, "serve", "aa"]), None), // a script after -c CODE is not ours
+            (a(&["python3", "/home/u/tools/zone.py", "serve", "aa"]), None), // another zone.py
+            (a(&["python3", &me, "run", "--wait", "td", "--", "python3", &me, "serve", "td"]), None),
+            (a(&["python3", "/nix/store/abc-appzones-0.6.0/libexec/appzones/zone.py", "_supervise", "cc"]),
+             pair("_supervise", "cc")),
+            (a(&["python3", "/nix/store/abc-x/libexec/other/zone.py", "serve", "cc"]), None),
+            (a(&["python3", &me, "serve"]), None),
+            (a(&["python3", "-X", "dev", &me, "serve", "aa"]), pair("serve", "aa")), // an option with a value
+            (a(&["python3", "-m", "x", &me, "serve", "aa"]), None),
+        ] {
+            assert_eq!(server_command(&argv, "/", &here), want, "{argv:?}");
+        }
+        // a relative path, from the process's cwd
+        assert_eq!(server_command(&a(&["python3", "zone.py", "serve", "aa"]), &sh(&here), &here), pair("serve", "aa"));
+        let _ = std::fs::remove_dir_all(&here);
+    }
+
+    #[test]
+    fn mount_propagation() {
+        let t = tmp("mountinfo");
+        let info = t.join("mountinfo");
+        std::fs::write(&info, "22 1 0:21 / / rw,relatime shared:1 - ext4 /dev/vda rw\n\
+            30 22 0:25 / /home rw,relatime - ext4 /dev/vdb rw\n\
+            31 30 0:26 / /home/alice/my\\040dir rw shared:9 - ext4 /dev/vdc rw\n\
+            32 30 0:27 / /home/alice/.local/share/appzones/z/mnt/d rw shared:12 - ext4 /dev/vdd rw\n").unwrap();
+        let p = |x: &str| Cli::propagation_shared_in(Path::new(x), &info);
+        assert_eq!(p("/usr/lib"), Some(true)); // under /, shared
+        assert_eq!(p("/home/alice/.local/share/appzones/z/mnt/d"), Some(true));
+        assert_eq!(p("/home/alice/.local/share/appzones/z/mnt"), Some(false)); // the private /home
+        assert_eq!(p("/home/alice/my dir/x"), Some(true));
+        assert_eq!(p("/homeX/a"), Some(true)); // /homeX is not under /home
+        assert_eq!(Cli::propagation_shared_in(Path::new("/x"), &t.join("missing")), None);
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn stdio_fds() {
+        let t = tmp("stdio");
+        let mut fds = [0; 2];
+        // Safety: pipe into a local array.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        let f = std::fs::File::create(t.join("f")).unwrap();
+        let d = std::fs::File::open(&t).unwrap();
+        let null = std::fs::File::open("/dev/null").unwrap();
+        let (a, _b) = std::os::unix::net::UnixStream::pair().unwrap();
+        for fd in [fds[0], fds[1], f.as_raw_fd(), null.as_raw_fd()] {
+            assert!(stdio_fd_ok(fd), "{fd}");
+        }
+        assert!(!stdio_fd_ok(d.as_raw_fd()), "a directory");
+        assert!(!stdio_fd_ok(a.as_raw_fd()), "a socket");
+        // --notify-fd: open for writing; the read end is refused, and no such fd
+        assert!(notify_fd_ok(fds[1]));
+        assert!(!notify_fd_ok(fds[0]));
+        assert!(!notify_fd_ok(i32::MAX));
+        // Safety: closing our own pipe.
+        unsafe {
+            libc::close(fds[0]);
+            libc::close(fds[1]);
+        }
+        let _ = std::fs::remove_dir_all(&t);
     }
 }

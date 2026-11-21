@@ -64,11 +64,21 @@ fn left(end: Instant) -> Option<Duration> {
     (!d.is_zero()).then_some(d)
 }
 
-fn addrs(server: &str) -> Vec<SocketAddr> {
+/// Where queries go, and how long they may take (the constants, but in a test).
+#[derive(Clone, Copy)]
+struct Limits {
+    port: u16,
+    deadline: Duration,
+    udp_timeout: Duration,
+}
+
+const LIMITS: Limits = Limits { port: PORT, deadline: DEADLINE, udp_timeout: UDP_TIMEOUT };
+
+fn addrs(server: &str, port: u16) -> Vec<SocketAddr> {
     if let Ok(ip) = server.parse::<IpAddr>() {
-        return vec![SocketAddr::new(ip, PORT)];
+        return vec![SocketAddr::new(ip, port)];
     }
-    (server, PORT).to_socket_addrs().map(|a| a.collect()).unwrap_or_default()
+    (server, port).to_socket_addrs().map(|a| a.collect()).unwrap_or_default()
 }
 
 /// The time left before END, at most TCP_TIMEOUT, set on S for its next call; None when
@@ -112,14 +122,14 @@ fn ask_tcp(addr: SocketAddr, msg: &[u8], end: Instant) -> Option<Vec<u8>> {
 
 /// MSG to SERVER over UDP, then over TCP when the answer was truncated; the answer, or
 /// None. Only an answer with the query's id counts; nothing goes on past END.
-fn ask(server: &str, msg: &[u8], end: Instant) -> Option<Vec<u8>> {
-    for addr in addrs(server) {
+fn ask(server: &str, msg: &[u8], end: Instant, lim: Limits) -> Option<Vec<u8>> {
+    for addr in addrs(server, lim.port) {
         let bind: SocketAddr = if addr.is_ipv4() { "0.0.0.0:0".parse().ok()? } else { "[::]:0".parse().ok()? };
         let Ok(s) = UdpSocket::bind(bind) else { continue };
         if s.connect(addr).is_err() || s.send(msg).is_err() {
             continue; // only the server's own replies come in
         }
-        let udp_end = end.min(Instant::now() + UDP_TIMEOUT);
+        let udp_end = end.min(Instant::now() + lim.udp_timeout);
         let mut buf = vec![0u8; 65535];
         let ans = loop {
             let Some(t) = left(udp_end) else { break None };
@@ -143,13 +153,17 @@ fn ask(server: &str, msg: &[u8], end: Instant) -> Option<Vec<u8>> {
 
 /// The answer from the first server that gives one (two rounds), within DEADLINE.
 pub fn resolve(servers: &[String], msg: &[u8]) -> Option<Vec<u8>> {
-    let end = Instant::now() + DEADLINE;
+    resolve_with(servers, msg, LIMITS)
+}
+
+fn resolve_with(servers: &[String], msg: &[u8], lim: Limits) -> Option<Vec<u8>> {
+    let end = Instant::now() + lim.deadline;
     for _ in 0..2 {
         for server in servers {
             if Instant::now() >= end {
                 return None;
             }
-            if let Some(ans) = ask(server, msg, end) {
+            if let Some(ans) = ask(server, msg, end, lim) {
                 return Some(ans);
             }
         }
@@ -236,6 +250,77 @@ mod tests {
         assert!(!is_query(&query(1, 0x01, 0)), "no question");
         assert!(!is_query(&[0u8; 11]), "shorter than a header");
         assert!(!is_query(&vec![0u8; MAX_QUERY + 1]));
+    }
+
+    /// Q answered with N A records (a response; TC: truncated).
+    fn answer(q: &[u8], n: u16, tc: bool) -> Vec<u8> {
+        let qend = 12 + q[12..].iter().position(|b| *b == 0).unwrap() + 1 + 4;
+        let mut a = q[..2].to_vec();
+        a.extend_from_slice(&(0x8180u16 | if tc { 0x0200 } else { 0 }).to_be_bytes());
+        for x in [1u16, n, 0, 0] {
+            a.extend_from_slice(&x.to_be_bytes());
+        }
+        a.extend_from_slice(&q[12..qend]);
+        for i in 0..n {
+            a.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, (i % 250) as u8]);
+        }
+        a
+    }
+
+    fn named(id: u16, name: &str) -> Vec<u8> {
+        let mut q = id.to_be_bytes().to_vec();
+        q.extend_from_slice(&[1, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
+        for part in name.split('.') {
+            q.push(part.len() as u8);
+            q.extend_from_slice(part.as_bytes());
+        }
+        q.extend_from_slice(&[0, 0, 1, 0, 1]);
+        q
+    }
+
+    #[test]
+    fn resolver() {
+        // a fake resolver: UDP truncates big answers, TCP gives them whole; a wrong id first
+        let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = udp.local_addr().unwrap().port();
+        let tcp = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+        let count = |q: &[u8]| if q.windows(3).any(|w| w == b"big") { 200 } else { 2 };
+        thread::spawn(move || loop {
+            let mut buf = [0u8; 4096];
+            let Ok((n, from)) = udp.recv_from(&mut buf) else { return };
+            let q = buf[..n].to_vec();
+            let mut wrong = answer(&q, 1, false);
+            wrong[..2].copy_from_slice(&[0xff, 0xff]); // someone else's id: ignored
+            let _ = udp.send_to(&wrong, from);
+            let n = count(&q);
+            let _ = udp.send_to(&if n > 20 { answer(&q, 0, true) } else { answer(&q, n, false) }, from);
+        });
+        thread::spawn(move || {
+            for c in tcp.incoming() {
+                let Ok(mut c) = c else { return };
+                let mut head = [0u8; 2];
+                c.read_exact(&mut head).unwrap();
+                let mut q = vec![0u8; u16::from_be_bytes(head) as usize];
+                c.read_exact(&mut q).unwrap();
+                let a = answer(&q, count(&q), false);
+                c.write_all(&(a.len() as u16).to_be_bytes()).unwrap();
+                c.write_all(&a).unwrap();
+            }
+        });
+        let lim = Limits { port, ..LIMITS };
+        let local = vec!["127.0.0.1".to_string()];
+        let r = resolve_with(&local, &named(0x1111, "example.com"), lim).unwrap();
+        assert_eq!((&r[..2], u16::from_be_bytes([r[6], r[7]])), (&[0x11u8, 0x11][..], 2));
+        let big = resolve_with(&local, &named(0x2222, "big.example"), lim).unwrap(); // whole over TCP
+        assert_eq!(u16::from_be_bytes([big[6], big[7]]), 200);
+        assert!(big.len() > 512);
+        // one query never takes longer than the deadline, also when nothing answers
+        let silent = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let lim = Limits { port: silent.local_addr().unwrap().port(), deadline: Duration::from_millis(600),
+                           udp_timeout: Duration::from_millis(250) };
+        let t0 = Instant::now();
+        assert!(resolve_with(&[local[0].clone(), local[0].clone()], &named(5, "example.com"), lim).is_none());
+        assert!(t0.elapsed() < Duration::from_millis(900), "{:?}", t0.elapsed());
     }
 
     #[test]

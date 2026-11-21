@@ -9,7 +9,6 @@ use std::io::Write;
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use crate::plan::{Host, PIN};
@@ -109,7 +108,12 @@ fn receive_pidfd(host: &Host, name: &str, timeout: f64) -> RawFd {
 /// Every PIN group replaced by --bind-fd/--ro-bind-fd on a descriptor opened and checked
 /// here: the policy runs on the object actually opened, and bwrap mounts that object.
 fn pin_binds(argv: Vec<String>, code_dir: std::ffi::OsString) -> Vec<String> {
-    let policy = crate::config::policy(code_dir);
+    pin_binds_by(argv, &crate::config::policy(code_dir)).unwrap_or_else(|e| die(&e))
+}
+
+/// Each PIN MODE RAW DEST in ARGV: RAW opened (O_PATH), checked on what was opened, and
+/// handed to bwrap as its descriptor; the error when one is refused.
+fn pin_binds_by(argv: Vec<String>, policy: &crate::policy::Policy) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < argv.len() {
@@ -121,14 +125,14 @@ fn pin_binds(argv: Vec<String>, code_dir: std::ffi::OsString) -> Vec<String> {
         let (mode, raw, dest) = (&argv[i + 1], &argv[i + 2], &argv[i + 3]);
         i += 4;
         let expanded = policy.expand(raw.as_bytes());
-        let c = CString::new(expanded).unwrap_or_else(|_| die(&format!("bind {raw}: a NUL byte; refusing to start the zone")));
+        let c = CString::new(expanded).map_err(|_| format!("bind {raw}: a NUL byte; refusing to start the zone"))?;
         // Safety: open a NUL-terminated path, O_PATH: nothing is read through it.
         let fd = unsafe { libc::open(c.as_ptr(), libc::O_PATH | libc::O_CLOEXEC) };
         if fd < 0 {
             let e = std::io::Error::last_os_error();
             let text = e.to_string();
             let msg = text.split(" (os error").next().unwrap_or(&text).to_string();
-            die(&format!("bind {raw}: {msg}; refusing to start the zone"));
+            return Err(format!("bind {raw}: {msg}; refusing to start the zone"));
         }
         // Safety: a descriptor we just opened.
         let file = unsafe { std::fs::File::from_raw_fd(fd) };
@@ -136,20 +140,20 @@ fn pin_binds(argv: Vec<String>, code_dir: std::ffi::OsString) -> Vec<String> {
             .map(|t| t.as_os_str().as_bytes().to_vec())
             .filter(|t| !t.ends_with(b" (deleted)") && t.starts_with(b"/"));
         let Some(real) = real else {
-            die(&format!("bind {raw}: was removed or replaced while the zone started; refusing to start the zone"))
+            return Err(format!("bind {raw}: was removed or replaced while the zone started; refusing to start the zone"));
         };
-        let meta = file.metadata().unwrap_or_else(|e| die(&format!("bind {raw}: {e}; refusing to start the zone")));
+        let meta = file.metadata().map_err(|e| format!("bind {raw}: {e}; refusing to start the zone"))?;
         let err = policy.policy_error(&real, raw.as_bytes())
             .or_else(|| crate::policy::Policy::kind_error(&meta, raw));
         if let Some(err) = err {
-            die(&format!("bind {err}; refusing to start the zone"));
+            return Err(format!("bind {err}; refusing to start the zone"));
         }
         let fd = file.into_raw_fd();
         inheritable(fd);
         out.extend([if mode == "rw" { "--bind-fd".to_string() } else { "--ro-bind-fd".to_string() }, fd.to_string(),
                     dest.clone()]);
     }
-    out
+    Ok(out)
 }
 
 pub fn main(host: &Host, rules: &str, info: &str, name: &str, argv: Vec<String>) -> ! {
@@ -208,5 +212,37 @@ pub fn main(host: &Host, rules: &str, info: &str, name: &str, argv: Vec<String>)
     die(&format!("{first}: {err}"))
 }
 
-#[allow(dead_code)]
-fn _p(_: &Path) {}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pins() {
+        // the last check, on the descriptor handed to bwrap
+        let t = std::env::temp_dir().join(format!("az-pin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        let h = t.join("home");
+        for d in [".ssh", "Docs/proj"] {
+            std::fs::create_dir_all(h.join(d)).unwrap();
+        }
+        std::fs::write(t.join("denied-paths"), "").unwrap();
+        let h = std::fs::canonicalize(&h).unwrap();
+        let policy = crate::policy::Policy { home: h.clone().into(), code_dir: t.join("code").into(),
+                                             denied_file: Some(t.join("denied-paths").into()), state_dir: None };
+        let a = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let out = pin_binds_by(a(&["bwrap", PIN, "ro", "~/Docs/proj", "/home/x/Docs/proj", "--", "true"]), &policy).unwrap();
+        assert_eq!(out[..2], a(&["bwrap", "--ro-bind-fd"]));
+        assert_eq!(std::fs::read_link(format!("/proc/self/fd/{}", out[2])).unwrap(), h.join("Docs/proj"));
+        assert_eq!(out[3..], a(&["/home/x/Docs/proj", "--", "true"]));
+        // Safety: the descriptor pin_binds opened for us.
+        unsafe { libc::close(out[2].parse().unwrap()) };
+        // a symlink swapped in after validation: refused on what was opened
+        std::fs::remove_dir(h.join("Docs/proj")).unwrap();
+        std::os::unix::fs::symlink(h.join(".ssh"), h.join("Docs/proj")).unwrap();
+        let err = pin_binds_by(a(&["bwrap", PIN, "rw", "~/Docs/proj", "/x"]), &policy).unwrap_err();
+        assert!(err.contains(".ssh") && err.ends_with("refusing to start the zone"), "{err}");
+        let err = pin_binds_by(a(&["bwrap", PIN, "rw", "~/Docs/gone", "/x"]), &policy).unwrap_err();
+        assert!(err.contains("No such file"), "{err}");
+        let _ = std::fs::remove_dir_all(&t);
+    }
+}

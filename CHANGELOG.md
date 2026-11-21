@@ -5,6 +5,14 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **One binary (rust-version, stage 4 of #157)**: appzones is Rust only. The Python
+  and the C zone-wayland are gone; the Nix package, `make install`, the .deb, the RPM
+  and the AUR package all install `appzones-helper` (with `appzones` running its
+  `cli`) and the mount helper. Building from a checkout needs Rust 1.85 or newer.
+  `make install` puts the binaries in `PREFIX/libexec/appzones` (any `PREFIX` works
+  now); the RPM in `/usr/libexec/appzones` (Fedora's pasta may run only files there),
+  the .deb and the AUR package still in `/usr/lib/appzones`. The sway hook is
+  `appzones _sway-marks` (contrib/sway/appzones-sway starts it).
 - **The commands in Rust (rust-version, stage 3 of #157)**: with the Rust helper,
   `appzones` is `appzones-helper cli`: every command (`run`, `shell`, `up`, `stop`,
   `list`, `mount`, `check`, ...) and the internal steps (`serve`, `_netsetup`, `_link`,

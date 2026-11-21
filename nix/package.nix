@@ -1,14 +1,14 @@
-# appzones: `appzones` (CLI and supervisor), `zone-init` (the agent inside a
-# zone) and `zone-wayland` (the security-context helper). The tools a zone
-# needs at run time (bwrap, pasta, nft, xdg-dbus-proxy, dbus-daemon for a
-# zone's own bus, ip) come from the store, so the package works whatever is
-# on the caller's PATH. The unit tests run at build time.
+# appzones: one Rust binary (helper/, built by nix/helper.nix, its tests with it): `appzones`
+# is its command line, and the same binary is the server, zone-init inside a zone and
+# zone-wayland; the root step of `appzones mount` is its own. The tools a zone needs at
+# run time (bwrap, pasta, nft, xdg-dbus-proxy, dbus-daemon for a zone's own bus, ip) come
+# from the store, so the package works whatever is on the caller's PATH.
 {
   lib,
   callPackage,
+  pkgsStatic,
   runCommand,
   makeWrapper,
-  python3,
   bubblewrap,
   passt,
   nftables,
@@ -16,19 +16,16 @@
   dbus,
   iproute2,
   procps,
-  # the Rust helpers (nix/helper.nix, design/rust.md): when given, appzones runs them
-  # instead of the Python and C ones it has replaced so far
-  helper ? null,
-  # the Rust root step of `appzones mount` (nix/helper.nix, bin = "appzones-mount-helper"):
-  # when given, it is the mount helper, at the same path, instead of the Python one
-  rustMountHelper ? null,
+  # static, with musl: it runs inside zones too, whatever their libraries
+  helper ? pkgsStatic.callPackage ./helper.nix { },
+  # linked against glibc: the caller's user and groups come from NSS
+  mountHelper ? callPackage ./helper.nix { bin = "appzones-mount-helper"; },
 }:
 
 let
-  # the package version; the config schema has its own release number
-  # (zonecfg.RELEASE, what a zones.toml can require)
+  # the package version (helper/Cargo.toml's too); the config schema has its own release
+  # number (config::RELEASE, what a zones.toml can require)
   version = "0.11.3";
-  zone-wayland = callPackage ../src/zone-wayland { };
   runtimePath = lib.makeBinPath [
     bubblewrap
     passt
@@ -37,21 +34,18 @@ let
     dbus
     iproute2
     procps
-    zone-wayland
   ];
-  src = ../src;
   examples = ../examples;
-  hyprland = ../contrib/hyprland; # only for the unit tests (zones.lua is a copy of appzones.lua)
   contrib = ../contrib; # service files for other process managers, in share/appzones/contrib
 in
+assert helper.version == version;
 runCommand "appzones-${version}"
   {
-    nativeBuildInputs = [
-      python3
-      makeWrapper
-    ];
+    nativeBuildInputs = [ makeWrapper ];
     passthru = {
-      inherit zone-wayland;
+      inherit helper;
+      mountHelperPackage = mountHelper;
+      # (the module's sudo rule, relative to the package)
       mountHelper = "libexec/appzones/appzones-mount-helper";
     };
     meta = {
@@ -65,65 +59,18 @@ runCommand "appzones-${version}"
   ''
     lib=$out/libexec/appzones
     mkdir -p $lib $out/bin $out/share/appzones
-    cp --no-preserve=mode ${src}/zone.py $lib/zone.py
-    # `appzones --version` prints the package version
-    substituteInPlace $lib/zone.py --replace-fail '@version@' '${version}'
-    cp -r --no-preserve=mode ${src}/appzones $lib/appzones
-    cp ${src}/zone_init.py $lib/zone_init.py
-    cp ${src}/zonecfg.py $lib/zonecfg.py
+    install -m 555 ${helper}/bin/appzones-helper $lib/appzones-helper
+    # the module's sudo rule names this file
+    install -m 555 ${mountHelper}/bin/appzones-mount-helper $lib/appzones-mount-helper
     cp ${examples}/zones.toml $out/share/appzones/zones.example.toml
     cp ${examples}/minimal.toml $out/share/appzones/zones.minimal.toml
     cp -r --no-preserve=mode ${contrib} $out/share/appzones/contrib
     chmod 755 $out/share/appzones/contrib/{runit,s6}/appzones-ZONE/{run,finish} $out/share/appzones/contrib/sway/appzones-sway
-
-    # The root helper of `appzones mount` (the module's sudo rule names this
-    # file): isolated Python (-I: no PYTHON* variables, no user site, not
-    # even its own directory on sys.path; it adds $lib itself).
-    ${
-      if rustMountHelper != null then
-        "install -m 555 ${rustMountHelper}/bin/appzones-mount-helper $lib/appzones-mount-helper"
-      else
-        ''
-          { echo "#!${python3}/bin/python3 -IB"; cat ${src}/zone_mount_helper.py; } > $lib/appzones-mount-helper
-          chmod 555 $lib/appzones-mount-helper
-        ''
-    }
-
-    # unit tests of the validator (and parts of the appzones modules), against a fake home and sysfs
-    work=$(mktemp -d)
-    mkdir -p $work/src $work/examples $work/contrib/hyprland $work/contrib/sway
-    cp ${src}/zonecfg.py ${src}/zone.py ${src}/zone_init.py ${src}/zone_mount_helper.py ${src}/test_zonecfg.py $work/src/
-    cp -r --no-preserve=mode ${src}/appzones $work/src/appzones
-    cp ${examples}/*.toml $work/examples/
-    cp ${hyprland}/*.lua $work/contrib/hyprland/
-    cp ${contrib}/sway/appzones-sway $work/contrib/sway/
-    (cd $work/src && HOME=$work python3 -B -m unittest -q test_zonecfg)
-    python3 -B -m py_compile $lib/zone.py $lib/zone_init.py $lib/appzones/*.py
-    ${lib.optionalString (
-      rustMountHelper == null
-    ) "python3 -B -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' $lib/appzones-mount-helper"}
-
-    # /run/current-system/sw/bin last: systemctl, journalctl, nix and hyprctl
-    # are the running system's.
-    ${lib.optionalString (
-      helper != null
-    ) "install -m 555 ${helper}/bin/appzones-helper $lib/appzones-helper"}
-    # with the Rust helper, `appzones` is the helper's own command line (no Python runs);
-    # else Python's zone.py
-    ${
-      if helper != null then
-        ''
-          makeWrapper $lib/appzones-helper $out/bin/appzones \
-            --add-flags cli --set APPZONES_HELPER rust \
-            --prefix PATH : ${runtimePath} \
-            --suffix PATH : /run/current-system/sw/bin
-        ''
-      else
-        ''
-          makeWrapper ${python3}/bin/python3 $out/bin/appzones \
-            --add-flags "-B $lib/zone.py" \
-            --prefix PATH : ${runtimePath} \
-            --suffix PATH : /run/current-system/sw/bin
-        ''
-    }
+    # /run/current-system/sw/bin last: systemctl, journalctl, nix and hyprctl are the
+    # running system's
+    makeWrapper $lib/appzones-helper $out/bin/appzones \
+      --add-flags cli \
+      --prefix PATH : ${runtimePath} \
+      --suffix PATH : /run/current-system/sw/bin
+    $out/bin/appzones --version | grep -qx 'appzones ${version} (config release [0-9]*)'
   ''
