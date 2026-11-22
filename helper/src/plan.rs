@@ -166,8 +166,12 @@ impl Host {
         let home = PathBuf::from(OsString::from_vec(config::home_real()));
         let user = std::env::var("USER").ok().filter(|u| !u.is_empty())
             .or_else(|| std::env::var("LOGNAME").ok().filter(|u| !u.is_empty())).unwrap_or_else(|| "user".into());
-        let host_rt = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(format!("/run/user/{uid}")));
+        // (macOS has no runtime directory of the user's: ~/Library/Caches, as $TMPDIR is
+        // emptied of what was not used for some days, a running zone's sockets included)
+        let default_rt = if cfg!(target_os = "linux") { PathBuf::from(format!("/run/user/{uid}")) }
+                         else { home.join("Library/Caches") };
+        let host_rt = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| cfg!(target_os = "linux") || !d.is_empty())
+            .map(PathBuf::from).unwrap_or(default_rt);
         let state = match config::env("STATE").filter(|s| !s.is_empty()) {
             Some(s) => PathBuf::from(s),
             None => {
@@ -973,20 +977,7 @@ fn bwrap_argv(host: &Host, policy: &Policy, z: &Zone, zdir: &Path, zrt: &Path, n
               extra_path: &[String]) -> Result<Vec<String>, String> {
     let st = |k: &str| z.get(k);
     let home_setting = st("home").as_str().unwrap_or("").to_string();
-    let home = if home_setting.is_empty() {
-        zdir.join("home")
-    } else {
-        // os.path.expanduser: the real home
-        match home_setting.strip_prefix('~') {
-            Some(rest) if rest.is_empty() || rest.starts_with('/') => PathBuf::from(format!("{}{rest}", sh(&host.home))),
-            _ => PathBuf::from(&home_setting),
-        }
-    };
-    if !home_setting.is_empty() {
-        if let Some(e) = policy.bind_error(home_setting.as_bytes()).filter(|e| !e.ends_with(": does not exist")) {
-            return Err(format!("home {e}"));
-        }
-    }
+    let home = zone_home(host, policy, z, zdir)?;
     std::fs::create_dir_all(&home).map_err(|e| format!("{}: {e}", sh(&home)))?;
     let bwrap = host.tool("bwrap")?;
     let zrt_in = host.zrt_in();
@@ -1206,6 +1197,148 @@ pub fn write_colours(host: &Host, cfg: &Config) -> Result<(), String> {
 /// make_plan: the configuration checked, the zone's files written, old mounts detached,
 /// packages built, and what the zone needs worked out. Err: the message `appzones` dies with.
 pub fn make_plan(host: &Host, name: &str) -> Result<J, String> {
+    #[cfg(not(target_os = "linux"))]
+    return make_seatbelt_plan(host, name);
+    #[cfg(target_os = "linux")]
+    make_bwrap_plan(host, name)
+}
+
+/// The zone's home: its own folder, or the `home` setting (checked as a bind is).
+fn zone_home(host: &Host, policy: &Policy, z: &Zone, zdir: &Path) -> Result<PathBuf, String> {
+    let home_setting = z.get("home").as_str().unwrap_or("").to_string();
+    if home_setting.is_empty() {
+        return Ok(zdir.join("home"));
+    }
+    if let Some(e) = policy.bind_error(home_setting.as_bytes()).filter(|e| !e.ends_with(": does not exist")) {
+        return Err(format!("home {e}"));
+    }
+    // os.path.expanduser: the real home
+    Ok(match home_setting.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => PathBuf::from(format!("{}{rest}", sh(&host.home))),
+        _ => PathBuf::from(&home_setting),
+    })
+}
+
+/// A zone's plan on macOS (design/macos.md): its Seatbelt profile, and zone-init, which the
+/// server starts beside the zone (outside the sandbox, where the zone cannot reach it) and
+/// which starts every app under the profile.
+#[cfg(not(target_os = "linux"))]
+fn make_seatbelt_plan(host: &Host, name: &str) -> Result<J, String> {
+    use crate::seatbelt;
+    let cfg = config::load(&host.config, &sh(&host.config), host.here.as_os_str().to_owned());
+    if !cfg.errors.is_empty() {
+        return Err(format!("{} is invalid:\n  {}", sh(&host.config), cfg.errors.join("\n  ")));
+    }
+    for w in &cfg.warnings {
+        warn(&format!("warning: {w}"));
+    }
+    let z = cfg.zone(name).ok_or_else(|| format!("no zone {} in {}", py_repr(name), sh(&host.config)))?;
+    let refused = seatbelt::unsupported(z);
+    if !refused.is_empty() {
+        return Err(format!("zone {name} cannot run on macOS as configured:\n  {}", refused.join("\n  ")));
+    }
+    let policy = config::policy(host.here.as_os_str().to_owned());
+    let timeout = config::duration(z.get("start_timeout")).unwrap_or(30.0);
+    let zdir = host.state.join(name);
+    let zrt = host.rt.join(name);
+    std::fs::create_dir_all(&host.state).map_err(|e| format!("{}: {e}", sh(&host.state)))?;
+    mkdir_mode(&zdir, 0o700).map_err(|e| format!("{}: {e}", sh(&zdir)))?;
+    std::fs::create_dir_all(&host.rt).map_err(|e| format!("{}: {e}", sh(&host.rt)))?;
+    std::fs::set_permissions(&host.rt, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    if lexists(&zrt) {
+        std::fs::remove_dir_all(&zrt).map_err(|e| format!("{}: {e}", sh(&zrt)))?;
+    }
+    mkdir_mode(&zrt, 0o700).map_err(|e| e.to_string())?;
+    write(&zrt.join("config.sha256"), &format!("{}\n", config::settings_hash(z)))?;
+    let marks = seatbelt_marks(&zdir)?;
+    let home = zone_home(host, &policy, z, &zdir)?;
+    std::fs::create_dir_all(&home).map_err(|e| format!("{}: {e}", sh(&home)))?;
+    // tmp = "ram": macOS has no tmpfs for a user, so a folder of the zone's emptied at
+    // each start; "disk": kept
+    let tmp = zdir.join("tmp");
+    if z.get("tmp").as_str() != Some("disk") && lexists(&tmp) {
+        std::fs::remove_dir_all(&tmp).map_err(|e| format!("{}: {e}", sh(&tmp)))?;
+    }
+    if !lexists(&tmp) {
+        mkdir_mode(&tmp, 0o700).map_err(|e| format!("{}: {e}", sh(&tmp)))?;
+    }
+    let real = |p: &Path| -> Result<PathBuf, String> {
+        std::fs::canonicalize(p).map_err(|e| format!("{}: {e}", sh(p)))
+    };
+    let (home, tmp) = (real(&home)?, real(&tmp)?);
+    let mut binds = Vec::new();
+    for b in z.get("binds").as_array().cloned().unwrap_or_default() {
+        let Some(t) = b.as_table() else { continue };
+        let path = t.get("path").and_then(Value::as_str).unwrap_or("").to_string();
+        if let Some(e) = policy.bind_error(path.as_bytes()) {
+            return Err(format!("bind {e}"));
+        }
+        let rw = t.get("mode").and_then(Value::as_str).unwrap_or("rw") == "rw";
+        binds.push((real(Path::new(std::ffi::OsStr::from_bytes(&policy.expand(path.as_bytes()))))?, rw));
+    }
+    // the never-list's entries outside the user's home (which the profile closes whole)
+    let home_real = real(&host.home)?;
+    let never: Vec<PathBuf> = policy.denied_paths()?.iter()
+        .filter_map(|d| realpath(d).map(|r| PathBuf::from(OsString::from_vec(r))))
+        .filter(|d| !d.starts_with(&home_real) && d != Path::new("/")).collect();
+    let network = z.get("network").as_str().unwrap_or("internet").to_string();
+    let profile = seatbelt::profile(&seatbelt::Profile { home: &home, tmp: &tmp, binds: &binds, network: &network,
+                                                         never: &never, marks: (&marks.0, &marks.1) })?;
+    write(&zrt.join("zone.sb"), &profile)?;
+    let env = seatbelt::environment(&seatbelt::Env { zone: name, user: &host.user, home: &home, tmp: &tmp,
+                                                     host_home: &home_real },
+                                    z, &seatbelt::path_dirs(&host.user), environ);
+    for l in seatbelt::less(z) {
+        say(&format!("[zone] {name}: {l}"));
+    }
+    if crate::serve::stopped() {
+        return Err(s("\0stopped"));
+    }
+    let helper = host.helper_for("zone-init").ok_or("$APPZONES_BIN_APPZONES_HELPER does not implement zone-init \
+        (`appzones-helper --commands`)")?;
+    let autostart: Vec<J> = strs_of(z.get("autostart_apps")).iter().map(|a| {
+        let argv = config::resolve_app(&cfg, name, a).ok().flatten().unwrap_or_else(|| vec![a.clone()]);
+        json!({"app": a, "argv": argv, "bus": "host"})
+    }).collect();
+    Ok(json!({
+        "version": 1,
+        "name": name,
+        "zrt": sh(&zrt),
+        "start_timeout": timeout,
+        "linger": config::duration(z.get("linger")),
+        "linger_text": tj(z.get("linger")),
+        "network": network,
+        "dns": tj(z.get("dns")),
+        "devices": [],
+        "seatbelt": {"profile": sh(&zrt.join("zone.sb")), "yes": sh(&marks.0), "no": sh(&marks.1)},
+        "env": env.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(),
+        "argv": [rp(&helper), "zone-init"],
+        "autostart": autostart,
+    }))
+}
+
+/// The zone's two marks in its state directory ZDIR (crate::sys::zone_pids): empty files
+/// with a random name of the zone's, the same on every start (so processes left from an
+/// earlier one are found too), resolved.
+#[cfg(not(target_os = "linux"))]
+fn seatbelt_marks(zdir: &Path) -> Result<(PathBuf, PathBuf), String> {
+    let token = std::fs::read_dir(zdir).map_err(|e| format!("{}: {e}", sh(zdir)))?.filter_map(|e| e.ok())
+        .filter_map(|e| e.file_name().to_str()?.strip_prefix("seatbelt-")?.strip_suffix(".yes").map(String::from))
+        .find(|t| t.len() == 32 && t.bytes().all(|b| b.is_ascii_hexdigit())).unwrap_or_else(|| random_hex(16));
+    let zdir = std::fs::canonicalize(zdir).map_err(|e| format!("{}: {e}", sh(zdir)))?;
+    let (yes, no) = (zdir.join(format!("seatbelt-{token}.yes")), zdir.join(format!("seatbelt-{token}.no")));
+    for m in [&yes, &no] {
+        if !std::fs::symlink_metadata(m).is_ok_and(|x| x.is_file()) {
+            let _ = std::fs::remove_file(m);
+            std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).custom_flags(libc::O_NOFOLLOW)
+                .open(m).map_err(|e| format!("{}: {e}", sh(m)))?;
+        }
+    }
+    Ok((yes, no))
+}
+
+#[cfg(target_os = "linux")]
+fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
     let cfg = config::load(&host.config, &sh(&host.config), host.here.as_os_str().to_owned());
     if !cfg.errors.is_empty() {
         return Err(format!("{} is invalid:\n  {}", sh(&host.config), cfg.errors.join("\n  ")));

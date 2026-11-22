@@ -96,22 +96,27 @@ fn server_command(argv: &[String], cwd: &str, here: &Path) -> Option<(String, St
     (own.as_deref() == Some(path.as_path()) || installed || removed).then(|| (rest[0].clone(), rest[1].clone()))
 }
 
+/// PID's command line and its working directory (macOS: "/", which only a Python server's
+/// relative script path would need, and there were none there).
 fn proc_argv(pid: &str) -> Option<(Vec<String>, String)> {
-    let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
-    let argv = raw.split(|b| *b == 0).map(|a| String::from_utf8_lossy(a).into_owned()).collect::<Vec<_>>();
-    let cwd = std::fs::read_link(format!("/proc/{pid}/cwd")).ok()?;
-    Some((argv, sh(&cwd)))
+    let argv = crate::sys::proc_argv(pid.parse().ok()?)?;
+    #[cfg(target_os = "linux")]
+    let cwd = sh(&std::fs::read_link(format!("/proc/{pid}/cwd")).ok()?);
+    #[cfg(not(target_os = "linux"))]
+    let cwd = "/".to_string();
+    Some((argv, cwd))
 }
 
 fn my_pids() -> Vec<(String, u32)> {
-    let me = std::process::id().to_string();
     // Safety: getuid has no preconditions.
     let uid = unsafe { libc::getuid() };
-    std::fs::read_dir("/proc").map(|it| it.filter_map(|e| e.ok()).filter_map(|e| {
-        let n = e.file_name().to_string_lossy().into_owned();
-        (n.bytes().all(|b| b.is_ascii_digit()) && n != me).then_some(n)
-    }).filter_map(|n| std::fs::metadata(format!("/proc/{n}")).ok().filter(|m| m.uid() == uid).map(|_| (n.clone(), uid)))
-        .collect()).unwrap_or_default()
+    crate::sys::my_pids().into_iter().map(|p| (p.to_string(), uid)).collect()
+}
+
+/// macOS: whether ARGV is a server of zone NAME (`appzones-helper cli serve NAME ...`).
+#[cfg(not(target_os = "linux"))]
+fn serves(argv: &[String], name: Option<&str>) -> bool {
+    argv.windows(3).any(|w| w[0] == "cli" && (w[1] == "serve" || w[1] == "_supervise") && name.is_none_or(|n| w[2] == n))
 }
 
 /// The exit status of our child PID (retried on EINTR); None when there is no such child
@@ -283,13 +288,21 @@ impl Cli {
     }
 
     fn holds(pid: &str, lock: (u64, u64)) -> bool {
-        let Ok(it) = std::fs::read_dir(format!("/proc/{pid}/fd")) else { return false };
-        it.filter_map(|e| e.ok()).any(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == lock))
+        pid.parse().is_ok_and(|p| crate::sys::has_open(p, lock))
+    }
+
+    /// macOS has no list of the locks a descriptor holds: there, a process holds a zone's
+    /// lock when it has the file open and is a zone server (outside any sandbox).
+    #[cfg(not(target_os = "linux"))]
+    fn holds_lock(pid: &str, lock: (u64, u64)) -> bool {
+        let Ok(p) = pid.parse() else { return false };
+        !crate::sys::sandboxed(p) && crate::sys::has_open(p, lock) && crate::sys::proc_argv(p).is_some_and(|a| serves(&a, None))
     }
 
     /// Whether PID holds the flock on the file LOCK (dev, ino), not merely has it open (an
     /// `appzones up` between its open and its flock): by the descriptor's own fdinfo,
     /// which lists the locks held through it.
+    #[cfg(target_os = "linux")]
     fn holds_lock(pid: &str, lock: (u64, u64)) -> bool {
         let Ok(it) = std::fs::read_dir(format!("/proc/{pid}/fd")) else { return false };
         it.filter_map(|e| e.ok()).filter(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == lock))
@@ -298,9 +311,17 @@ impl Cli {
     }
 
     fn is_server(&self, pid: &str, name: &str, lock: Option<(u64, u64)>) -> bool {
-        // Safety: getuid has no preconditions.
-        let uid = unsafe { libc::getuid() };
-        if std::fs::metadata(format!("/proc/{pid}")).map(|m| m.uid()).ok() != Some(uid) {
+        // (this user's: macOS's list is of this user's processes already)
+        #[cfg(target_os = "linux")]
+        {
+            // Safety: getuid has no preconditions.
+            let uid = unsafe { libc::getuid() };
+            if std::fs::metadata(format!("/proc/{pid}")).map(|m| m.uid()).ok() != Some(uid) {
+                return false;
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        if !pid.parse().is_ok_and(|p| crate::sys::my_pids().contains(&p)) {
             return false;
         }
         if let Some(l) = lock.or_else(|| self.lock_id(name)) {
@@ -1128,10 +1149,21 @@ impl Cli {
         }
         out(&format!("ok: {}: {} zones ({}), {} apps (this zone is release {})", self.config_path(), cfg.zones.len(),
                      cfg.zones.iter().map(|z| z.name.as_str()).collect::<Vec<_>>().join(", "), cfg.apps.len(), config::RELEASE));
+        // macOS: what a zone there cannot be given (an error for that zone, which will not start)
+        #[cfg(not(target_os = "linux"))]
+        {
+            let refused: Vec<String> = cfg.zones.iter().flat_map(crate::seatbelt::unsupported).collect();
+            for e in &refused {
+                eprintln!("error: {e}");
+            }
+            if !refused.is_empty() {
+                return 1;
+            }
+        }
         let Some(probe) = probe else { return 0 };
-        // (the probes run in the zone: not where zones do not run yet)
+        // (the probes run in the zone: macOS's are stage 4 of design/macos.md)
         if cfg!(not(target_os = "linux")) {
-            die(&format!("check --probe {probe}: zones do not run on this system yet (check, list, which and new work)"));
+            die(&format!("check --probe {probe}: not on macOS yet"));
         }
         let cfg = self.load_zone(probe, true);
         let z = cfg.zone(probe).expect("checked");
@@ -1794,12 +1826,14 @@ pub fn main(args: &[OsString]) -> i32 {
     }
     let mut cli = Cli::new(Host::new(crate::plan::exe_dir()));
     let (cmd, rest) = (argv[0].as_str(), &argv[1..]);
-    // zones themselves are Linux's so far (macOS: design/macos.md, stage 2); check --probe
-    // is refused in check, after the configuration is checked
+    // what macOS has not (design/macos.md); check --probe is refused in check, after the
+    // configuration is checked
     #[cfg(not(target_os = "linux"))]
-    if matches!(cmd, "up" | "run" | "shell" | "restart" | "serve" | "_supervise" | "mount" | "umount" | "apps"
-                | "_autostart" | "_cleanup" | "_link") {
-        die(&format!("{cmd}: zones do not run on this system yet (check, list, which and new work)"));
+    match cmd {
+        "mount" | "umount" => die(&format!("{cmd}: not at run time on macOS: add a bind to the zone in {} and \
+                                             `appzones restart ZONE`", cli.config_path())),
+        "apps" | "_autostart" | "_cleanup" | "_link" => die(&format!("{cmd}: not on macOS yet")),
+        _ => {}
     }
     if cmd == "_autostart" || (COMMANDS.contains(&cmd) && cmd != "active" && cmd != "serve") {
         cli.migrate_state();

@@ -1,18 +1,25 @@
 //! zone-init: the agent inside a zone (the port of zone_init.py; its docstring is the
 //! protocol, and src/test_zonecfg.py's AgentProtocolTest is the specification).
 //!
-//! Runs as pid 2 of the zone (bwrap is pid 1 and reaps). Listens on the socket the host
-//! made and handed over as fd $ZONE_CTL_FD; ends when its server's pidfd
-//! ($ZONE_SERVER_FD) says the server is gone. One JSON request line per connection.
+//! Linux: runs as pid 2 of the zone (bwrap is pid 1 and reaps). macOS: runs beside the
+//! zone, outside its sandbox (where the zone's processes cannot signal or read it), and
+//! starts every app under the zone's profile ($ZONE_SANDBOX, with sandbox-exec); ends the
+//! zone's processes when it ends. Listens on the socket the host made and handed over as
+//! fd $ZONE_CTL_FD; ends when its server's pidfd (macOS: a pipe's end) ($ZONE_SERVER_FD)
+//! says the server is gone. One JSON request line per connection.
 //! One thread runs requests, children and output (a poll loop); the zone's DNS runs in
 //! threads of its own (zone_dns). Children are started with std's Command: between fork
 //! and exec only async-signal-safe syscalls run (child_setup).
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::ffi::{CString, OsStr, OsString};
+#[cfg(target_os = "linux")]
+use std::ffi::CString;
+use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -21,12 +28,19 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
+#[cfg(target_os = "linux")]
 use crate::zone_dns;
 
 const MOZ_APPS: &[&str] = &["firefox", "firefox-esr", "firefox-beta", "firefox-devedition", "firefox-nightly",
                             "librewolf"];
 const ENV_ALLOW: &[&str] = &["TERM", "COLUMNS", "LINES", "LANG", "LC_ALL", "MOZ_HEADLESS", "NO_AT_BRIDGE"];
+#[cfg(target_os = "linux")]
 const SHELL: &[&str] = &["/bin/bash", "-i"]; // NixOS zones have /bin too (the system's sw/bin)
+#[cfg(not(target_os = "linux"))]
+const SHELL: &[&str] = &["/bin/zsh", "-i"]; // (macOS's own shell)
+/// macOS: what starts each app under the zone's profile.
+#[cfg(not(target_os = "linux"))]
+const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 const TAIL: usize = 20;
 /// An app's output line, at most (longer: cut there, so a line without an end, or a huge
 /// one, cannot grow zone-init's memory); a tail entry keeps at most TAIL_TEXT of it.
@@ -36,11 +50,13 @@ const TAIL_TEXT: usize = 1024;
 const SHELL_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 const FINISHED: usize = 64;
 // names the zone's own bus does not offer: they would start inside the zone, where they cannot work
+#[cfg(target_os = "linux")]
 const ZBUS_SKIP: &[&str] = &["org.freedesktop.portal.", "org.freedesktop.impl.portal.", "org.freedesktop.Flatpak",
                              "org.flatpak.", "org.freedesktop.systemd1", "org.freedesktop.secrets",
                              "org.gnome.keyring", "org.kde.kwalletd", "org.a11y.", "org.freedesktop.Notifications",
                              "org.kde.StatusNotifierWatcher", "org.kde.plasmashell", "org.kde.KSplash",
                              "org.kde.krunner", "org.kde.LogoutPrompt", "org.kde.Shutdown", "org.freedesktop.impl."];
+#[cfg(target_os = "linux")]
 const ZBUS_CONF: &str = r#"<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
 <busconfig>
@@ -109,9 +125,7 @@ fn stdio_ok(fd: RawFd) -> bool {
             return false;
         }
         let kind = st.st_mode & libc::S_IFMT;
-        kind == libc::S_IFIFO
-            || kind == libc::S_IFREG
-            || (kind == libc::S_IFCHR && libc::major(st.st_rdev) == 1 && libc::minor(st.st_rdev) == 3)
+        kind == libc::S_IFIFO || kind == libc::S_IFREG || (kind == libc::S_IFCHR && crate::sys::is_dev_null(st.st_rdev))
     }
 }
 
@@ -137,10 +151,10 @@ fn set_nonblocking(fd: RawFd, on: bool) {
 
 fn pipe() -> std::io::Result<(OwnedFd, OwnedFd)> {
     let mut p = [0 as RawFd; 2];
-    // Safety: pipe2 fills the two-element array with new descriptors, which we own.
-    if unsafe { libc::pipe2(p.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+    if !crate::sys::pipe(&mut p, false) {
         return Err(std::io::Error::last_os_error());
     }
+    // Safety: two new descriptors, which we own.
     Ok(unsafe { (OwnedFd::from_raw_fd(p[0]), OwnedFd::from_raw_fd(p[1])) })
 }
 
@@ -166,16 +180,37 @@ fn child_setup(ctty: bool) -> std::io::Result<()> {
         if libc::setsid() < 0 {
             return Err(std::io::Error::last_os_error());
         }
-        if ctty && libc::ioctl(0, libc::TIOCSCTTY, 0) < 0 {
+        if ctty && libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
             return Err(std::io::Error::last_os_error());
         }
         // a child never gets zone-init's descriptors: if this fails (a kernel before 5.11),
         // the spawn fails
+        #[cfg(target_os = "linux")]
         if libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, libc::CLOSE_RANGE_CLOEXEC) < 0 {
             return Err(std::io::Error::last_os_error());
         }
+        // (macOS has no close_range: each one, up to the highest that can be open)
+        #[cfg(not(target_os = "linux"))]
+        {
+            let max = libc::getdtablesize();
+            for fd in 3..max {
+                let f = libc::fcntl(fd, libc::F_GETFD);
+                if f >= 0 && f & libc::FD_CLOEXEC == 0 && libc::fcntl(fd, libc::F_SETFD, f | libc::FD_CLOEXEC) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+        }
     }
     Ok(())
+}
+
+/// A zone on macOS: its profile, and its marks, by which its processes are told
+/// (crate::sys::zone_pids).
+#[cfg(not(target_os = "linux"))]
+struct Sandbox {
+    profile: String,
+    yes: PathBuf,
+    no: PathBuf,
 }
 
 fn reply(conn: &mut UnixStream, v: &Value) {
@@ -203,7 +238,12 @@ fn recv_request(conn: &UnixStream) -> Option<(Vec<u8>, Vec<OwnedFd>)> {
         msg.msg_iovlen = 1;
         msg.msg_control = cmsg.as_mut_ptr().cast();
         msg.msg_controllen = std::mem::size_of_val(&cmsg) as _;
+        #[cfg(target_os = "linux")]
         let n = libc::recvmsg(conn.as_raw_fd(), &mut msg, libc::MSG_CMSG_CLOEXEC);
+        // (macOS: close-on-exec right after; zone-init starts no app in between, as it runs
+        // requests one at a time on this thread)
+        #[cfg(not(target_os = "linux"))]
+        let n = libc::recvmsg(conn.as_raw_fd(), &mut msg, 0);
         if n >= 0 {
             let mut c = libc::CMSG_FIRSTHDR(&msg);
             while !c.is_null() {
@@ -211,7 +251,9 @@ fn recv_request(conn: &UnixStream) -> Option<(Vec<u8>, Vec<OwnedFd>)> {
                     let data = libc::CMSG_DATA(c).cast::<RawFd>();
                     let count = ((*c).cmsg_len as usize - libc::CMSG_LEN(0) as usize) / std::mem::size_of::<RawFd>();
                     for i in 0..count {
-                        fds.push(OwnedFd::from_raw_fd(std::ptr::read_unaligned(data.add(i))));
+                        let fd = std::ptr::read_unaligned(data.add(i));
+                        set_cloexec(fd);
+                        fds.push(OwnedFd::from_raw_fd(fd));
                     }
                 }
                 c = libc::CMSG_NXTHDR(&msg, c);
@@ -282,6 +324,7 @@ fn var(env: &Env, k: &str) -> Option<String> {
 
 struct Init {
     zone: String,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))] // (the zone bus's, Linux only)
     zrt: String,
     // the environment as the host gave it: bytes, passed on unchanged (as Python's os.environ)
     env: Env,
@@ -292,9 +335,38 @@ struct Init {
     running: HashSet<i32>,
     finished: VecDeque<(i32, i32, Vec<String>)>,
     zbus: Option<i32>,
+    #[cfg(not(target_os = "linux"))]
+    sandbox: Sandbox,
 }
 
 impl Init {
+    /// The command that runs ARGV in the zone: as it is (Linux: zone-init is in the zone
+    /// already), or under the zone's profile (macOS).
+    fn command(&self, argv: &[String]) -> Command {
+        #[cfg(target_os = "linux")]
+        {
+            let mut c = Command::new(&argv[0]);
+            c.args(&argv[1..]);
+            c
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let mut c = Command::new(SANDBOX_EXEC);
+            c.args(["-f", &self.sandbox.profile, "--"]).args(argv);
+            c
+        }
+    }
+
+    /// ARGV's program, when it can be found on the zone's PATH (macOS: sandbox-exec would
+    /// only say so after it started, as an exit status): an error now, as Linux gives one.
+    #[cfg(not(target_os = "linux"))]
+    fn findable(&self, argv0: &str) -> Result<(), String> {
+        let ok = if argv0.contains('/') { Path::new(argv0).exists() }
+                 else { which(argv0, &var(&self.env, "PATH").unwrap_or_default()).is_some() };
+        if ok { Ok(()) } else { Err(format!("{argv0}: No such file or directory")) }
+    }
+
+    #[cfg(target_os = "linux")]
     fn zbus_dir(&self) -> String {
         format!("{}/zone-bus", self.zrt)
     }
@@ -316,8 +388,11 @@ impl Init {
             Some("ping") => reply(&mut conn, &json!({"ok": true, "zone": self.zone, "pid": std::process::id()})),
             Some("ps") => {
                 let helpers: Vec<i32> = self.zbus.into_iter().collect(); // not apps (linger)
-                reply(&mut conn, &json!({"ok": true, "procs": procs(), "init": std::process::id(),
-                                         "helpers": helpers}));
+                #[cfg(target_os = "linux")]
+                let procs = procs();
+                #[cfg(not(target_os = "linux"))]
+                let procs = procs(&self.sandbox);
+                reply(&mut conn, &json!({"ok": true, "procs": procs, "init": std::process::id(), "helpers": helpers}));
             }
             Some("run") => self.op_run(conn, &req, fds),
             Some("shell") => {
@@ -377,6 +452,7 @@ impl Init {
     }
 
     fn op_run(&mut self, mut conn: UnixStream, req: &Value, fds: Vec<OwnedFd>) {
+        #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
         let Some(mut argv) = argv_of(req.get("argv")) else {
             return fail(&mut conn, "argv must be a non-empty list of strings");
         };
@@ -401,6 +477,12 @@ impl Init {
             Some(Value::String(s)) => s.clone(),
             Some(v) => v.to_string(),
         };
+        // (macOS has no D-Bus: the setting means nothing there)
+        #[cfg(not(target_os = "linux"))]
+        if let Err(e) = self.findable(&argv[0]) {
+            return fail(&mut conn, e);
+        }
+        #[cfg(target_os = "linux")]
         match bus.as_str() {
             "host" => {}
             "zone" => {
@@ -426,8 +508,8 @@ impl Init {
                 Err(e) => return fail(&mut conn, format!("{}: {}", argv[0], errno_text(&e))),
             }
         }
-        let mut cmd = Command::new(&argv[0]);
-        cmd.args(&argv[1..]).env_clear().envs(&env).current_dir(self.cwd(req));
+        let mut cmd = self.command(&argv);
+        cmd.env_clear().envs(&env).current_dir(self.cwd(req));
         let [i, o, e] = stdio;
         cmd.stdin(i.map_or(Stdio::null(), Stdio::from));
         cmd.stdout(o.map_or(Stdio::null(), Stdio::from));
@@ -467,10 +549,14 @@ impl Init {
         } else {
             env.entry("TERM".into()).or_insert_with(|| "xterm-256color".into());
         }
+        #[cfg(not(target_os = "linux"))]
+        if let Err(e) = self.findable(&argv[0]) {
+            return fail(&mut conn, e);
+        }
         let (mut master, mut slave) = (0 as RawFd, 0 as RawFd);
         // Safety: openpty fills two descriptors, which we own from here on.
-        if unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(),
-                                  std::ptr::null()) } != 0 {
+        if unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(),
+                                  std::ptr::null_mut()) } != 0 {
             return fail(&mut conn, format!("pty: {}", errno_text(&std::io::Error::last_os_error())));
         }
         let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
@@ -482,8 +568,8 @@ impl Init {
         let (Ok(i), Ok(o), Ok(e)) = (stdio(), stdio(), stdio()) else {
             return fail(&mut conn, "pty: no descriptors left");
         };
-        let mut cmd = Command::new(&argv[0]);
-        cmd.args(&argv[1..]).env_clear().envs(&env).current_dir(self.cwd(req)).stdin(i).stdout(o).stderr(e);
+        let mut cmd = self.command(&argv);
+        cmd.env_clear().envs(&env).current_dir(self.cwd(req)).stdin(i).stdout(o).stderr(e);
         // Safety: child_setup makes only async-signal-safe syscalls.
         unsafe { cmd.pre_exec(|| child_setup(true)) };
         let spawned = cmd.spawn();
@@ -668,6 +754,7 @@ impl Init {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn ensure_zone_bus(&mut self) -> Result<(), String> {
         match self.zbus {
             Some(pid) if alive(pid) => return Ok(()),
@@ -737,6 +824,7 @@ impl Init {
     }
 
     /// Link the activatable services the zone may start on its own bus.
+    #[cfg(target_os = "linux")]
     fn service_links(&self, dir: &str) {
         let out = format!("{dir}/services");
         let _ = std::fs::create_dir_all(&out);
@@ -767,6 +855,7 @@ impl Init {
 
     /// ARGV wrapped so the app sees no bus socket at all: a nested bwrap whose
     /// $XDG_RUNTIME_DIR holds the zone's other sockets, not bus and not zone-bus.
+    #[cfg(target_os = "linux")]
     fn no_bus(&self, argv: Vec<String>) -> Vec<String> {
         let bwrap = var(&self.env, "ZONE_BWRAP").filter(|b| !b.is_empty()).unwrap_or_else(|| "bwrap".into());
         let zrt = &self.zrt;
@@ -794,6 +883,7 @@ impl Init {
 }
 
 /// Whether child PID has not exited yet (a zombie counts as exited); it is not reaped.
+#[cfg(target_os = "linux")]
 fn alive(pid: i32) -> bool {
     // Safety: waitid with WNOWAIT only looks at our child's state, into a local siginfo.
     unsafe {
@@ -855,12 +945,23 @@ fn which(name: &str, path: &str) -> Option<String> {
     })
 }
 
+#[cfg(target_os = "linux")]
 fn cmdline(pid: &str) -> Option<String> {
     let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
     let joined: Vec<u8> = raw.iter().map(|&b| if b == 0 { b' ' } else { b }).collect();
     Some(String::from_utf8_lossy(&joined).trim().to_string())
 }
 
+/// macOS: the processes of the zone's sandbox, [[pid, cmdline], ...] (its apps; never
+/// zone-init, which is outside it).
+#[cfg(not(target_os = "linux"))]
+fn procs(sb: &Sandbox) -> Vec<Value> {
+    let mut pids = crate::sys::zone_pids(&sb.yes, &sb.no);
+    pids.sort_unstable();
+    pids.into_iter().filter_map(|p| crate::sys::proc_argv(p).map(|a| json!([p, a.join(" ").trim()]))).collect()
+}
+
+#[cfg(target_os = "linux")]
 fn pids() -> Vec<i32> {
     let mut out: Vec<i32> = std::fs::read_dir("/proc").map(|it| {
         it.flatten().filter_map(|e| e.file_name().to_str().and_then(|s| s.parse().ok())).collect()
@@ -869,11 +970,24 @@ fn pids() -> Vec<i32> {
     out
 }
 
+#[cfg(target_os = "linux")]
 fn procs() -> Vec<Value> {
     pids().into_iter().filter_map(|p| cmdline(&p.to_string()).map(|c| json!([p, c]))).collect()
 }
 
-/// [[path, "ro"|"rw"], ...] for the runtime mounts under /mnt/host, as this zone sees them.
+/// [[path, "ro"|"rw"], ...] for the runtime mounts under /mnt/host, as this zone sees them
+/// (macOS: none, as there are no mounts at run time there).
+#[cfg(not(target_os = "linux"))]
+fn host_mounts() -> Vec<Value> {
+    vec![]
+}
+
+#[cfg(not(target_os = "linux"))]
+fn busy(_: &str) -> Vec<Value> {
+    vec![]
+}
+
+#[cfg(target_os = "linux")]
 fn host_mounts() -> Vec<Value> {
     let text = std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
     text.lines().filter_map(|line| {
@@ -885,6 +999,7 @@ fn host_mounts() -> Vec<Value> {
 }
 
 /// The path of a /proc/PID/maps line: what follows the fifth field (it may hold spaces).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn maps_path(line: &str) -> &str {
     let mut rest = line;
     for _ in 0..5 {
@@ -899,6 +1014,7 @@ fn maps_path(line: &str) -> &str {
 
 /// [[pid, cmdline, what], ...]: processes in the zone with a cwd, root, executable, open
 /// file or mapped file under PATH.
+#[cfg(target_os = "linux")]
 fn busy(path: &str) -> Vec<Value> {
     let under = |t: &str| t == path || t.starts_with(&format!("{path}/"));
     let mut out = Vec::new();
@@ -952,6 +1068,7 @@ fn take_fd(name: &str) -> Option<RawFd> {
 /// Named `zone-init` (comm), then not dumpable: processes in the zone (same uid, no
 /// capabilities) cannot ptrace zone-init, read its memory or take its fds, so they cannot
 /// use its control socket. Apps it starts are dumpable again after exec.
+#[cfg(target_os = "linux")]
 fn harden_self() -> bool {
     let name = CString::new("zone-init").unwrap_or_default();
     // Safety: prctl with a NUL-terminated name we own, and a plain flag.
@@ -961,8 +1078,58 @@ fn harden_self() -> bool {
     }
 }
 
+/// macOS: no debugger attaches to zone-init (PT_DENY_ATTACH). The zone's processes could
+/// not anyway (another sandbox, and they may not look at processes outside theirs).
+#[cfg(not(target_os = "linux"))]
+fn harden_self() -> bool {
+    // Safety: ptrace(PT_DENY_ATTACH) on this process, no pointers.
+    unsafe { libc::ptrace(libc::PT_DENY_ATTACH, 0, std::ptr::null_mut(), 0) == 0 }
+}
+
+/// macOS (no signalfd): a pipe for each of SIGCHLD and SIGTERM, a byte written into it by
+/// the handler (write(2) is async-signal-safe).
+#[cfg(not(target_os = "linux"))]
+fn signal_fds() -> Option<(OwnedFd, OwnedFd)> {
+    use std::sync::atomic::{AtomicI32, Ordering};
+    static CHLD: AtomicI32 = AtomicI32::new(-1);
+    static TERM: AtomicI32 = AtomicI32::new(-1);
+    extern "C" fn on_signal(sig: libc::c_int) {
+        let fd = if sig == libc::SIGCHLD { CHLD.load(Ordering::SeqCst) } else { TERM.load(Ordering::SeqCst) };
+        // Safety: one byte from a static to our own non-blocking pipe; errno kept.
+        unsafe {
+            let e = *libc::__error();
+            libc::write(fd, b"!".as_ptr().cast(), 1);
+            *libc::__error() = e;
+        }
+    }
+    let pair = |slot: &AtomicI32| {
+        let mut p = [-1 as RawFd; 2];
+        if !crate::sys::pipe(&mut p, true) {
+            return None;
+        }
+        slot.store(p[1], Ordering::SeqCst); // (the write end lives as long as zone-init)
+        // Safety: the read end is new and ours.
+        Some(unsafe { OwnedFd::from_raw_fd(p[0]) })
+    };
+    let (chld, term) = (pair(&CHLD)?, pair(&TERM)?);
+    // Safety: handlers that only write a byte (SA_RESTART: the calls they interrupt go on;
+    // the poll loop wakes on the pipe).
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = on_signal as extern "C" fn(libc::c_int) as libc::sighandler_t;
+        sa.sa_flags = libc::SA_RESTART | libc::SA_NOCLDSTOP;
+        libc::sigemptyset(&mut sa.sa_mask);
+        if libc::sigaction(libc::SIGCHLD, &sa, std::ptr::null_mut()) != 0
+            || libc::sigaction(libc::SIGTERM, &sa, std::ptr::null_mut()) != 0 {
+            return None;
+        }
+    }
+    Some((chld, term))
+}
+
 /// SIGCHLD and SIGTERM blocked before any thread starts, so every thread has them blocked;
 /// a signalfd for each: SIGCHLD for the poll loop, SIGTERM for the shutdown watcher.
+#[cfg(target_os = "linux")]
 fn signal_fds() -> Option<(OwnedFd, OwnedFd)> {
     // Safety: sigsets on the stack, sigprocmask on this thread, new signalfds we own.
     unsafe {
@@ -986,13 +1153,16 @@ fn signal_fds() -> Option<(OwnedFd, OwnedFd)> {
 
 /// Ends the zone at once on SIGTERM or when the server's pidfd fires, in a thread of its
 /// own: a shell client that stops reading, or a log nobody reads, never holds it up.
-fn watch_shutdown(term: OwnedFd, server: RawFd) -> bool {
+/// (macOS: first every process of the zone ended, as there is no pid namespace to end
+/// with zone-init: SWEEP.)
+fn watch_shutdown(term: OwnedFd, server: RawFd, sweep: impl Fn() + Send + 'static) -> bool {
     std::thread::Builder::new().name("shutdown".into()).spawn(move || loop {
         let mut fds = [libc::pollfd { fd: term.as_raw_fd(), events: libc::POLLIN, revents: 0 },
                        libc::pollfd { fd: server, events: libc::POLLIN, revents: 0 }];
         // Safety: poll over our array; _exit ends the process without running anything.
         unsafe {
             if libc::poll(fds.as_mut_ptr(), 2, -1) > 0 && (fds[0].revents != 0 || fds[1].revents != 0) {
+                sweep();
                 libc::_exit(0);
             }
         }
@@ -1012,11 +1182,35 @@ pub fn main(_args: &[String]) -> u8 {
         log("no $ZONE_SERVER_FD from the host; refusing to run");
         return 1;
     };
+    #[cfg(not(target_os = "linux"))]
+    let sandbox = {
+        let take = |k: &str| {
+            let v = std::env::var_os(k).filter(|v| !v.is_empty());
+            std::env::remove_var(k);
+            v
+        };
+        let (Some(profile), Some(yes), Some(no)) = (take("ZONE_SANDBOX"), take("ZONE_SANDBOX_YES"), take("ZONE_SANDBOX_NO"))
+        else {
+            log("no $ZONE_SANDBOX, $ZONE_SANDBOX_YES and $ZONE_SANDBOX_NO from the host; refusing to run");
+            return 1;
+        };
+        Sandbox { profile: profile.to_string_lossy().into_owned(), yes: yes.into(), no: no.into() }
+    };
+    #[cfg(not(target_os = "linux"))]
+    let sweep = {
+        let (yes, no) = (sandbox.yes.clone(), sandbox.no.clone());
+        move || {
+            let n = crate::sys::kill_zone(&yes, &no);
+            log(&format!("ended the zone's processes ({n})"));
+        }
+    };
+    #[cfg(target_os = "linux")]
+    let sweep = || {}; // (the pid namespace ends with bwrap)
     let Some((signals, term)) = signal_fds() else {
         log("could not set up signals; refusing to run");
         return 1;
     };
-    if !watch_shutdown(term, server) {
+    if !watch_shutdown(term, server, sweep) {
         log("could not start the shutdown watcher; refusing to run");
         return 1;
     }
@@ -1025,12 +1219,15 @@ pub fn main(_args: &[String]) -> u8 {
     let zone = var(&env, "ZONE").unwrap_or_else(|| "?".into());
     // Safety: getuid has no preconditions.
     let zrt = var(&env, "XDG_RUNTIME_DIR").unwrap_or_else(|| format!("/run/user/{}", unsafe { libc::getuid() }));
+    #[cfg(target_os = "linux")]
     if let Some(addr) = var(&env, "ZONE_DNS").filter(|a| !a.is_empty()) {
         zone_dns::start(&addr, log);
     }
     let mut init = Init { zone: zone.clone(), zrt, env, waiting: HashMap::new(), shells: HashMap::new(),
                           outputs: HashMap::new(), tails: HashMap::new(), running: HashSet::new(),
-                          finished: VecDeque::new(), zbus: None };
+                          finished: VecDeque::new(), zbus: None,
+                          #[cfg(not(target_os = "linux"))]
+                          sandbox };
     log(&format!("zone {zone} ready (control socket: fd from the host)"));
     loop {
         let mut fds = vec![
@@ -1067,15 +1264,16 @@ pub fn main(_args: &[String]) -> u8 {
             }
             match tag {
                 Tag::Listener => {
-                    // Safety: accept4 returns a new connected socket we own.
-                    let c = unsafe { libc::accept4(ctl, std::ptr::null_mut(), std::ptr::null_mut(), libc::SOCK_CLOEXEC) };
+                    let c = crate::sys::accept_cloexec(ctl);
                     if c >= 0 {
+                        // Safety: a new connected socket, ours from here on.
                         init.handle(unsafe { UnixStream::from_raw_fd(c) });
                     }
                 }
                 Tag::Signals => {
                     let mut info = [0u8; 128];
-                    // Safety: reads whole signalfd_siginfo records (SIGCHLD) into our buffer.
+                    // Safety: reads whole signalfd_siginfo records (SIGCHLD) into our buffer
+                    // (macOS: the handler's bytes; what is left wakes the poll again).
                     while unsafe { libc::read(signals.as_raw_fd(), info.as_mut_ptr().cast(), info.len()) } == 128 {}
                     init.reap();
                 }

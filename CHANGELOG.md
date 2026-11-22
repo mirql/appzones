@@ -6,9 +6,16 @@ The config schema has its own release number (`requires = N` in
 ## Unreleased
 
 - **macOS, first step** (design/macos.md): appzones builds on macOS (Apple silicon), with a
-  Nix dev shell there. `check`, `list`, `which` and `new` work; starting zones says that
-  zones do not run on macOS yet. The plan for zones on macOS (Seatbelt, a proxy for
+  Nix dev shell there. The plan for zones on macOS (Seatbelt, a proxy for
   `network = "internet"`) is in the design note.
+- **Zones on macOS** (design/macos.md, stage 2): command-line zones run under macOS's
+  sandbox, Seatbelt, with `network = "none"` or `"host"`: `up`, `run`, `shell`, `ps`,
+  `stop`, `restart`, `logs`. A zone reads the system, its own home and tmp and its binds,
+  writes only its home, tmp and `rw` binds; zone-init runs beside the zone, where its
+  processes cannot reach it, and ends them all when the zone ends. Settings macOS cannot
+  honour are errors in `appzones check` there (`network = "internet"` comes with the
+  proxy). The never-list has macOS's paths too (`~/Library/Keychains`, the browsers'
+  profiles, `/private`, ...).
 
 ## 0.12.0
 

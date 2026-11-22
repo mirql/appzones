@@ -7,7 +7,7 @@
 | **Arch Linux** (preview) | the same as Ubuntu and Debian; sway names zones started without systemd too | [a PKGBUILD](#arch-linux-preview), or `make install` |
 | **Fedora 45** (preview) | the same, with SELinux enforcing | [the RPM, or `make install`](#fedora-preview) |
 | **openSUSE Leap 16** (preview) | the same, with SELinux enforcing; internet zones need one SELinux setting | [`make install`](#opensuse-preview) |
-| **macOS** (Apple silicon, in development) | not zones yet: `check`, `list`, `which` and `new` work | [from a checkout](#macos-in-development) |
+| **macOS** (Apple silicon, in development) | command-line zones with `network = "none"` or `"host"` | [from a checkout](#macos-in-development) |
 
 Other x86_64 distributions with systemd or another init, glibc 2.17 or newer and the
 same tools should work like these; they are not tested yet.
@@ -261,13 +261,26 @@ Zones with `network = "none"` or `"host"` work without it. Then
 
 ## macOS (in development)
 
-appzones builds on macOS (Apple silicon), but zones do not run there yet: `appzones
-check`, `list`, `which` and `new` work, and `up`, `run`, `shell`, `restart`, `serve`,
-`mount`, `apps` and `check --probe` say that zones do not run on this system yet. The
-plan (macOS's own sandbox, Seatbelt) is in `design/macos.md` in the repository. To build
-it, in the checkout: `nix develop` (or Rust 1.85 or newer), then
+On macOS (Apple silicon) zones run under macOS's own sandbox, Seatbelt: command-line
+zones (dev tools, package managers, AI agents) with `network = "none"` or `"host"`.
+`up`, `run`, `shell`, `ps`, `stop`, `restart` and `logs` work as on Linux. What is
+different there:
+
+- A zone's home is its own folder (`~/.local/share/appzones/<zone>/home`), and `HOME`
+  says so: `~` in a zone is that folder, not your home. Binds are at their real paths.
+- `network = "internet"` is not there yet (it needs appzones' own proxy): use `"none"`
+  or `"host"`. `appzones check` says which settings of a zone macOS cannot give it
+  (D-Bus, USB, other devices, `packages`, `autostart`, ...); such a zone does not start.
+  `gpu` and `audio` are not given to zones there yet.
+- No runtime mounts (`appzones mount`): add a bind and `appzones restart`.
+- A zone's apps cannot open new terminals inside it (no new ptys: they would reach the
+  other terminals of your session), and it can still read the Mac's hardware UUID.
+- No desktop apps yet, and `check --probe` is not there yet.
+
+To build it, in the checkout: `nix develop` (or Rust 1.85 or newer), then
 `cargo build --release --manifest-path helper/Cargo.toml`; the command is then
-`helper/target/release/appzones-helper cli` (as `appzones`), from the checkout.
+`helper/target/release/appzones-helper cli` (as `appzones`), from the checkout. The
+design, and what comes next, is in `design/macos.md` in the repository.
 
 ## Requirements
 

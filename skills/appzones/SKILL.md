@@ -13,6 +13,11 @@ started by appzones on demand; built from bubblewrap, pasta + nftables,
 xdg-dbus-proxy and the Wayland security context. Zones are declared in one
 TOML file; the `appzones` CLI starts them and runs things inside.
 
+On macOS (in development) a zone is a Seatbelt sandbox: command-line zones only,
+`network = "none"` or `"host"`, no `appzones mount`. There `HOME` in a zone is the
+zone's own home, so `~` is not the user's home; binds are at their real paths.
+`appzones check` names the settings a zone cannot have on macOS.
+
 Docs: https://mirql.github.io/appzones/ (every guide page in one file:
 https://mirql.github.io/appzones/llms-full.txt). When a task needs a key or a detail not covered here, read
 the page as raw markdown: https://raw.githubusercontent.com/mirql/appzones/main/docs/configuration/reference.md (every key),

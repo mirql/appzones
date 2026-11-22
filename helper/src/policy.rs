@@ -35,12 +35,33 @@ const DENIED_IN_HOME: &[&str] = &[
     ".bash_login", ".bash_logout", ".pam_environment", ".config/sway", ".config/niri", ".config/river",
     ".config/labwc", ".tmux.conf", ".config/tmux",
 ];
+/// macOS's own (design/macos.md): what the system and Mac apps keep in the home, and where
+/// appzones keeps its runtime directory there (~/Library/Caches/appzones).
+#[cfg(not(target_os = "linux"))]
+const DENIED_IN_HOME_MACOS: &[&str] = &[
+    "Library/Keychains", "Library/Cookies", "Library/LaunchAgents", "Library/Caches/appzones",
+    "Library/Application Support/com.apple.TCC", "Library/Safari", "Library/Mail", "Library/Messages",
+    "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox",
+    "Library/Application Support/BraveSoftware", "Library/Application Support/Microsoft Edge",
+    "Library/Application Support/Arc", "Library/Containers/com.apple.Safari",
+];
+#[cfg(target_os = "linux")]
+const DENIED_IN_HOME_MACOS: &[&str] = &[];
 const DENIED_SYSTEM: &[&str] = &["/run/secrets", "/run/user", "/var/lib/sops-nix", "/etc/ssh", "/nix/var"];
-/// Never bound whole ("~": the home).
+/// Never bound whole ("~": the home); on macOS also the system's own trees (/tmp, /var and
+/// /etc are links into /private there, which the literal names above would miss).
+#[cfg(target_os = "linux")]
 const FORBIDDEN_WHOLE: &[&str] = &["/", "/home", "~", "/nix", "/etc", "/proc", "/sys", "/dev", "/run", "/tmp", "/var"];
+#[cfg(not(target_os = "linux"))]
+const FORBIDDEN_WHOLE: &[&str] = &["/", "/home", "~", "/nix", "/etc", "/proc", "/sys", "/dev", "/run", "/tmp", "/var",
+    "/private", "/Users", "/System", "/Library", "/Volumes", "/Applications"];
 /// Never the source of a runtime mount, nor anything inside them (outside the home).
+#[cfg(target_os = "linux")]
 pub const MOUNT_NEVER_INSIDE: &[&str] = &["/proc", "/sys", "/dev", "/run", "/etc", "/nix", "/boot", "/root", "/var", "/tmp",
     "/usr"];
+#[cfg(not(target_os = "linux"))]
+pub const MOUNT_NEVER_INSIDE: &[&str] = &["/proc", "/sys", "/dev", "/run", "/etc", "/nix", "/boot", "/root", "/var", "/tmp",
+    "/usr", "/private", "/System", "/Library/Keychains"];
 /// Never named by a bind at all, even when the path would resolve elsewhere: /proc/PID/root
 /// and its kind resolve into another process's mount namespace (another zone's files).
 pub const NEVER_NAMED: &[&str] = &["/proc", "/sys", "/dev"];
@@ -278,7 +299,7 @@ impl Policy {
     pub fn denied_paths(&self) -> Result<Vec<Vec<u8>>, String> {
         let h = py_path(self.home());
         let mut out: Vec<Vec<u8>> = DENIED_SYSTEM.iter().map(|s| s.as_bytes().to_vec()).collect();
-        out.extend(DENIED_IN_HOME.iter().map(|r| join(&h, r.as_bytes())));
+        out.extend(DENIED_IN_HOME.iter().chain(DENIED_IN_HOME_MACOS).map(|r| join(&h, r.as_bytes())));
         out.push(py_path(self.code_dir.as_bytes()));
         if let Some(state) = &self.state_dir {
             out.push(join(&py_path(state.as_bytes()), b"appzones")); // the logs, at a custom state location

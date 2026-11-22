@@ -457,16 +457,24 @@ fn empty_denied_paths_override() {
 
 #[test]
 #[cfg(not(target_os = "linux"))]
-fn zones_do_not_run_here_yet() {
-    // where zones are not built yet (macOS), what would start one says so; the rest works
-    let b = Box_::new("not-yet", Some(TWO));
-    for cmd in [&["up", "aa"][..], &["run", "aa", "--", "true"], &["shell", "aa"], &["serve", "aa"],
-                &["mount", "aa", "/tmp"], &["apps"], &["check", "--probe", "aa"]] {
+fn what_macos_has_not() {
+    // what macOS cannot do (design/macos.md) says so; the rest works
+    let b = Box_::new("macos-not", Some(TWO));
+    for (cmd, says) in [(&["mount", "aa", "/tmp"][..], "not at run time on macOS"), (&["apps"], "apps: not on macOS yet"),
+                        (&["check", "--probe", "aa"], "not on macOS yet")] {
         let (rc, _, err) = b.run(cmd);
         assert_eq!(rc, 1, "{cmd:?}");
-        assert!(err.contains("zones do not run on this system yet"), "{cmd:?}: {err}");
+        assert!(err.contains(says), "{cmd:?}: {err}");
     }
     let (rc, so, err) = b.run(&["check"]);
     assert_eq!(rc, 0, "{so}{err}");
     assert!(so.starts_with("ok: "), "{so}");
+    // a zone that asks for what macOS cannot give: an error for it in check, and it does not start
+    fs::write(b.t.join("zones.toml"), format!("{TWO}[zones.cc]\ncolour = \"#333333\"\n")).unwrap();
+    let (rc, _, err) = b.run(&["check"]);
+    assert_eq!(rc, 1);
+    assert!(err.contains("zone cc: network = \"internet\" is not on macOS yet"), "{err}");
+    let (rc, _, err) = b.run(&["up", "cc"]);
+    assert_eq!(rc, 1);
+    assert!(err.contains("cannot run on macOS as configured"), "{err}");
 }

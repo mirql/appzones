@@ -597,7 +597,11 @@ fn serve_from(source: Source, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
         say(&format!("[zone] {}: a plan of another version (appzones and its helper do not match)", plan_path.display()));
         return 1;
     }
-    match run(&plan, notify_fd) {
+    #[cfg(not(target_os = "linux"))]
+    let ran = run_seatbelt(&plan, notify_fd);
+    #[cfg(target_os = "linux")]
+    let ran = run(&plan, notify_fd);
+    match ran {
         Ok(code) => code,
         Err(e) => {
             say(&format!("[zone] {}: {e}", plan_path.display()));
@@ -606,6 +610,187 @@ fn serve_from(source: Source, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
     }
 }
 
+/// The readiness: systemd's, the descriptor's (one newline, then closed), and the log's line.
+fn ready(plan: &Value, notify_fd: &mut Option<RawFd>) {
+    let s = |k: &str| plan.get(k).and_then(Value::as_str).unwrap_or("?").to_string();
+    let name = s("name");
+    sd_notify(&format!("READY=1\nSTATUS=zone {name} running"));
+    if let Some(fd) = notify_fd.take() {
+        // Safety: one newline to the readiness descriptor we were given, then closed.
+        if unsafe { libc::write(fd, b"\n".as_ptr().cast(), 1) } != 1 {
+            say(&format!("[zone] {name}: could not write readiness to fd {fd}: {}", std::io::Error::last_os_error()));
+        }
+        // Safety: closing it.
+        unsafe { libc::close(fd) };
+    }
+    let devices: Vec<String> = plan.get("devices").and_then(str_list).unwrap_or_default();
+    say(&format!("[zone] {name} ready (network={}, dns={}, devices={})", s("network"), s("dns"),
+                 if devices.is_empty() { "-".into() } else { devices.join(",") }));
+}
+
+/// The zone's autostart apps, through zone-init (until a stop).
+fn autostart(plan: &Value, zrt: &Path) {
+    for a in plan.get("autostart").and_then(Value::as_array).cloned().unwrap_or_default() {
+        if stop() != 0 {
+            break; // a stop: no more apps, on to the shutdown
+        }
+        let app = a.get("app").and_then(Value::as_str).unwrap_or("?");
+        let req = json!({"op": "run", "argv": a.get("argv"), "env": {}, "cwd": null, "bus": a.get("bus")});
+        match agent(zrt, &req, Duration::from_secs(5)) {
+            Some(v) if v.get("ok") == Some(&Value::Bool(true)) => {
+                say(&format!("[zone] autostart {app}: {}", v.get("pid").unwrap_or(&Value::Null)));
+            }
+            Some(v) => say(&format!("[zone] autostart {app} failed: {}",
+                                    v.get("error").and_then(Value::as_str).unwrap_or("run failed"))),
+            None => say(&format!("[zone] autostart {app} failed: zone-init did not answer")),
+        }
+    }
+}
+
+/// Linger: whether the zone has had no app for LINGER seconds (checked now and then; IDLE
+/// and NEXT carry its state between calls).
+fn idle_for(zrt: &Path, linger: f64, idle: &mut Option<Instant>, next: &mut Instant) -> bool {
+    let now = Instant::now();
+    if now < *next {
+        return false;
+    }
+    *next = now + Duration::from_secs_f64((linger / 3.0).min(10.0));
+    if apps_running(zrt) != Some(false) {
+        *idle = None; // an app, or no answer: not idle
+    } else if idle.is_none() {
+        *idle = Some(now);
+    } else if now.duration_since(idle.expect("set")).as_secs_f64() >= linger {
+        return true;
+    }
+    false
+}
+
+/// A zone on macOS (plan.rs, make_seatbelt_plan): zone-init started here, outside the
+/// zone's sandbox, with its control socket and a pipe whose end tells it this server is
+/// gone (it then ends every process of the zone, and itself); it starts each app under the
+/// zone's profile. When it ends, whatever is left of the zone is ended from here too.
+#[cfg(not(target_os = "linux"))]
+fn run_seatbelt(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
+    use std::os::fd::IntoRawFd;
+    let s = |k: &str| plan.get(k).and_then(Value::as_str).map(String::from).ok_or(format!("the plan has no {k}"));
+    let sb = |k: &str| plan.get("seatbelt").and_then(|b| b.get(k)).and_then(Value::as_str).map(PathBuf::from)
+        .ok_or(format!("the plan has no seatbelt.{k}"));
+    let name = s("name")?;
+    let zrt = PathBuf::from(s("zrt")?);
+    let timeout_s = plan.get("start_timeout").and_then(Value::as_f64).ok_or("the plan has no start_timeout")?;
+    let timeout = Duration::from_secs_f64(timeout_s);
+    let argv = plan.get("argv").and_then(str_list).filter(|a| !a.is_empty()).ok_or("the plan has no argv")?;
+    let (profile, yes, no) = (sb("profile")?, sb("yes")?, sb("no")?);
+    let env: Vec<(String, String)> = plan.get("env").and_then(Value::as_array).ok_or("the plan has no env")?.iter()
+        .filter_map(|p| Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.as_str()?.to_string()))).collect();
+    let end_zone = || {
+        let n = crate::sys::kill_zone(&yes, &no);
+        if n > 0 {
+            say(&format!("[zone] {name}: ended {n} process(es) left in the zone"));
+        }
+    };
+    if stop() != 0 {
+        return Ok(if stop() == libc::SIGINT { 0 } else { (128 + stop()) as u8 });
+    }
+    end_zone(); // (any left from a run whose server and zone-init were both killed)
+    // zone-init's control socket, made here (0600 from the start) and handed over
+    let path = zrt.join("agent.sock");
+    let _ = std::fs::remove_file(&path);
+    // Safety: umask around the bind; restored at once.
+    let old = unsafe { libc::umask(0o177) };
+    let ls = UnixListener::bind(&path);
+    // Safety: restoring it.
+    unsafe { libc::umask(old) };
+    let ls = ls.map_err(|e| format!("{}: {e}", path.display()))?;
+    // Safety: listen on our socket with Python's backlog.
+    unsafe { libc::listen(ls.as_raw_fd(), 16) };
+    let mut alive = [-1 as RawFd; 2];
+    if !crate::sys::pipe(&mut alive, false) {
+        return Err(format!("a pipe: {}", std::io::Error::last_os_error()));
+    }
+    let (ctl, alive_r, alive_w) = (ls.into_raw_fd(), alive[0], alive[1]);
+    let mut cmd = spawn(&argv);
+    cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v))).env("ZONE_CTL_FD", ctl.to_string())
+        .env("ZONE_SERVER_FD", alive_r.to_string()).env("ZONE_SANDBOX", &profile).env("ZONE_SANDBOX_YES", &yes)
+        .env("ZONE_SANDBOX_NO", &no).env("ZONE_START_TIMEOUT", format!("{timeout_s:?}")).stdin(Stdio::null())
+        .current_dir("/");
+    // Safety: between fork and exec only fcntl (async-signal-safe): the two descriptors
+    // zone-init gets stay open across the exec, at their numbers.
+    unsafe {
+        cmd.pre_exec(move || {
+            for fd in [ctl, alive_r] {
+                let f = libc::fcntl(fd, libc::F_GETFD);
+                libc::fcntl(fd, libc::F_SETFD, f & !libc::FD_CLOEXEC);
+            }
+            Ok(())
+        });
+    }
+    let spawned = cmd.spawn();
+    // Safety: our copies of what zone-init has now (the pipe's write end stays ours: it
+    // closes when this server ends, however it ends).
+    unsafe {
+        libc::close(ctl);
+        libc::close(alive_r);
+    }
+    let mut child = spawned.map_err(|e| format!("{}: {e}", argv[0]))?;
+    let finish = |child: &mut Child| {
+        if running(child) {
+            term(child); // zone-init ends the zone's processes, then itself
+        }
+        let rc = wait_or_kill(child, Duration::from_secs(10));
+        end_zone();
+        let _ = std::fs::remove_file(zrt.join("agent.sock"));
+        rc
+    };
+    let end = Instant::now() + timeout;
+    let mut answered = false;
+    while Instant::now() < end && stop() == 0 && running(&mut child) {
+        if ping(&zrt) {
+            answered = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    if stop() != 0 || !answered {
+        let alive = running(&mut child);
+        finish(&mut child);
+        // Safety: closing our end of the pipe.
+        unsafe { libc::close(alive_w) };
+        if stop() != 0 {
+            say(&format!("[zone] {name}: stopped while starting"));
+            return Ok(if stop() == libc::SIGINT { 0 } else { (128 + stop()) as u8 });
+        }
+        say(&format!("[zone] {name}: {}; stopping", if alive { format!("zone-init did not answer within {timeout_s:.0} s") }
+                                                    else { "zone-init exited (its message is above)".into() }));
+        return Ok(1);
+    }
+    ready(plan, &mut notify_fd);
+    autostart(plan, &zrt);
+    let linger = plan.get("linger").and_then(Value::as_f64).filter(|l| *l > 0.0);
+    let linger_text = plan.get("linger_text").and_then(Value::as_str).unwrap_or("").to_string();
+    let (mut idle, mut next) = (None, Instant::now());
+    let rc: i32 = loop {
+        if let Ok(Some(st)) = child.try_wait() {
+            end_zone();
+            break returncode(st);
+        }
+        if stop() != 0 {
+            finish(&mut child);
+            break 0;
+        }
+        if linger.is_some_and(|l| idle_for(&zrt, l, &mut idle, &mut next)) {
+            say(&format!("[zone] {name}: no app for {linger_text} (linger); stopping"));
+            finish(&mut child);
+            break 0; // ended as configured: not a failure, so no restart
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    // Safety: closing our end of the pipe (zone-init has ended by now).
+    unsafe { libc::close(alive_w) };
+    Ok(if stop() != 0 { if stop() == libc::SIGINT { 0 } else { (128 + stop()) as u8 } } else { rc as u8 })
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
     let s = |k: &str| plan.get(k).and_then(Value::as_str).map(String::from).ok_or(format!("the plan has no {k}"));
     let name = s("name")?;
@@ -761,39 +946,15 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
         return Ok(r.abort(&format!("zone-init did not answer within {timeout_s:.0} s")));
     }
     if alive {
-        sd_notify(&format!("READY=1\nSTATUS=zone {name} running"));
-        if let Some(fd) = notify_fd.take() {
-            // Safety: one newline to the readiness descriptor we were given, then closed.
-            if unsafe { libc::write(fd, b"\n".as_ptr().cast(), 1) } != 1 {
-                say(&format!("[zone] {name}: could not write readiness to fd {fd}: {}", std::io::Error::last_os_error()));
-            }
-            // Safety: closing it.
-            unsafe { libc::close(fd) };
-        }
-        let devices: Vec<String> = plan.get("devices").and_then(str_list).unwrap_or_default();
-        say(&format!("[zone] {name} ready (network={}, dns={}, devices={})", s("network")?, s("dns")?,
-                     if devices.is_empty() { "-".into() } else { devices.join(",") }));
-        for a in plan.get("autostart").and_then(Value::as_array).cloned().unwrap_or_default() {
-            if stop() != 0 {
-                break; // a stop: no more apps, on to the shutdown
-            }
-            let app = a.get("app").and_then(Value::as_str).unwrap_or("?");
-            let req = json!({"op": "run", "argv": a.get("argv"), "env": {}, "cwd": null, "bus": a.get("bus")});
-            match agent(&zrt, &req, Duration::from_secs(5)) {
-                Some(v) if v.get("ok") == Some(&Value::Bool(true)) => {
-                    say(&format!("[zone] autostart {app}: {}", v.get("pid").unwrap_or(&Value::Null)));
-                }
-                Some(v) => say(&format!("[zone] autostart {app} failed: {}",
-                                        v.get("error").and_then(Value::as_str).unwrap_or("run failed"))),
-                None => say(&format!("[zone] autostart {app} failed: zone-init did not answer")),
-            }
-        }
+        s("network")?;
+        s("dns")?;
+        ready(plan, &mut notify_fd);
+        autostart(plan, &zrt);
     }
     // wait for the zone; a dead helper takes the zone down
     let linger = plan.get("linger").and_then(Value::as_f64).filter(|l| *l > 0.0);
     let linger_text = plan.get("linger_text").and_then(Value::as_str).unwrap_or("").to_string();
-    let mut idle_since: Option<Instant> = None;
-    let mut next_check = Instant::now();
+    let (mut idle_since, mut next_check) = (None, Instant::now());
     let rc: i32 = loop {
         let child = r.child.as_mut().expect("started");
         if let Ok(Some(st)) = child.try_wait() {
@@ -803,22 +964,12 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
             r.stop_all();
             break wait_or_kill(r.child.as_mut().expect("started"), Duration::from_secs(10));
         }
-        if let Some(linger) = linger {
-            let now = Instant::now();
-            if now >= next_check {
-                next_check = now + Duration::from_secs_f64((linger / 3.0).min(10.0));
-                if apps_running(&zrt) != Some(false) {
-                    idle_since = None; // an app, or no answer: not idle
-                } else if idle_since.is_none() {
-                    idle_since = Some(now);
-                } else if now.duration_since(idle_since.expect("set")).as_secs_f64() >= linger {
-                    say(&format!("[zone] {name}: no app for {linger_text} (linger); stopping"));
-                    let child = r.child.as_mut().expect("started");
-                    term(child);
-                    wait_or_kill(child, Duration::from_secs(10));
-                    break 0; // ended as configured: not a failure, so no restart
-                }
-            }
+        if linger.is_some_and(|l| idle_for(&zrt, l, &mut idle_since, &mut next_check)) {
+            say(&format!("[zone] {name}: no app for {linger_text} (linger); stopping"));
+            let child = r.child.as_mut().expect("started");
+            term(child);
+            wait_or_kill(child, Duration::from_secs(10));
+            break 0; // ended as configured: not a failure, so no restart
         }
         if r.helpers.iter_mut().any(|h| !running(h)) {
             say("[zone] a helper (zone-wayland or xdg-dbus-proxy) exited; stopping the zone");

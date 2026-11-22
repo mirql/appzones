@@ -1,7 +1,7 @@
 # appzones on macOS
 
-Status: a plan (2026-11-21). Nothing of it is built yet but the dev shell
-(`nix develop` on aarch64-darwin); tested on Apple silicon with macOS 27.
+Status: stages 1 and 2 built (2026-11-22): command-line zones with `network = "none"`
+or `"host"` (see "Stage 2, as built"). Tested on Apple silicon with macOS 27.
 
 ## What macOS has, and what it does not
 
@@ -74,10 +74,10 @@ replies), `settings_hash`. What is Linux is the zone itself:
 - `plan.rs` (bwrap command line, pasta, nft), `netsetup.rs`, `zone_wayland.rs`,
   `mount_helper.rs`: Linux only (`cfg(target_os = "linux")`); a new `seatbelt.rs`
   makes the macOS plan: an SBPL profile and the `sandbox-exec` command line.
-- `zone_init.rs` runs on macOS too, inside the sandbox, as the zone's agent (run,
-  shell, ps, status), with its Linux-only parts (signalfd, `close_range`, `prctl`)
-  behind small portable functions (kqueue or a self-pipe, closing descriptors one
-  by one, no dumpable flag but the sandbox's `process-info` denial).
+- `zone_init.rs` runs on macOS too, as the zone's agent (run, shell, ps, status), with
+  its Linux-only parts (signalfd, `close_range`, `prctl`) behind small portable
+  functions (a self-pipe, closing descriptors one by one, `PT_DENY_ATTACH`). Built
+  beside the sandbox, not in it: see "Stage 2, as built".
 - `serve.rs` and `cli.rs`: the same, with pidfds and `PR_SET_PDEATHSIG` replaced on
   macOS by kqueue's `EVFILT_PROC` (a process exit event) and a process group.
 
@@ -128,6 +128,54 @@ What appzones can take from it, on both systems:
 - keys that never enter a zone: the proxy adds a header for chosen hosts, the zone holds a
   placeholder (`keyring = "zone"` and the `*TOKEN*` never-list in a new light).
 
+## Stage 2, as built (2026-11-22)
+
+- **zone-init runs beside the zone, outside its sandbox**, as the server's child, and
+  starts each app as `sandbox-exec -f zone.sb -- APP`. Inside the sandbox it would share
+  it with the zone's processes, and a profile that lets them signal each other (job
+  control, `kill` of their own children) lets them stop zone-init too: the zone would
+  then outlive its server. Outside, they cannot signal or look at it (another sandbox,
+  `process-info` and `signal` only for `same-sandbox`).
+- **The server hands zone-init what `_netsetup` does on Linux**: the control socket
+  (made on the host side, an inherited descriptor) and, instead of a pidfd, the read end
+  of a pipe whose write end only the server holds: it closes however the server ends.
+- **No pid namespace, so the zone's processes are found and ended by their sandbox**:
+  zone-init (on SIGTERM or the server's end) and the server (when zone-init ends, and
+  before a start) send SIGKILL to every process of the zone, orphans and `setsid`
+  included (a sandbox is inherited and cannot be left). A process is the zone's when
+  `sandbox_check` says its profile may read one mark file and may not read another
+  beside it: two empty files in the zone's state folder with a random name of the zone's,
+  one allowed and one refused by name in its profile alone. A first version told them by
+  "may read the zone's home, may not read the runtime folder": Apple's own agents
+  (AMPDeviceDiscoveryAgent) pass that, and one was killed in a test.
+- **What a zone may**: read the system, not `/Users` (nor its firmlinked path under
+  `/System/Volumes/Data`), `/Volumes`, the per-user temp and cache folders, `/tmp`, the
+  never-list; read and write its home and tmp (`TMPDIR`; emptied at each start unless
+  `tmp = "disk"`), read its `ro` binds and write its `rw` binds, at their real paths;
+  `HOME` is its own home. Its own terminal (`/dev/tty`, ioctls on the pty it was given)
+  but no new ptys: opening `/dev/ttysN` by path would reach the user's other terminals.
+  Unix sockets in its own folders with `network = "none"`; everything with `"host"`.
+  Services: names (opendirectoryd), the log, notifications; with `"host"` also DNS,
+  configd and trustd. Never the preferences daemon or LaunchServices.
+- **Machine identity**: the boot and volume UUID sysctls and the IOKit properties that
+  tell this Mac (platform UUID, serial numbers, MAC addresses) are refused. gethostuuid(2)
+  still answers in a sandbox (no profile rule reaches it): with `machine_id = "zone"` the
+  zone's log says so.
+- **The never-list on macOS** adds `~/Library/Keychains`, `~/Library/Cookies`,
+  `~/Library/LaunchAgents`, TCC, Safari, Mail, Messages, the browsers' profiles and
+  appzones' runtime folder (`~/Library/Caches/appzones`, as macOS has no per-user
+  runtime directory and empties `$TMPDIR` of what was not used for days); `/private`,
+  `/Users`, `/System`, `/Library`, `/Volumes` and `/Applications` are never bound whole
+  (`/tmp`, `/var` and `/etc` are links into `/private` there).
+- **Refused in `appzones check` and at the start**: what would give the zone more or
+  cannot be done (`network = "internet"` until the proxy, `dns = "public"`, `links`
+  other than `"portal"`, `keyring = "zone"`, devices but gpu and audio, `usb`,
+  `wayland = "host"`, `x11 = "own"`, `autostart`, `packages`, `dbus`, `nix_ld`,
+  `supervisor = "systemd"`). What only gives it less is said in its log: `gpu` and
+  `audio` are not given yet; `bus` means nothing without D-Bus. A per-zone refusal, not
+  a config error: a `zones.toml` shared with a Linux machine still works for its other
+  zones.
+
 ## Stages
 
 1. **It builds on macOS** (done): the Linux-only parts (the mount helper, `_netsetup`,
@@ -138,18 +186,28 @@ What appzones can take from it, on both systems:
    (`just test-macos user@host` runs them there over ssh). Left for stage 2: finding a zone's
    server by its lock reads `/proc` (macOS: libproc), "dies with its parent" is Linux's
    `PR_SET_PDEATHSIG` (macOS: kqueue's process events), and pidfds (macOS: none).
-2. **Zones on macOS**: the Seatbelt plan, zone-init inside it, `run`, `shell`, `ps`,
-   `stop`, `logs`; `network = "none"` and `"host"`; the settings table above, with its errors.
+2. **Zones on macOS** (done): the Seatbelt plan, zone-init beside it, `run`, `shell`,
+   `ps`, `stop`, `logs`; `network = "none"` and `"host"`; the settings table above, with
+   its errors.
 3. **The proxy**: `network = "internet"` on macOS (and later the allow list on both systems).
 4. **Tests**: the isolation probes of `tests/vm.nix` that apply (no `~/.ssh`, no
    real home, binds only, no localhost with `internet`, no network with `none`),
    as a script run on the Mac.
 5. **Packaging**: a nix-darwin module (as the NixOS one) first; Homebrew later.
 
+## Decided
+
+- `network = "internet"` through a proxy fails closed: a program that ignores
+  `HTTPS_PROXY` gets no network, and the docs say so. A weaker mode (outbound allowed,
+  the LAN reachable) only if asked for, under its own name.
+- A Mac app's `~/Library` folders: one zone-wide rule (the zone may write
+  `~/Library/*/<the app's id>` for its declared apps), the never-list still first.
+
 ## Open questions
 
-- `network = "internet"` through a proxy: programs that ignore `HTTPS_PROXY` get no
-  network in such a zone. Fail closed and say so in the docs, or offer a weaker mode
-  (outbound allowed, LAN reachable) under its own name?
-- A Mac app's `~/Library` folders: per-app allow lists in appzones (a short list for
-  common apps), or a zone-wide rule (the zone may write `~/Library/*/<the app's id>`)?
+- `machine_id = "zone"` (the default) cannot hide gethostuuid(2) on macOS: keep it a
+  note in the zone's log, or refuse the default there (every zone would then need
+  `machine_id = "host"` on a Mac)?
+- New ptys in a zone (tmux, `script`, agents that run commands in a pty): they need
+  `/dev/ttysN` by path, which reaches every terminal of the user. Leave them out, or
+  give the zone its ptys through zone-init (as `shell` does) later?
