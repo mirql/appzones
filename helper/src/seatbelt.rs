@@ -39,6 +39,8 @@ const IOKIT_NEVER: &[&str] = &["IOPlatformUUID", "IOPlatformSerialNumber", "seri
 
 /// What a profile is made from: real paths (symlinks resolved), checked already.
 pub struct Profile<'a> {
+    /// the user's own home (resolved), never read whatever its path
+    pub user_home: &'a Path,
     pub home: &'a Path,
     pub tmp: &'a Path,
     /// (path, writable)
@@ -86,10 +88,10 @@ pub fn profile(p: &Profile) -> Result<String, String> {
     s += "; the system, read-only: not the homes, the temp folders, the never-list\n\
           (allow file-read* file-map-executable)\n";
     let mut never: Vec<String> = NEVER_READ.iter().map(|n| format!("(subpath \"{n}\")")).collect();
+    never.push(format!("(subpath {})", q(p.user_home)?)); // (also a home outside /Users)
     for n in p.never {
         never.push(format!("(subpath {})", q(n)?));
     }
-    never.push(format!("(literal {})", q(p.marks.1)?));
     s += &format!("(deny file-read* file-map-executable\n  {})\n", never.join("\n  "));
     // the way down to the zone's folders: their parents' metadata (not their listing)
     let mut ways: Vec<PathBuf> = Vec::new();
@@ -103,13 +105,24 @@ pub fn profile(p: &Profile) -> Result<String, String> {
     s += "; the way to the zone's folders\n";
     s += &format!("(allow file-read-metadata\n  {})\n",
                   ways.iter().map(|w| q(w).map(|w| format!("(literal {w})"))).collect::<Result<Vec<_>, _>>()?.join("\n  "));
-    s += &format!("; the zone's mark, how its processes are told from others'\n(allow file-read-data (literal {}))\n",
-                  q(p.marks.0)?);
-    s += "; the zone's own folders, and its binds\n";
-    s += &format!("(allow file-read* file-write* (subpath {}) (subpath {}))\n", q(p.home)?, q(p.tmp)?);
-    for (b, rw) in p.binds {
-        s += &format!("(allow file-read*{} (subpath {}))\n", if *rw { " file-write*" } else { "" }, q(b)?);
+    // the zone's folders and binds, the shallowest first: in SBPL the last matching rule
+    // wins, so a folder inside another gets its own mode (an ro bind inside an rw one, or
+    // inside the zone's home, is read-only)
+    s += "; the zone's own folders, and its binds (deeper ones after: theirs is the last word)\n";
+    let mut areas: Vec<(&Path, bool)> = vec![(p.home, true), (p.tmp, true)];
+    areas.extend(p.binds.iter().map(|(b, rw)| (b.as_path(), *rw)));
+    areas.sort_by_key(|(a, _)| a.components().count()); // (stable: the same depth keeps its order)
+    for (a, rw) in areas {
+        s += &if rw {
+            format!("(allow file-read* file-write* (subpath {}))\n", q(a)?)
+        } else {
+            format!("(allow file-read* (subpath {0}))\n(deny file-write* (subpath {0}))\n", q(a)?)
+        };
     }
+    // last, so no bind's rule can override them
+    s += &format!("; the zone's marks, how its processes are told from others'\n(allow file-read-data (literal {}))\n\
+                   (deny file-read* file-write* (literal {}))\n(deny file-write* (literal {}))\n",
+                  q(p.marks.0)?, q(p.marks.1)?, q(p.marks.0)?);
     s += "; devices: the harmless ones, its own terminal (never another's: no new ptys either)\n\
           (allow file-read* file-write-data (literal \"/dev/null\") (literal \"/dev/zero\") (literal \"/dev/dtracehelper\"))\n\
           (allow file-read* (literal \"/dev/random\") (literal \"/dev/urandom\"))\n\
@@ -281,7 +294,7 @@ mod tests {
     fn profiles() {
         let binds = vec![(PathBuf::from("/Users/u/src"), true), (PathBuf::from("/Users/u/docs"), false)];
         let never = vec![PathBuf::from("/srv/secret")];
-        let p = Profile { home: Path::new("/Users/u/.local/share/appzones/dev/home"),
+        let p = Profile { user_home: Path::new("/Users/u"), home: Path::new("/Users/u/.local/share/appzones/dev/home"),
                           tmp: Path::new("/Users/u/.local/share/appzones/dev/tmp"), binds: &binds, network: "none",
                           never: &never, marks: (Path::new("/z/seatbelt-ab.yes"), Path::new("/z/seatbelt-ab.no")) };
         let s = profile(&p).unwrap();
@@ -296,6 +309,15 @@ mod tests {
         assert!(s.contains("(local unix-socket (path-prefix \"/Users/u/.local/share/appzones/dev/home\")"));
         // the binds come after the never-read list: in SBPL the last matching rule wins
         assert!(s.find("(subpath \"/Users\")").unwrap() < s.find("(subpath \"/Users/u/src\")").unwrap());
+        assert!(s.contains("(subpath \"/Users/u\")")); // the user's home, by its own path too
+        // an ro bind inside an rw one: read-only, after it
+        let nested = vec![(PathBuf::from("/w/src/vendor"), false), (PathBuf::from("/w/src"), true)];
+        let s = profile(&Profile { binds: &nested, ..p }).unwrap();
+        let (rw, ro) = (s.find("(allow file-read* file-write* (subpath \"/w/src\"))").unwrap(),
+                        s.find("(deny file-write* (subpath \"/w/src/vendor\"))").unwrap());
+        assert!(rw < ro);
+        // the marks after every bind
+        assert!(s.rfind("(deny file-read* file-write* (literal \"/z/seatbelt-ab.no\"))").unwrap() > ro);
         let host = profile(&Profile { network: "host", ..p }).unwrap();
         assert!(host.contains("(allow network* system-socket)") && host.contains("com.apple.dnssd.service"));
     }

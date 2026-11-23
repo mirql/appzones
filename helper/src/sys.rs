@@ -364,12 +364,28 @@ pub fn sandbox_may_read(pid: libc::pid_t, path: &std::path::Path) -> Option<bool
 /// agents do that.)
 #[cfg(not(target_os = "linux"))]
 pub fn zone_pids(yes: &std::path::Path, no: &std::path::Path) -> Vec<libc::pid_t> {
+    // a mark removed while the zone runs (sandbox_check calls a missing file refused, so its
+    // processes would no longer be found): made again at the same path, which the running
+    // profile names, so they are
+    for m in [yes, no] {
+        if std::fs::symlink_metadata(m).is_err() {
+            use std::os::unix::fs::OpenOptionsExt;
+            let _ = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW).open(m);
+        }
+    }
     if !(yes.is_file() && no.is_file()) {
-        return vec![]; // (sandbox_check calls a missing file refused: never a guess)
+        return vec![]; // (not files, and not to be made: nothing can be told, never a guess)
     }
     my_pids().into_iter().filter(|p| {
         sandboxed(*p) && sandbox_may_read(*p, yes) == Some(true) && sandbox_may_read(*p, no) == Some(false)
     }).collect()
+}
+
+/// The children of PID (macOS).
+#[cfg(not(target_os = "linux"))]
+pub fn children(pid: libc::pid_t) -> Vec<libc::pid_t> {
+    my_pids().into_iter().filter(|p| short_info(*p).is_some_and(|si| si.pbsi_ppid as libc::pid_t == pid)).collect()
 }
 
 /// SIGKILL to every process of the zone (zone_pids), until none is left or two seconds

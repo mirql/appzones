@@ -1281,9 +1281,20 @@ fn make_seatbelt_plan(host: &Host, name: &str) -> Result<J, String> {
     let never: Vec<PathBuf> = policy.denied_paths()?.iter()
         .filter_map(|d| realpath(d).map(|r| PathBuf::from(OsString::from_vec(r))))
         .filter(|d| !d.starts_with(&home_real) && d != Path::new("/")).collect();
+    // the profile and the marks are never where the zone can see them (a runtime directory
+    // or state folder moved into a bind by $XDG_RUNTIME_DIR or $APPZONES_STATE): it could
+    // rewrite the profile its next app starts under, or read the mark that tells it apart
+    let (zrt_real, zdir_real) = (real(&zrt)?, real(&zdir)?);
+    let seen: Vec<&Path> = binds.iter().map(|(b, _)| b.as_path()).chain([home.as_path()]).collect();
+    if let Some(b) = seen.iter().find(|b| zrt_real.starts_with(b) || zdir_real.starts_with(b)) {
+        return Err(format!("zone {name}: {} is inside {}, which the zone sees: its runtime directory ({}) and \
+                            state folder ({}) must be outside its home and binds", if zrt_real.starts_with(b) { "its runtime \
+                            directory" } else { "its state folder" }, sh(b), sh(&zrt_real), sh(&zdir_real)));
+    }
     let network = z.get("network").as_str().unwrap_or("internet").to_string();
-    let profile = seatbelt::profile(&seatbelt::Profile { home: &home, tmp: &tmp, binds: &binds, network: &network,
-                                                         never: &never, marks: (&marks.0, &marks.1) })?;
+    let profile = seatbelt::profile(&seatbelt::Profile { user_home: &home_real, home: &home, tmp: &tmp, binds: &binds,
+                                                         network: &network, never: &never,
+                                                         marks: (&marks.0, &marks.1) })?;
     write(&zrt.join("zone.sb"), &profile)?;
     let env = seatbelt::environment(&seatbelt::Env { zone: name, user: &host.user, home: &home, tmp: &tmp,
                                                      host_home: &home_real },

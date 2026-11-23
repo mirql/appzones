@@ -471,10 +471,17 @@ fn what_macos_has_not() {
     assert!(so.starts_with("ok: "), "{so}");
     // a zone that asks for what macOS cannot give: an error for it in check, and it does not start
     fs::write(b.t.join("zones.toml"), format!("{TWO}[zones.cc]\ncolour = \"#333333\"\n")).unwrap();
-    let (rc, _, err) = b.run(&["check"]);
+    let (rc, so, err) = b.run(&["check"]);
     assert_eq!(rc, 1);
     assert!(err.contains("zone cc: network = \"internet\" is not on macOS yet"), "{err}");
+    assert!(!so.contains("ok:"), "no ok before a refusal: {so}");
     let (rc, _, err) = b.run(&["up", "cc"]);
     assert_eq!(rc, 1);
     assert!(err.contains("cannot run on macOS as configured"), "{err}");
+    // nix_ld: refused for its zone alone (never the whole file: other zones still start)
+    fs::write(b.t.join("zones.toml"), format!("{}[zones.dd]\ncolour = \"#444444\"\nnetwork = \"none\"\nnix_ld = true\n",
+        TWO.replace("version = 1\n", "version = 1\nrequires = 3\n"))).unwrap();
+    let (rc, _, err) = b.run(&["check"]);
+    assert_eq!(rc, 1);
+    assert!(err.contains("zone dd: nix_ld = true: not on macOS") && !err.contains("[zones.dd] nix_ld"), "{err}");
 }

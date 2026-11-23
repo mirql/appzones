@@ -204,6 +204,16 @@ fn child_setup(ctty: bool) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Held while an app is started, and taken for good by the shutdown sweep (macOS): a child
+/// that is forked but not yet under the profile is zone-init's child, not in the sandbox,
+/// so the sweep ends zone-init's children itself, and none can be started after it.
+static SPAWN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn spawn_guarded(cmd: &mut Command) -> std::io::Result<std::process::Child> {
+    let _held = SPAWN.lock().unwrap_or_else(|e| e.into_inner());
+    cmd.spawn()
+}
+
 /// A zone on macOS: its profile, and its marks, by which its processes are told
 /// (crate::sys::zone_pids).
 #[cfg(not(target_os = "linux"))]
@@ -359,10 +369,12 @@ impl Init {
 
     /// ARGV's program, when it can be found on the zone's PATH (macOS: sandbox-exec would
     /// only say so after it started, as an exit status): an error now, as Linux gives one.
+    /// Relative paths (the program's, PATH's entries) from CWD, the command's directory.
     #[cfg(not(target_os = "linux"))]
-    fn findable(&self, argv0: &str) -> Result<(), String> {
-        let ok = if argv0.contains('/') { Path::new(argv0).exists() }
-                 else { which(argv0, &var(&self.env, "PATH").unwrap_or_default()).is_some() };
+    fn findable(&self, argv0: &str, cwd: &Path) -> Result<(), String> {
+        let path: Vec<String> = var(&self.env, "PATH").unwrap_or_default().split(':')
+            .map(|d| if d.starts_with('/') { d.to_string() } else { cwd.join(d).to_string_lossy().into_owned() }).collect();
+        let ok = if argv0.contains('/') { cwd.join(argv0).exists() } else { which(argv0, &path.join(":")).is_some() };
         if ok { Ok(()) } else { Err(format!("{argv0}: No such file or directory")) }
     }
 
@@ -479,7 +491,7 @@ impl Init {
         };
         // (macOS has no D-Bus: the setting means nothing there)
         #[cfg(not(target_os = "linux"))]
-        if let Err(e) = self.findable(&argv[0]) {
+        if let Err(e) = self.findable(&argv[0], &self.cwd(req)) {
             return fail(&mut conn, e);
         }
         #[cfg(target_os = "linux")]
@@ -516,7 +528,7 @@ impl Init {
         cmd.stderr(e.map_or(Stdio::null(), Stdio::from));
         // Safety: child_setup makes only async-signal-safe syscalls.
         unsafe { cmd.pre_exec(|| child_setup(false)) };
-        let spawned = cmd.spawn();
+        let spawned = spawn_guarded(&mut cmd);
         drop(cmd); // our copies of the child's stdio
         let pid = match spawned {
             Ok(child) => child.id() as i32, // reaped by waitpid(-1) in reap()
@@ -550,7 +562,7 @@ impl Init {
             env.entry("TERM".into()).or_insert_with(|| "xterm-256color".into());
         }
         #[cfg(not(target_os = "linux"))]
-        if let Err(e) = self.findable(&argv[0]) {
+        if let Err(e) = self.findable(&argv[0], &self.cwd(req)) {
             return fail(&mut conn, e);
         }
         let (mut master, mut slave) = (0 as RawFd, 0 as RawFd);
@@ -572,7 +584,7 @@ impl Init {
         cmd.env_clear().envs(&env).current_dir(self.cwd(req)).stdin(i).stdout(o).stderr(e);
         // Safety: child_setup makes only async-signal-safe syscalls.
         unsafe { cmd.pre_exec(|| child_setup(true)) };
-        let spawned = cmd.spawn();
+        let spawned = spawn_guarded(&mut cmd);
         drop(cmd);
         drop(slave);
         let pid = match spawned {
@@ -795,7 +807,7 @@ impl Init {
                 Ok(())
             })
         };
-        let spawned = cmd.spawn();
+        let spawned = spawn_guarded(&mut cmd);
         drop(cmd);
         drop(w);
         let pid = match spawned {
@@ -1200,6 +1212,12 @@ pub fn main(_args: &[String]) -> u8 {
     let sweep = {
         let (yes, no) = (sandbox.yes.clone(), sandbox.no.clone());
         move || {
+            // no app starts from here on; those forked but not yet under the profile first
+            std::mem::forget(SPAWN.lock().unwrap_or_else(|e| e.into_inner()));
+            for c in crate::sys::children(std::process::id() as libc::pid_t) {
+                // Safety: SIGKILL to a child of ours (an app of the zone, or one starting).
+                unsafe { libc::kill(c, libc::SIGKILL) };
+            }
             let n = crate::sys::kill_zone(&yes, &no);
             log(&format!("ended the zone's processes ({n})"));
         }

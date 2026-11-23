@@ -1147,8 +1147,6 @@ impl Cli {
         if !cfg.errors.is_empty() {
             return 1;
         }
-        out(&format!("ok: {}: {} zones ({}), {} apps (this zone is release {})", self.config_path(), cfg.zones.len(),
-                     cfg.zones.iter().map(|z| z.name.as_str()).collect::<Vec<_>>().join(", "), cfg.apps.len(), config::RELEASE));
         // macOS: what a zone there cannot be given (an error for that zone, which will not start)
         #[cfg(not(target_os = "linux"))]
         {
@@ -1160,6 +1158,8 @@ impl Cli {
                 return 1;
             }
         }
+        out(&format!("ok: {}: {} zones ({}), {} apps (this zone is release {})", self.config_path(), cfg.zones.len(),
+                     cfg.zones.iter().map(|z| z.name.as_str()).collect::<Vec<_>>().join(", "), cfg.apps.len(), config::RELEASE));
         let Some(probe) = probe else { return 0 };
         // (the probes run in the zone: macOS's are stage 4 of design/macos.md)
         if cfg!(not(target_os = "linux")) {

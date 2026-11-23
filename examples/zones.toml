@@ -10,7 +10,7 @@ requires = 6                   # the zones release this file needs (`appzones ch
                                # `appzones` then says "update appzones" instead of "unknown key"
 
 [defaults]                     # every zone starts from these; a zone overrides any key
-network     = "internet"       # none | internet | host
+network     = "internet"       # none | internet | host   (macOS: none or host; internet comes with the proxy)
 netbird     = false            # with network = "internet": also reach the NetBird mesh (the NetBird interface's network, never the host itself)
 dns         = "host"           # host (the host's resolver: its ad blocking and internal names) | public (1.1.1.1, then 1.0.0.1)
 links       = "portal"         # where clicked links open: portal (host default browser) | zone (this zone's browser) | "zone:NAME"

@@ -739,7 +739,9 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
                 errs.push(format!("{p} links names unknown zone {}", py_repr(t)));
             }
         }
-        if truly("nix_ld") && host_layout() == "fhs" {
+        // (Linux's host checks: on macOS nix_ld is refused for its zone alone, seatbelt::unsupported)
+        if cfg!(not(target_os = "linux")) {
+        } else if truly("nix_ld") && host_layout() == "fhs" {
             errs.push(format!("{p} nix_ld = true is for NixOS; on this distribution generic Linux binaries run without \
                                it: remove it"));
         } else if truly("nix_ld") && host_nix_ld().is_none() {
