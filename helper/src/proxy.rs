@@ -38,14 +38,15 @@ fn in6(ip: Ipv6Addr, net: Ipv6Addr, prefix: u8) -> bool {
     u128::from(ip) & mask == u128::from(net) & mask
 }
 
-/// The host's addresses and the networks it is directly connected to: (address, prefix).
-pub fn host_nets() -> Vec<(IpAddr, u8)> {
+/// The host's addresses and the networks it is directly connected to: (address, prefix);
+/// None when they cannot be read (then nothing is let through: never only the fixed list).
+pub fn host_nets() -> Option<Vec<(IpAddr, u8)>> {
     let mut out = Vec::new();
     let mut ifa: *mut libc::ifaddrs = std::ptr::null_mut();
     // Safety: getifaddrs fills a list we walk and free; each sockaddr is read by its family.
     unsafe {
         if libc::getifaddrs(&mut ifa) != 0 {
-            return out;
+            return None;
         }
         let mut p = ifa;
         while !p.is_null() {
@@ -72,7 +73,7 @@ pub fn host_nets() -> Vec<(IpAddr, u8)> {
         }
         libc::freeifaddrs(ifa);
     }
-    out
+    Some(out)
 }
 
 /// Why the zone may not reach IP (a short reason for the log), None when it may. HOST: the
@@ -170,24 +171,24 @@ pub fn parse_head(head: &[u8]) -> Result<Request, &'static str> {
     let Some(rest) = target.strip_prefix("http://") else {
         return Err("400 Bad Request"); // (https:// goes through CONNECT)
     };
-    let (authority, path) = match rest.find('/') {
+    // the authority ends at the path, the query or the fragment (RFC 3986); an empty path is /
+    let (authority, path) = match rest.find(['/', '?', '#']) {
         Some(i) => (&rest[..i], &rest[i..]),
-        None => (rest, "/"),
+        None => (rest, ""),
     };
+    let path = path.split('#').next().unwrap_or("");
+    let path = if path.starts_with('/') { path.to_string() } else { format!("/{path}") };
     let t = parse_authority(authority, Some(80)).ok_or("400 Bad Request")?;
-    let mut out = format!("{method} {path} {version}\r\n");
-    let mut has_host = false;
+    // Host: the target's authority, never the one the client sent (it would choose another
+    // site on the server connected to; RFC 9112, 3.2.2)
+    let mut out = format!("{method} {path} {version}\r\nHost: {authority}\r\n");
     for l in lines {
         let name = l.split(':').next().unwrap_or("").trim().to_ascii_lowercase();
-        if name.starts_with("proxy-") || name == "connection" || name == "keep-alive" || l.is_empty() {
+        if name.starts_with("proxy-") || name == "connection" || name == "keep-alive" || name == "host" || l.is_empty() {
             continue;
         }
-        has_host |= name == "host";
         out += l;
         out += "\r\n";
-    }
-    if !has_host {
-        out += &format!("Host: {authority}\r\n");
     }
     out += "Connection: close\r\n\r\n";
     Ok(Request::Http(t, out.into_bytes()))
@@ -201,7 +202,12 @@ pub type Log = Arc<dyn Fn(&str) + Send + Sync>;
 fn open(t: &Target, log: &Log, budget: &crate::host_dns::Budget) -> Result<TcpStream, (&'static str, String)> {
     let addrs: Vec<SocketAddr> = (t.host.as_str(), t.port).to_socket_addrs()
         .map_err(|_| ("502 Bad Gateway", format!("{}: no such name", t.host)))?.collect();
-    let host = host_nets();
+    let Some(host) = host_nets() else {
+        if budget.take_at(Instant::now()) {
+            log("[proxy] the host's networks cannot be read: nothing is let through");
+        }
+        return Err(("502 Bad Gateway", "the host's networks cannot be read".into()));
+    };
     let mut why = None;
     for a in &addrs {
         if let Some(r) = refused(a.ip(), &host) {
@@ -370,11 +376,28 @@ fn handle(c: TcpStream, log: &Log, budget: &crate::host_dns::Budget) {
     }
 }
 
-/// The proxy on a new port of 127.0.0.1, in threads of its own for as long as this process
-/// runs; its port. LOG: a line for the zone's log (refusals, at most a few a second).
+/// A new port of 127.0.0.1, and the same port of ::1: a zone's profile allows the port on
+/// every loopback address, so the proxy holds both and nothing else can listen there. A
+/// port taken on ::1: another one. (No ::1 at all: nothing can listen there either.)
+fn listeners() -> std::io::Result<Vec<TcpListener>> {
+    let mut last = None;
+    for _ in 0..32 {
+        let v4 = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        let port = v4.local_addr()?.port();
+        match TcpListener::bind((Ipv6Addr::LOCALHOST, port)) {
+            Ok(v6) => return Ok(vec![v4, v6]),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable => return Ok(vec![v4]),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("no free port")))
+}
+
+/// The proxy on a new port of loopback (listeners), in threads of its own for as long as
+/// this process runs; its port. LOG: a line for the zone's log (refusals, a few a second).
 pub fn start(log: Log) -> std::io::Result<u16> {
-    let l = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
-    let port = l.local_addr()?.port();
+    let ls = listeners()?;
+    let port = ls[0].local_addr()?.port();
     let open = Arc::new(AtomicUsize::new(0));
     let budget = Arc::new(crate::host_dns::Budget::new(2.0, 20.0));
     /// One connection's place in the count, given back when it ends (or its thread could
@@ -385,19 +408,22 @@ pub fn start(log: Log) -> std::io::Result<u16> {
             self.0.fetch_sub(1, Ordering::SeqCst);
         }
     }
-    std::thread::Builder::new().name("proxy".into()).spawn(move || {
-        for c in l.incoming().flatten() {
-            let slot = Slot(open.clone());
-            if open.fetch_add(1, Ordering::SeqCst) >= MAX_CONNS {
-                continue; // (dropped: closed at once, its slot given back)
+    for l in ls {
+        let (open, log, budget) = (open.clone(), log.clone(), budget.clone());
+        std::thread::Builder::new().name("proxy".into()).spawn(move || {
+            for c in l.incoming().flatten() {
+                let slot = Slot(open.clone());
+                if open.fetch_add(1, Ordering::SeqCst) >= MAX_CONNS {
+                    continue; // (dropped: closed at once, its slot given back)
+                }
+                let (log, budget) = (log.clone(), budget.clone());
+                let _ = std::thread::Builder::new().spawn(move || {
+                    let _slot = slot;
+                    handle(c, &log, &budget);
+                });
             }
-            let (log, budget) = (log.clone(), budget.clone());
-            let _ = std::thread::Builder::new().spawn(move || {
-                let _slot = slot;
-                handle(c, &log, &budget);
-            });
-        }
-    })?;
+        })?;
+    }
     Ok(port)
 }
 
@@ -434,12 +460,17 @@ mod tests {
                    Ok(Request::Connect(Target { host: "example.com".into(), port: 443 })));
         assert_eq!(parse_head(b"CONNECT [2606:4700::1111]:443 HTTP/1.1"),
                    Ok(Request::Connect(Target { host: "2606:4700::1111".into(), port: 443 })));
-        let Ok(Request::Http(t, head)) = parse_head(b"GET http://Example.com/a?b HTTP/1.1\r\nHost: example.com\r\n\
+        let Ok(Request::Http(t, head)) = parse_head(b"GET http://Example.com/a?b HTTP/1.1\r\nHost: other.example\r\n\
                                                      Proxy-Connection: keep-alive\r\nConnection: keep-alive\r\nAccept: */*")
         else { panic!() };
         assert_eq!(t, Target { host: "example.com".into(), port: 80 });
+        // (the Host the client sent is replaced by the target's)
         assert_eq!(String::from_utf8(head).unwrap(),
-                   "GET /a?b HTTP/1.1\r\nHost: example.com\r\nAccept: */*\r\nConnection: close\r\n\r\n");
+                   "GET /a?b HTTP/1.1\r\nHost: Example.com\r\nAccept: */*\r\nConnection: close\r\n\r\n");
+        // a query without a path, a fragment: never part of the authority
+        let Ok(Request::Http(t, head)) = parse_head(b"GET http://example.com?x=1#f HTTP/1.1") else { panic!() };
+        assert_eq!(t.host, "example.com");
+        assert!(String::from_utf8(head).unwrap().starts_with("GET /?x=1 HTTP/1.1\r\nHost: example.com\r\n"));
         let Ok(Request::Http(t, head)) = parse_head(b"GET http://example.com:8080 HTTP/1.0") else { panic!() };
         assert_eq!(t.port, 8080);
         assert!(String::from_utf8(head).unwrap().starts_with("GET / HTTP/1.0\r\nHost: example.com:8080\r\n"));
@@ -465,6 +496,15 @@ mod tests {
             got
         };
         assert!(talk(b"CONNECT 127.0.0.1:22 HTTP/1.1\r\n\r\n", 12).starts_with(b"HTTP/1.1 403"));
+        // the same port on ::1 is the proxy's too (where this host has IPv6 loopback)
+        if TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).is_ok() {
+            let mut c = TcpStream::connect((Ipv6Addr::LOCALHOST, port)).unwrap();
+            c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            c.write_all(b"CONNECT [::1]:22 HTTP/1.1\r\n\r\n").unwrap();
+            let mut got = [0u8; 12];
+            c.read_exact(&mut got).unwrap();
+            assert!(got.starts_with(b"HTTP/1.1 403"));
+        }
         assert!(talk(b"GET http://127.0.0.1:1/ HTTP/1.1\r\n\r\n", 12).starts_with(b"HTTP/1.1 403"));
         assert!(talk(b"GET http://localhost:1/ HTTP/1.1\r\n\r\n", 12).starts_with(b"HTTP/1.1 403"));
         assert!(talk(b"GET /x HTTP/1.1\r\n\r\n", 12).starts_with(b"HTTP/1.1 400"));

@@ -181,10 +181,13 @@ What appzones can take from it, on both systems:
 
 - **The proxy runs in the zone's server** (`helper/src/proxy.rs`), on a new port of
   127.0.0.1 at each start. The port is known only then, so the profile names it as a
-  parameter: `(remote ip (string-append "localhost:" (param "PROXY_PORT")))`, and
+  parameter: `(remote tcp (string-append "localhost:" (param "PROXY_PORT")))`, and
   zone-init starts each app with `sandbox-exec -D PROXY_PORT=N`. A profile run without
   the parameter is refused by sandbox-exec (fails closed). The zone may connect to that
-  port and to nothing else: not other localhost ports, not the internet directly.
+  port and to nothing else: not other localhost ports, not the internet directly. The
+  rule matches the port on every loopback address (`::1` and IPv4-mapped too; UDP is
+  refused anyway), so the proxy listens on `[::1]:PORT` as well and nothing else can.
+  When the host's networks cannot be read, the proxy lets nothing through.
 - **One port, three ways in**, told by the first byte: HTTP CONNECT (`HTTPS_PROXY`), a
   plain request with an absolute `http://` URL (`HTTP_PROXY`; rewritten for the origin,
   one request per connection, `Connection: close`, so a reused connection never goes to

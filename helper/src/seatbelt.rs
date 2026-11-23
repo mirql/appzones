@@ -158,7 +158,8 @@ pub fn profile(p: &Profile) -> Result<String, String> {
             let own = format!("(path-prefix {}) (path-prefix {})", q(p.home)?, q(p.tmp)?);
             s += "; network = \"internet\": appzones' proxy (one port on localhost), unix sockets in the zone's own folders\n";
             s += "(allow system-socket (socket-domain AF_UNIX) (socket-domain AF_INET) (socket-domain AF_INET6))\n";
-            s += &format!("(allow network-outbound (remote ip (string-append \"localhost:\" (param \"{PROXY_PORT}\"))))\n");
+            // (TCP to the port on every loopback address: crate::proxy holds it on each)
+            s += &format!("(allow network-outbound (remote tcp (string-append \"localhost:\" (param \"{PROXY_PORT}\"))))\n");
             s += &format!("(allow network-bind network-inbound (local unix-socket {own}))\n");
             s += &format!("(allow network-outbound (remote unix-socket {own}))\n");
         }
@@ -345,7 +346,7 @@ mod tests {
         assert!(host.contains("(allow network* system-socket)") && host.contains("com.apple.dnssd.service"));
         // internet: the proxy's port alone, by the parameter; no names, no other network
         let inet = profile(&Profile { network: "internet", ..p }).unwrap();
-        assert!(inet.contains("(allow network-outbound (remote ip (string-append \"localhost:\" (param \"PROXY_PORT\"))))"));
+        assert!(inet.contains("(allow network-outbound (remote tcp (string-append \"localhost:\" (param \"PROXY_PORT\"))))"));
         assert!(!inet.contains("(allow network*") && !inet.contains("com.apple.dnssd.service") && inet.contains("com.apple.trustd"));
     }
 
