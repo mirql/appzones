@@ -1158,13 +1158,57 @@ impl Cli {
         out(&format!("ok: {}: {} zones ({}), {} apps (this zone is release {})", self.config_path(), cfg.zones.len(),
                      cfg.zones.iter().map(|z| z.name.as_str()).collect::<Vec<_>>().join(", "), cfg.apps.len(), config::RELEASE));
         let Some(probe) = probe else { return 0 };
-        // (the probes run in the zone: macOS's are stage 4 of design/macos.md)
-        if cfg!(not(target_os = "linux")) {
-            die(&format!("check --probe {probe}: not on macOS yet"));
-        }
         let cfg = self.load_zone(probe, true);
         let z = cfg.zone(probe).expect("checked");
         self.up(probe, true);
+        #[cfg(target_os = "linux")]
+        let (probes, mut skipped) = self.linux_probes(z);
+        #[cfg(not(target_os = "linux"))]
+        let (probes, mut skipped) = self.macos_probes(probe, z);
+        let exe = std::env::current_exe().unwrap_or_else(|e| die(&e.to_string()));
+        let mut fails = 0;
+        // (macOS: /bin/sh, as a zone there may not have bash in its PATH order)
+        let shell = if cfg!(target_os = "linux") { "/bin/bash" } else { "/bin/sh" };
+        for (title, expect, cmd) in probes {
+            // the probe says it ran first: a refusal counts only from a probe that ran
+            let script = format!("echo appzones-probe-ran; {cmd}");
+            let o = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", shell, "-c", &script])
+                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
+            let ran = o.as_ref().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).lines().next() == Some("appzones-probe-ran"));
+            // a refusal probe whose tool is not in the zone (126, 127) proves nothing: SKIP
+            if ran && expect == 1 && o.as_ref().is_ok_and(|o| matches!(o.status.code(), Some(126 | 127))) {
+                skipped.push(format!("{title} (its tool is not in the zone)"));
+                continue;
+            }
+            let ok = ran && o.as_ref().is_ok_and(|o| o.status.success() == (expect == 0));
+            fails += i32::from(!ok);
+            out(&format!("{}  {title}{}", if ok { "PASS" } else { "FAIL" }, if ran { "" } else { " (the probe did not run)" }));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let host_id = std::fs::read_to_string("/etc/machine-id").map(|m| m.trim().to_string()).unwrap_or_default();
+            let zone_id = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", "cat /etc/machine-id"])
+                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).output().ok()
+                .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+            let ok = match (&zone_id, z.get("machine_id").as_str() == Some("zone")) {
+                (Some(id), true) => !id.is_empty() && *id != host_id,
+                (Some(id), false) => *id == host_id,
+                (None, _) => false,
+            };
+            fails += i32::from(!ok);
+            out(&format!("{}  machine-id is the zone's{}", if ok { "PASS" } else { "FAIL" },
+                         if zone_id.is_some() { "" } else { " (the probe did not run)" }));
+        }
+        for s in skipped {
+            out(&format!("SKIP  {s}"));
+        }
+        i32::from(fails > 0)
+    }
+
+    /// The isolation probes on Linux: (title, the exit status wanted, the command), and
+    /// what is skipped.
+    #[cfg(target_os = "linux")]
+    fn linux_probes(&self, z: &Zone) -> (Vec<(String, i32, String)>, Vec<String>) {
         let tcp = |h: &str, p: u16| format!("timeout 3 bash -c '</dev/tcp/{h}/{p}' 2>/dev/null");
         let zrt = self.host.zrt_in();
         let mut probes: Vec<(String, i32, String)> = vec![
@@ -1201,39 +1245,105 @@ impl Cli {
                 }
             }
         }
-        let exe = std::env::current_exe().unwrap_or_else(|e| die(&e.to_string()));
-        let mut fails = 0;
-        for (title, expect, cmd) in probes {
-            // the probe says it ran first: a refusal counts only from a probe that ran
-            let script = format!("echo appzones-probe-ran; {cmd}");
-            let o = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", &script])
-                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
-            let ran = o.as_ref().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).lines().next() == Some("appzones-probe-ran"));
-            // a refusal probe whose tool is not in the zone (126, 127) proves nothing: SKIP
-            if ran && expect == 1 && o.as_ref().is_ok_and(|o| matches!(o.status.code(), Some(126 | 127))) {
-                skipped.push(format!("{title} (its tool is not in the zone)"));
-                continue;
+        (probes, skipped)
+    }
+
+    /// The isolation probes on macOS (design/macos.md, stage 4): what a Seatbelt zone may
+    /// never read, write, signal or reach. (title, the exit status wanted, the command), and
+    /// what is skipped. Each refusal of the network is probed only where the host itself
+    /// reaches the target; the proxy's refusals need no target (it refuses before it connects).
+    #[cfg(not(target_os = "linux"))]
+    fn macos_probes(&self, name: &str, z: &Zone) -> (Vec<(String, i32, String)>, Vec<String>) {
+        let q = |p: &str| shell_quote(p);
+        let home = std::fs::canonicalize(&self.host.home).map(|h| sh(&h)).unwrap_or_else(|_| sh(&self.host.home));
+        let mut probes: Vec<(String, i32, String)> = vec![
+            ("your home is closed".into(), 1, format!("ls {}", q(&home))),
+            ("no writes in your home".into(), 1, format!("f={}/.appzones-probe-$$; : > \"$f\" && rm -f \"$f\"", q(&home))),
+            ("/tmp is closed".into(), 1, "ls /private/tmp".into()),
+            ("other volumes are closed".into(), 1, "ls /Volumes".into()),
+            ("no host secrets in env".into(), 1, "env | grep -E 'SSH_AUTH|TOKEN|SECRET|PASSWORD'".into()),
+            ("the boot UUID is hidden".into(), 0, "[ -z \"$(sysctl -n kern.bootuuid 2>/dev/null)\" ]".into()),
+            ("the hardware UUID is hidden from IOKit".into(), 1,
+             "ioreg -rd1 -c IOPlatformExpertDevice | grep -q -e IOPlatformUUID -e IOPlatformSerialNumber".into()),
+        ];
+        if Path::new(&home).join(".ssh").exists() {
+            probes.push(("~/.ssh is closed".into(), 1, format!("ls -d {}/.ssh", q(&home))));
+        }
+        let policy = config::policy(self.host.here.as_os_str().to_owned());
+        for p in policy.denied_paths().unwrap_or_default() {
+            let p = String::from_utf8_lossy(&p).into_owned();
+            if Path::new(&p).exists() && !(p == home || p.starts_with(&format!("{home}/"))) {
+                probes.push((format!("{p} is closed"), 1, format!("ls -d {}", q(&p))));
             }
-            let ok = ran && o.as_ref().is_ok_and(|o| o.status.success() == (expect == 0));
-            fails += i32::from(!ok);
-            out(&format!("{}  {title}{}", if ok { "PASS" } else { "FAIL" }, if ran { "" } else { " (the probe did not run)" }));
         }
-        let host_id = std::fs::read_to_string("/etc/machine-id").map(|m| m.trim().to_string()).unwrap_or_default();
-        let zone_id = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", "cat /etc/machine-id"])
-            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).output().ok()
-            .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-        let ok = match (&zone_id, z.get("machine_id").as_str() == Some("zone")) {
-            (Some(id), true) => !id.is_empty() && *id != host_id,
-            (Some(id), false) => *id == host_id,
-            (None, _) => false,
+        // the zone's mark that it must not read (how its processes are told apart)
+        let zdir = self.host.state.join(name);
+        let marks = std::fs::read_dir(&zdir).map(|it| it.flatten().map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "no")).collect::<Vec<_>>()).unwrap_or_default();
+        for m in marks {
+            probes.push(("the zone's own mark is closed".into(), 1, format!("cat {}", q(&sh(&m)))));
+        }
+        // its server and zone-init are outside its sandbox
+        for pid in self.server_pids(name) {
+            probes.push((format!("its server (pid {pid}) cannot be signalled"), 1, format!("kill -0 {pid}")));
+        }
+        if let Some(pid) = agent::ping(self.rt(), name).and_then(|v| v.get("pid").and_then(J::as_i64)) {
+            probes.push((format!("zone-init (pid {pid}) cannot be signalled"), 1, format!("kill -0 {pid}")));
+        }
+        let mut skipped = Vec::new();
+        let reaches = |h: &str, p: u16| format!("{h}:{p}").parse::<std::net::SocketAddr>().ok()
+            .is_some_and(|a| std::net::TcpStream::connect_timeout(&a, Duration::from_secs(2)).is_ok());
+        let direct = |title: &str, h: &str, p: u16, probes: &mut Vec<(String, i32, String)>, skipped: &mut Vec<String>| {
+            if reaches(h, p) {
+                probes.push((title.into(), 1, format!("nc -z -G 3 {h} {p}")));
+            } else {
+                skipped.push(format!("{title} (the host does not reach {h}:{p} either)"));
+            }
         };
-        fails += i32::from(!ok);
-        out(&format!("{}  machine-id is the zone's{}", if ok { "PASS" } else { "FAIL" },
-                     if zone_id.is_some() { "" } else { " (the probe did not run)" }));
-        for s in skipped {
-            out(&format!("SKIP  {s}"));
+        let gateway = Command::new("route").args(["-n", "get", "default"]).stdin(Stdio::null()).output().ok()
+            .and_then(|o| String::from_utf8_lossy(&o.stdout).lines()
+                .find_map(|l| l.trim().strip_prefix("gateway:").map(|g| g.trim().to_string())))
+            .filter(|g| g.parse::<std::net::Ipv4Addr>().is_ok());
+        let own = crate::proxy::host_nets().unwrap_or_default().into_iter()
+            .find(|(a, _)| matches!(a, std::net::IpAddr::V4(v) if !v.is_loopback() && !v.is_link_local()))
+            .map(|(a, _)| a.to_string());
+        match z.get("network").as_str().unwrap_or("internet") {
+            "none" => {
+                direct("no network: the internet", "1.1.1.1", 443, &mut probes, &mut skipped);
+                if let Some(g) = &gateway {
+                    for port in [80, 53, 443] {
+                        if reaches(g, port) {
+                            direct(&format!("no network: the LAN's gateway {g}"), g, port, &mut probes, &mut skipped);
+                            break;
+                        }
+                    }
+                }
+            }
+            "internet" => {
+                direct("no direct connection, around the proxy", "1.1.1.1", 443, &mut probes, &mut skipped);
+                if reaches("1.1.1.1", 443) {
+                    probes.push(("the internet through the proxy".into(), 0,
+                                 "curl -sf -m 20 -o /dev/null https://example.com".into()));
+                }
+                probes.push(("no names resolve in the zone".into(), 1, "nslookup -timeout=3 example.com".into()));
+                let mut targets: Vec<(String, String)> = vec![
+                    ("the host's loopback".into(), "127.0.0.1:22".into()), ("a private range".into(), "10.0.0.1:80".into()),
+                    ("the tailnet range".into(), "100.64.0.1:8443".into()), ("link-local".into(), "169.254.169.254:80".into()),
+                    ("the IPv6 loopback".into(), "[::1]:22".into())];
+                if let Some(g) = &gateway {
+                    targets.push((format!("the LAN's gateway {g}"), format!("{g}:80")));
+                }
+                if let Some(a) = &own {
+                    targets.push((format!("the host's own address {a}"), format!("{a}:22")));
+                }
+                for (title, t) in targets {
+                    probes.push((format!("{title} refused by the proxy"), 0,
+                                 format!("[ \"$(curl -s -m 10 -o /dev/null -w '%{{http_code}}' http://{t}/)\" = 403 ]")));
+                }
+            }
+            _ => skipped.push("network refusals (network = \"host\": the zone has the host's network)".into()),
         }
-        i32::from(fails > 0)
+        (probes, skipped)
     }
 
     fn find_desktop(&self, name: &str) -> Vec<(String, String)> {

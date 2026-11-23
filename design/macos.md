@@ -1,6 +1,6 @@
 # appzones on macOS
 
-Status: stages 1 to 3 built (2026-11-23): command-line zones with every `network`
+Status: stages 1 to 4 built (2026-11-23): command-line zones with every `network`
 setting (see "Stage 2, as built" and "Stage 3, as built"). Tested on Apple silicon with
 macOS 27.
 
@@ -232,9 +232,11 @@ What appzones can take from it, on both systems:
    its errors.
 3. **The proxy** (done): `network = "internet"` on macOS (and later the allow list on both
    systems).
-4. **Tests**: the isolation probes of `tests/vm.nix` that apply (no `~/.ssh`, no
-   real home, binds only, no localhost with `internet`, no network with `none`),
-   as a script run on the Mac.
+4. **Tests** (done): `appzones check --probe` on macOS, with probes of its own (cli.rs,
+   macos_probes), and `tests/macos.sh` (`just test-macos-zones USER@MAC`): a zone of each
+   `network` kind, every probe in each, then binds and a zone's end, which the probes cannot
+   see from inside. Checked against a weakened profile (the home and the network opened):
+   the probes for them fail, as they must.
 5. **Packaging**: a nix-darwin module (as the NixOS one) first; Homebrew later.
 
 ## Decided

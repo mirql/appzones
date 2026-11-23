@@ -8,6 +8,12 @@ The config schema has its own release number (`requires = N` in
 - **`nix_ld` on a host without nix-ld** refuses only that zone (`appzones check` names it,
   and it does not start), no longer the whole `zones.toml`: a file shared between machines
   still works for its other zones. The same holds for what macOS cannot give a zone.
+- **Isolation probes on macOS** (design/macos.md, stage 4): `appzones check --probe ZONE`
+  runs there, with macOS's own probes (the home, `~/.ssh`, `/tmp`, other volumes, the
+  never-list, the zone's server and zone-init, the machine's identity, and per `network`
+  what must stay unreachable, the proxy's refusals included). `tests/macos.sh` (`just
+  test-macos-zones USER@MAC`) runs zones of each kind on a Mac, the probes in each, and
+  checks binds and a zone's end there.
 - **`network = "internet"` on macOS** (design/macos.md, stage 3): through appzones' own
   proxy in the zone's server (HTTP CONNECT, plain HTTP, SOCKS5, on one localhost port that
   the zone's profile alone may reach). It refuses what the nft rules refuse on Linux (the

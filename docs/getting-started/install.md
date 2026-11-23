@@ -280,7 +280,8 @@ different there:
 - No runtime mounts (`appzones mount`): add a bind and `appzones restart`.
 - A zone's apps cannot open new terminals inside it (no new ptys: they would reach the
   other terminals of your session), and it can still read the Mac's hardware UUID.
-- No desktop apps yet, and `check --probe` is not there yet.
+- No desktop apps yet. `appzones check --probe ZONE` runs macOS's own probes (what a zone
+  there may never read, signal or reach).
 
 To build it, in the checkout: `nix develop` (or Rust 1.85 or newer), then
 `cargo build --release --manifest-path helper/Cargo.toml`; the command is then

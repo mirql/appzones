@@ -17,7 +17,19 @@ just test-opensuse  # openSUSE Leap 16, SELinux enforcing: make install, the sam
 just deb            # the .deb, in result-deb/
 just test-rust      # the Rust helpers (helper/, design/rust.md): cargo test, protocol, never-list, VM, distros
 just audit          # the Rust helpers' dependencies (cargo deny: advisories, licenses; needs the network)
+just test-macos USER@MAC        # on a Mac over ssh (with Nix): this commit, clippy and cargo test
+just test-macos-zones USER@MAC  # on a Mac: zones themselves, tests/macos.sh (~3 min)
 ```
+
+`tests/macos.sh` runs on the Mac, in a temporary folder of the home (config, state, logs and
+runtime directory: never the user's own zones). It starts a zone of each `network` kind and
+runs `appzones check --probe` in each (every probe must pass: the home, `~/.ssh`, `/tmp`,
+other volumes, the never-list, the zone's own mark, its server and zone-init, the machine's
+identity; no network with `none`; with `internet` nothing around the proxy, no names, and
+the proxy refusing the host, its LAN, loopback, private, tailnet and link-local ranges).
+Then what the probes cannot see from inside: binds `rw`, `ro` and an `ro` one inside an `rw`
+one; a zone's processes, detached ones too, ended by `stop`, by its server's end and by
+zone-init's; a setting macOS cannot give refusing its zone alone.
 
 The VM test (`tests/vm.nix`, `checks.x86_64-linux.vm`) runs Hyprland on a
 virtual GPU. It covers:

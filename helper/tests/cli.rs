@@ -475,8 +475,7 @@ fn nix_ld_refuses_its_zone_alone() {
 fn what_macos_has_not() {
     // what macOS cannot do (design/macos.md) says so; the rest works
     let b = Box_::new("macos-not", Some(TWO));
-    for (cmd, says) in [(&["mount", "aa", "/tmp"][..], "not at run time on macOS"), (&["apps"], "apps: not on macOS yet"),
-                        (&["check", "--probe", "aa"], "not on macOS yet")] {
+    for (cmd, says) in [(&["mount", "aa", "/tmp"][..], "not at run time on macOS"), (&["apps"], "apps: not on macOS yet")] {
         let (rc, _, err) = b.run(cmd);
         assert_eq!(rc, 1, "{cmd:?}");
         assert!(err.contains(says), "{cmd:?}: {err}");
