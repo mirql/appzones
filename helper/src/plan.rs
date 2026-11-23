@@ -1203,6 +1203,24 @@ pub fn make_plan(host: &Host, name: &str) -> Result<J, String> {
     make_bwrap_plan(host, name)
 }
 
+/// The configuration a plan is made from: valid, its warnings said, with zone NAME in it and
+/// nothing about that zone that this host (WHERE, for the message) refuses.
+fn plan_config(host: &Host, name: &str, where_: &str) -> Result<Config, String> {
+    let cfg = config::load(&host.config, &sh(&host.config), host.here.as_os_str().to_owned());
+    if !cfg.errors.is_empty() {
+        return Err(format!("{} is invalid:\n  {}", sh(&host.config), cfg.errors.join("\n  ")));
+    }
+    for w in &cfg.warnings {
+        warn(&format!("warning: {w}"));
+    }
+    let z = cfg.zone(name).ok_or_else(|| format!("no zone {} in {}", py_repr(name), sh(&host.config)))?;
+    let refused = config::host_refusals(z);
+    if !refused.is_empty() {
+        return Err(format!("zone {name} cannot run on {where_} as configured:\n  {}", refused.join("\n  ")));
+    }
+    Ok(cfg)
+}
+
 /// The zone's home: its own folder, or the `home` setting (checked as a bind is).
 fn zone_home(host: &Host, policy: &Policy, z: &Zone, zdir: &Path) -> Result<PathBuf, String> {
     let home_setting = z.get("home").as_str().unwrap_or("").to_string();
@@ -1225,18 +1243,8 @@ fn zone_home(host: &Host, policy: &Policy, z: &Zone, zdir: &Path) -> Result<Path
 #[cfg(not(target_os = "linux"))]
 fn make_seatbelt_plan(host: &Host, name: &str) -> Result<J, String> {
     use crate::seatbelt;
-    let cfg = config::load(&host.config, &sh(&host.config), host.here.as_os_str().to_owned());
-    if !cfg.errors.is_empty() {
-        return Err(format!("{} is invalid:\n  {}", sh(&host.config), cfg.errors.join("\n  ")));
-    }
-    for w in &cfg.warnings {
-        warn(&format!("warning: {w}"));
-    }
-    let z = cfg.zone(name).ok_or_else(|| format!("no zone {} in {}", py_repr(name), sh(&host.config)))?;
-    let refused = config::host_refusals(z);
-    if !refused.is_empty() {
-        return Err(format!("zone {name} cannot run on macOS as configured:\n  {}", refused.join("\n  ")));
-    }
+    let cfg = plan_config(host, name, "macOS")?;
+    let z = cfg.zone(name).expect("checked");
     let policy = config::policy(host.here.as_os_str().to_owned());
     let timeout = config::duration(z.get("start_timeout")).unwrap_or(30.0);
     let zdir = host.state.join(name);
@@ -1350,18 +1358,8 @@ fn seatbelt_marks(zdir: &Path) -> Result<(PathBuf, PathBuf), String> {
 
 #[cfg(target_os = "linux")]
 fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
-    let cfg = config::load(&host.config, &sh(&host.config), host.here.as_os_str().to_owned());
-    if !cfg.errors.is_empty() {
-        return Err(format!("{} is invalid:\n  {}", sh(&host.config), cfg.errors.join("\n  ")));
-    }
-    for w in &cfg.warnings {
-        warn(&format!("warning: {w}"));
-    }
-    let z = cfg.zone(name).ok_or_else(|| format!("no zone {} in {}", py_repr(name), sh(&host.config)))?;
-    let refused = config::host_refusals(z);
-    if !refused.is_empty() {
-        return Err(format!("zone {name} cannot run on this host as configured:\n  {}", refused.join("\n  ")));
-    }
+    let cfg = plan_config(host, name, "this host")?;
+    let z = cfg.zone(name).expect("checked");
     let layout = layout();
     let policy = config::policy(host.here.as_os_str().to_owned());
     let timeout = config::duration(z.get("start_timeout")).unwrap_or(30.0);
