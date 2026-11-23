@@ -202,12 +202,10 @@ What appzones can take from it, on both systems:
   the LAN reachable) only if asked for, under its own name.
 - A Mac app's `~/Library` folders: one zone-wide rule (the zone may write
   `~/Library/*/<the app's id>` for its declared apps), the never-list still first.
-
-## Open questions
-
-- `machine_id = "zone"` (the default) cannot hide gethostuuid(2) on macOS: keep it a
-  note in the zone's log, or refuse the default there (every zone would then need
-  `machine_id = "host"` on a Mac)?
-- New ptys in a zone (tmux, `script`, agents that run commands in a pty): they need
-  `/dev/ttysN` by path, which reaches every terminal of the user. Leave them out, or
-  give the zone its ptys through zone-init (as `shell` does) later?
+- `machine_id = "zone"` (the default) cannot hide gethostuuid(2) on macOS: it stays the
+  default there, with a note in the zone's log and the docs. Refusing it would make every
+  Mac zone say `machine_id = "host"`, which hides nothing more and says less.
+- New ptys in a zone (tmux, `script`, agents that run commands in a pty) are left out for
+  now: they need `/dev/ttysN` by path, which reaches every terminal of the user. Later,
+  zone-init can open a pty outside the sandbox and hand the zone its descriptors (as it
+  does for `shell`), so a zone gets ptys of its own and never the user's.
