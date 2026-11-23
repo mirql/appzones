@@ -1147,16 +1147,13 @@ impl Cli {
         if !cfg.errors.is_empty() {
             return 1;
         }
-        // macOS: what a zone there cannot be given (an error for that zone, which will not start)
-        #[cfg(not(target_os = "linux"))]
-        {
-            let refused: Vec<String> = cfg.zones.iter().flat_map(crate::seatbelt::unsupported).collect();
-            for e in &refused {
-                eprintln!("error: {e}");
-            }
-            if !refused.is_empty() {
-                return 1;
-            }
+        // what this host cannot give a zone (an error for that zone, which will not start)
+        let refused: Vec<String> = cfg.zones.iter().flat_map(config::host_refusals).collect();
+        for e in &refused {
+            eprintln!("error: {e}");
+        }
+        if !refused.is_empty() {
+            return 1;
         }
         out(&format!("ok: {}: {} zones ({}), {} apps (this zone is release {})", self.config_path(), cfg.zones.len(),
                      cfg.zones.iter().map(|z| z.name.as_str()).collect::<Vec<_>>().join(", "), cfg.apps.len(), config::RELEASE));

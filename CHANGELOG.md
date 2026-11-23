@@ -5,6 +5,9 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`nix_ld` on a host without nix-ld** refuses only that zone (`appzones check` names it,
+  and it does not start), no longer the whole `zones.toml`: a file shared between machines
+  still works for its other zones. The same holds for what macOS cannot give a zone.
 - **macOS, first step** (design/macos.md): appzones builds on macOS (Apple silicon), with a
   Nix dev shell there. The plan for zones on macOS (Seatbelt, a proxy for
   `network = "internet"`) is in the design note.

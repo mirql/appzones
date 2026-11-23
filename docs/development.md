@@ -52,8 +52,8 @@ virtual GPU. It covers:
 - an FHS-wrapped app (`buildFHSEnv`) running inside a zone;
 - `nix_ld`: a generic glibc binary (loader `/lib64/ld-linux-x86-64.so.2`,
   no RPATH) runs with `nix_ld = true` and fails with "required file not
-  found" without it; the validator refuses `nix_ld` on a host without
-  nix-ld;
+  found" without it; `appzones check` refuses a zone with `nix_ld` on a host
+  without nix-ld;
 - `tmp = "disk"`: files in `/tmp` and `/var/tmp` survive `appzones restart`,
   are on the host in 0700 directories, and old files and links are
   removed (never followed);

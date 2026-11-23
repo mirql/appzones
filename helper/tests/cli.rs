@@ -456,6 +456,21 @@ fn empty_denied_paths_override() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
+fn nix_ld_refuses_its_zone_alone() {
+    // a host without nix-ld: check names the zone, the rest of the file still works
+    let b = Box_::new("nix-ld", Some(&format!("{}[zones.dd]\ncolour = \"#444444\"\nnetwork = \"none\"\nnix_ld = true\n",
+        TWO.replace("version = 1\n", "version = 1\nrequires = 3\n"))));
+    let env = [("APPZONES_LAYOUT", "nixos"), ("APPZONES_NIX_LD_SHIM", "/nonexistent/ld-linux-x86-64.so.2")];
+    let (rc, so, err) = b.cmd(&["check"]).envs(env).output().map(out).unwrap();
+    assert_eq!(rc, 1);
+    assert!(err.contains("error: [zones.dd] nix_ld = true, but this host has no nix-ld") && !so.contains("ok:"), "{so}{err}");
+    let (rc, so, err) = b.cmd(&["list"]).envs(env).output().map(out).unwrap();
+    assert_eq!(rc, 0, "{err}");
+    assert!(so.contains("aa ") && so.contains("dd "), "{so}");
+}
+
+#[test]
 #[cfg(not(target_os = "linux"))]
 fn what_macos_has_not() {
     // what macOS cannot do (design/macos.md) says so; the rest works

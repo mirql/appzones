@@ -1233,7 +1233,7 @@ fn make_seatbelt_plan(host: &Host, name: &str) -> Result<J, String> {
         warn(&format!("warning: {w}"));
     }
     let z = cfg.zone(name).ok_or_else(|| format!("no zone {} in {}", py_repr(name), sh(&host.config)))?;
-    let refused = seatbelt::unsupported(z);
+    let refused = config::host_refusals(z);
     if !refused.is_empty() {
         return Err(format!("zone {name} cannot run on macOS as configured:\n  {}", refused.join("\n  ")));
     }
@@ -1358,6 +1358,10 @@ fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
         warn(&format!("warning: {w}"));
     }
     let z = cfg.zone(name).ok_or_else(|| format!("no zone {} in {}", py_repr(name), sh(&host.config)))?;
+    let refused = config::host_refusals(z);
+    if !refused.is_empty() {
+        return Err(format!("zone {name} cannot run on this host as configured:\n  {}", refused.join("\n  ")));
+    }
     let layout = layout();
     let policy = config::policy(host.here.as_os_str().to_owned());
     let timeout = config::duration(z.get("start_timeout")).unwrap_or(30.0);

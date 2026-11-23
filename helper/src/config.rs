@@ -101,6 +101,7 @@ pub fn policy(code_dir: OsString) -> Policy {
     Policy { home: home(), code_dir, denied_file, state_dir: state, extra }
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))] // (nix_ld's host check, Linux only)
 fn host_layout() -> &'static str {
     match env("LAYOUT").as_deref() {
         Some("nixos") => "nixos",
@@ -739,16 +740,6 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
                 errs.push(format!("{p} links names unknown zone {}", py_repr(t)));
             }
         }
-        // (Linux's host checks: on macOS nix_ld is refused for its zone alone, seatbelt::unsupported)
-        if cfg!(not(target_os = "linux")) {
-        } else if truly("nix_ld") && host_layout() == "fhs" {
-            errs.push(format!("{p} nix_ld = true is for NixOS; on this distribution generic Linux binaries run without \
-                               it: remove it"));
-        } else if truly("nix_ld") && host_nix_ld().is_none() {
-            let (shim, lib) = nix_ld_paths();
-            errs.push(format!("{p} nix_ld = true, but this host has no nix-ld ({shim} is not its shim, or {lib}/ld.so is \
-                               missing): programs.nix-ld.enable = true on the host first"));
-        }
         let devices = z.get("devices");
         if devices.is_array() && !list_has(devices, "camera") && z.origin("camera") == "zone" {
             errs.push(format!("{p} camera is set but \"camera\" is not in devices"));
@@ -922,6 +913,31 @@ pub fn app_bus(cfg: &Config, zone: &str, app: Option<&str>) -> String {
 
 /// `appzones-helper config-json FILE [--name SHOWN] [--code-dir DIR]`: the loaded
 /// configuration as one JSON object, for the differential test.
+/// What this host cannot give zone Z as configured (nix_ld without nix-ld; on macOS what a
+/// Seatbelt zone cannot have): refused for that zone alone, in `appzones check` and when it
+/// starts. Never a config error: a zones.toml shared between machines still works for the
+/// other zones.
+pub fn host_refusals(z: &Zone) -> Vec<String> {
+    #[cfg(not(target_os = "linux"))]
+    return crate::seatbelt::unsupported(z);
+    #[cfg(target_os = "linux")]
+    {
+        let p = format!("[zones.{}]", z.name);
+        if !value_truthy(z.get("nix_ld")) {
+            vec![]
+        } else if host_layout() == "fhs" {
+            vec![format!("{p} nix_ld = true is for NixOS; on this distribution generic Linux binaries run without it: \
+                          remove it")]
+        } else if host_nix_ld().is_none() {
+            let (shim, lib) = nix_ld_paths();
+            vec![format!("{p} nix_ld = true, but this host has no nix-ld ({shim} is not its shim, or {lib}/ld.so is \
+                          missing): programs.nix-ld.enable = true on the host first")]
+        } else {
+            vec![]
+        }
+    }
+}
+
 pub fn config_json_main(args: &[OsString]) -> u8 {
     let mut it = args.iter();
     let Some(file) = it.next() else {
@@ -952,7 +968,15 @@ pub fn config_json_main(args: &[OsString]) -> u8 {
             "hash": settings_hash(z),
         }));
     }
-    println!("{}", serde_json::json!({"errors": cfg.errors, "warnings": cfg.warnings, "zones": zones}));
+    let mut out = serde_json::json!({"errors": cfg.errors, "warnings": cfg.warnings, "zones": zones});
+    // (only when there are some: the answers of configurations without them stay as they were)
+    let refused: serde_json::Map<String, serde_json::Value> = cfg.zones.iter()
+        .map(|z| (z.name.clone(), host_refusals(z))).filter(|(_, r)| !r.is_empty())
+        .map(|(n, r)| (n, serde_json::json!(r))).collect();
+    if cfg.errors.is_empty() && !refused.is_empty() {
+        out["refused"] = serde_json::Value::Object(refused);
+    }
+    println!("{out}");
     0
 }
 

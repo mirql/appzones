@@ -42,7 +42,7 @@ known key suggested.
 | `binds` | `[]` | `{ path = "~/Downloads", mode = "rw" \| "ro" }` (`rw` when no mode is given), at the same path inside. Not under `/usr`, and never a path in `/proc`, `/sys` or `/dev` |
 | `dbus` | `{ talk = [], own = [] }` | names on the host bus proxy added to the safe default set (see [D-Bus](dbus.md) for what is refused) |
 | `bus` | `"host"` · `"zone"` · `"none"` | the session bus for a command that is not in `[apps]` (`appzones run Z -- CMD`). See [D-Bus](dbus.md) |
-| `nix_ld` | `false` · `true` | generic Linux binaries run: `/lib64/ld-linux-x86-64.so.2` in the zone is the host's nix-ld shim, and `NIX_LD`, `NIX_LD_LIBRARY_PATH` are set as on the host. Refused on a host without nix-ld (`programs.nix-ld.enable`), and outside NixOS, where generic binaries run without it. See [Generic binaries](nix-ld.md) |
+| `nix_ld` | `false` · `true` | generic Linux binaries run: `/lib64/ld-linux-x86-64.so.2` in the zone is the host's nix-ld shim, and `NIX_LD`, `NIX_LD_LIBRARY_PATH` are set as on the host. Refused on a host without nix-ld (`programs.nix-ld.enable`), and outside NixOS, where generic binaries run without it: `appzones check` names the zone and that zone does not start; the other zones of the file are not affected. See [Generic binaries](nix-ld.md) |
 | `tmp` | `"ram"` · `"disk"` | `ram`: `/tmp` is a fresh tmpfs at every start. `disk`: `/tmp` and `/var/tmp` are `~/.local/share/appzones/NAME/tmp` and `.../var-tmp` (0700): kept across restarts, readable from the host. Cleaned at each start, see [/tmp on disk](files.md#tmp-on-disk-tmp--disk) |
 | `home` | `""` | the zone's home; empty: `~/.local/share/appzones/NAME/home` |
 | `force_host` | `false` · `true` | allow `network = "host"` and `wayland = "host"` in `untrusted` |
