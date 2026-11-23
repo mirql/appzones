@@ -13,8 +13,10 @@ started by appzones on demand; built from bubblewrap, pasta + nftables,
 xdg-dbus-proxy and the Wayland security context. Zones are declared in one
 TOML file; the `appzones` CLI starts them and runs things inside.
 
-On macOS (in development) a zone is a Seatbelt sandbox: command-line zones only,
-`network = "none"` or `"host"`, no `appzones mount`. There `HOME` in a zone is the
+On macOS (in development) a zone is a Seatbelt sandbox: command-line zones only, no
+`appzones mount`. There `network = "internet"` works only through the proxy in
+`HTTPS_PROXY`/`ALL_PROXY`: a tool that ignores them gets no network (and names do not
+resolve in the zone); tell the user so rather than loosening the zone. There `HOME` in a zone is the
 zone's own home, so `~` is not the user's home; binds are at their real paths.
 `appzones check` names the settings a zone cannot have on macOS.
 

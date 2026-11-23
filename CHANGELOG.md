@@ -8,6 +8,12 @@ The config schema has its own release number (`requires = N` in
 - **`nix_ld` on a host without nix-ld** refuses only that zone (`appzones check` names it,
   and it does not start), no longer the whole `zones.toml`: a file shared between machines
   still works for its other zones. The same holds for what macOS cannot give a zone.
+- **`network = "internet"` on macOS** (design/macos.md, stage 3): through appzones' own
+  proxy in the zone's server (HTTP CONNECT, plain HTTP, SOCKS5, on one localhost port that
+  the zone's profile alone may reach). It refuses what the nft rules refuse on Linux (the
+  host, its networks, private, CGNAT, link-local, multicast, NAT64), resolves names itself
+  and connects to the address it checked; refusals go to the zone's log. Apps get
+  `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`; a program that ignores them gets no network.
 - **macOS, first step** (design/macos.md): appzones builds on macOS (Apple silicon), with a
   Nix dev shell there. The plan for zones on macOS (Seatbelt, a proxy for
   `network = "internet"`) is in the design note.
@@ -16,8 +22,7 @@ The config schema has its own release number (`requires = N` in
   `stop`, `restart`, `logs`. A zone reads the system, its own home and tmp and its binds,
   writes only its home, tmp and `rw` binds; zone-init runs beside the zone, where its
   processes cannot reach it, and ends them all when the zone ends. Settings macOS cannot
-  honour are errors in `appzones check` there (`network = "internet"` comes with the
-  proxy). The never-list has macOS's paths too (`~/Library/Keychains`, the browsers'
+  honour are errors in `appzones check` there. The never-list has macOS's paths too (`~/Library/Keychains`, the browsers'
   profiles, `/private`, ...).
 
 ## 0.12.0

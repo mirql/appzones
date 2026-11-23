@@ -1,7 +1,8 @@
 # appzones on macOS
 
-Status: stages 1 and 2 built (2026-11-22): command-line zones with `network = "none"`
-or `"host"` (see "Stage 2, as built"). Tested on Apple silicon with macOS 27.
+Status: stages 1 to 3 built (2026-11-23): command-line zones with every `network`
+setting (see "Stage 2, as built" and "Stage 3, as built"). Tested on Apple silicon with
+macOS 27.
 
 ## What macOS has, and what it does not
 
@@ -168,13 +169,50 @@ What appzones can take from it, on both systems:
   `/Users`, `/System`, `/Library`, `/Volumes` and `/Applications` are never bound whole
   (`/tmp`, `/var` and `/etc` are links into `/private` there).
 - **Refused in `appzones check` and at the start**: what would give the zone more or
-  cannot be done (`network = "internet"` until the proxy, `dns = "public"`, `links`
+  cannot be done (`network = "internet"` until the proxy (stage 3), `dns = "public"`, `links`
   other than `"portal"`, `keyring = "zone"`, devices but gpu and audio, `usb`,
   `wayland = "host"`, `x11 = "own"`, `autostart`, `packages`, `dbus`, `nix_ld`,
   `supervisor = "systemd"`). What only gives it less is said in its log: `gpu` and
   `audio` are not given yet; `bus` means nothing without D-Bus. A per-zone refusal, not
   a config error: a `zones.toml` shared with a Linux machine still works for its other
   zones.
+
+## Stage 3, as built (2026-11-23)
+
+- **The proxy runs in the zone's server** (`helper/src/proxy.rs`), on a new port of
+  127.0.0.1 at each start. The port is known only then, so the profile names it as a
+  parameter: `(remote ip (string-append "localhost:" (param "PROXY_PORT")))`, and
+  zone-init starts each app with `sandbox-exec -D PROXY_PORT=N`. A profile run without
+  the parameter is refused by sandbox-exec (fails closed). The zone may connect to that
+  port and to nothing else: not other localhost ports, not the internet directly.
+- **One port, three ways in**, told by the first byte: HTTP CONNECT (`HTTPS_PROXY`), a
+  plain request with an absolute `http://` URL (`HTTP_PROXY`; rewritten for the origin,
+  one request per connection, `Connection: close`, so a reused connection never goes to
+  another host), SOCKS5 without authentication, CONNECT only (`ALL_PROXY=socks5h://`).
+  Apps also get the lowercase forms and `NODE_USE_ENV_PROXY=1` (Node's fetch).
+- **What it refuses**: the nft rules' list. The host's own addresses and every network it
+  is directly connected to (read with getifaddrs at each connection, so a Mac that moves
+  between networks is right at once), 0/8, 10/8, 100.64/10 (CGNAT, tailnets), 127/8,
+  169.254/16, 172.16/12, 192.0.0/24, 192.168/16, 198.18/15, 224/4, 240/4; ::, ::1,
+  fc00::/7, fe80::/10, multicast, fec0::/10, 64:ff9b:1::/48; IPv4-mapped and NAT64
+  (64:ff9b::/96) addresses as the IPv4 address inside. Names are resolved by the proxy
+  (the host's resolver), and the address connected to is the one checked: no second
+  lookup, no rebinding. A name with only refused addresses: 403 (SOCKS: "not allowed by
+  the rules"), and a line in the zone's log (`[proxy] refused HOST:PORT (why)`, at most a
+  few a second).
+- **In the zone** no names resolve (mDNSResponder is not among its services): a program
+  must send names to the proxy. Certificate checks work (trustd, and
+  TrustEvaluationAgent, which Apple's LibreSSL asks: without it `/usr/bin/python3` fails
+  every https request).
+- **Bounds**: 512 connections at once per zone, 15 s and 16 KiB for a request's head,
+  10 s per connect. Tried on a Mac: curl (https, http, SOCKS5), git, Python's urllib,
+  cargo and pip work; the LAN's gateway, the Mac's own address, localhost, the tailnet
+  and the NAT64 form of the gateway are refused; a direct connection, ignoring the proxy,
+  fails.
+- **Not done**: `dns = "public"` (the proxy would ask 1.1.1.1 itself), `netbird`, and the
+  per-zone allow list of host names (#24), which fits here. Any local process can use the
+  port too (other zones cannot: their profiles name only their own); it reaches nothing
+  the host could not reach itself.
 
 ## Stages
 
@@ -189,7 +227,8 @@ What appzones can take from it, on both systems:
 2. **Zones on macOS** (done): the Seatbelt plan, zone-init beside it, `run`, `shell`,
    `ps`, `stop`, `logs`; `network = "none"` and `"host"`; the settings table above, with
    its errors.
-3. **The proxy**: `network = "internet"` on macOS (and later the allow list on both systems).
+3. **The proxy** (done): `network = "internet"` on macOS (and later the allow list on both
+   systems).
 4. **Tests**: the isolation probes of `tests/vm.nix` that apply (no `~/.ssh`, no
    real home, binds only, no localhost with `internet`, no network with `none`),
    as a script run on the Mac.

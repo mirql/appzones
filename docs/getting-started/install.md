@@ -7,7 +7,7 @@
 | **Arch Linux** (preview) | the same as Ubuntu and Debian; sway names zones started without systemd too | [a PKGBUILD](#arch-linux-preview), or `make install` |
 | **Fedora 45** (preview) | the same, with SELinux enforcing | [the RPM, or `make install`](#fedora-preview) |
 | **openSUSE Leap 16** (preview) | the same, with SELinux enforcing; internet zones need one SELinux setting | [`make install`](#opensuse-preview) |
-| **macOS** (Apple silicon, in development) | command-line zones with `network = "none"` or `"host"` | [from a checkout](#macos-in-development) |
+| **macOS** (Apple silicon, in development) | command-line zones (`network` none, internet through a proxy, or host) | [from a checkout](#macos-in-development) |
 
 Other x86_64 distributions with systemd or another init, glibc 2.17 or newer and the
 same tools should work like these; they are not tested yet.
@@ -262,14 +262,19 @@ Zones with `network = "none"` or `"host"` work without it. Then
 ## macOS (in development)
 
 On macOS (Apple silicon) zones run under macOS's own sandbox, Seatbelt: command-line
-zones (dev tools, package managers, AI agents) with `network = "none"` or `"host"`.
+zones (dev tools, package managers, AI agents), with every `network` setting.
 `up`, `run`, `shell`, `ps`, `stop`, `restart` and `logs` work as on Linux. What is
 different there:
 
 - A zone's home is its own folder (`~/.local/share/appzones/<zone>/home`), and `HOME`
   says so: `~` in a zone is that folder, not your home. Binds are at their real paths.
-- `network = "internet"` is not there yet (it needs appzones' own proxy): use `"none"`
-  or `"host"`. `appzones check` says which settings of a zone macOS cannot give it
+- `network = "internet"` goes through appzones' own proxy: the zone may connect to one
+  port on localhost and nothing else, and the proxy reaches the internet for it, never
+  your Mac, your LAN, the tailnet or other private ranges. A zone's apps get
+  `HTTPS_PROXY`, `HTTP_PROXY` and `ALL_PROXY` (curl, git, pip, cargo, npm, Go and most
+  agent CLIs use them); a program that ignores them gets no network at all, and names
+  resolve only through the proxy. Refused connections are in the zone's log.
+- `appzones check` says which settings of a zone macOS cannot give it
   (D-Bus, USB, other devices, `packages`, `autostart`, ...); such a zone does not start.
   `gpu` and `audio` are not given to zones there yet.
 - No runtime mounts (`appzones mount`): add a bind and `appzones restart`.

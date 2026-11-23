@@ -485,10 +485,10 @@ fn what_macos_has_not() {
     assert_eq!(rc, 0, "{so}{err}");
     assert!(so.starts_with("ok: "), "{so}");
     // a zone that asks for what macOS cannot give: an error for it in check, and it does not start
-    fs::write(b.t.join("zones.toml"), format!("{TWO}[zones.cc]\ncolour = \"#333333\"\n")).unwrap();
+    fs::write(b.t.join("zones.toml"), format!("{TWO}[zones.cc]\ncolour = \"#333333\"\ndns = \"public\"\n")).unwrap();
     let (rc, so, err) = b.run(&["check"]);
     assert_eq!(rc, 1);
-    assert!(err.contains("zone cc: network = \"internet\" is not on macOS yet"), "{err}");
+    assert!(err.contains("zone cc: dns = \"public\": not on macOS yet"), "{err}");
     assert!(!so.contains("ok:"), "no ok before a refusal: {so}");
     let (rc, _, err) = b.run(&["up", "cc"]);
     assert_eq!(rc, 1);

@@ -221,6 +221,8 @@ struct Sandbox {
     profile: String,
     yes: PathBuf,
     no: PathBuf,
+    /// network = "internet": the proxy's port, the profile's parameter
+    proxy_port: Option<String>,
 }
 
 fn reply(conn: &mut UnixStream, v: &Value) {
@@ -362,6 +364,9 @@ impl Init {
         #[cfg(not(target_os = "linux"))]
         {
             let mut c = Command::new(SANDBOX_EXEC);
+            if let Some(port) = &self.sandbox.proxy_port {
+                c.args(["-D", &format!("{}={port}", crate::seatbelt::PROXY_PORT)]);
+            }
             c.args(["-f", &self.sandbox.profile, "--"]).args(argv);
             c
         }
@@ -1206,7 +1211,10 @@ pub fn main(_args: &[String]) -> u8 {
             log("no $ZONE_SANDBOX, $ZONE_SANDBOX_YES and $ZONE_SANDBOX_NO from the host; refusing to run");
             return 1;
         };
-        Sandbox { profile: profile.to_string_lossy().into_owned(), yes: yes.into(), no: no.into() }
+        // (a port, or none: never anything else on sandbox-exec's command line)
+        let proxy_port = take("ZONE_SANDBOX_PROXY_PORT").map(|p| p.to_string_lossy().into_owned())
+            .filter(|p| p.parse::<u16>().is_ok_and(|n| n > 0));
+        Sandbox { profile: profile.to_string_lossy().into_owned(), yes: yes.into(), no: no.into(), proxy_port }
     };
     #[cfg(not(target_os = "linux"))]
     let sweep = {

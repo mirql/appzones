@@ -7,7 +7,8 @@
 //! and cache folders, /tmp, the never-list) and its own home, tmp and binds; it may write
 //! only its home, tmp and `rw` binds. It may signal and look at processes of its own
 //! sandbox only, and reach a short list of the system's services. The network is none
-//! (unix sockets in the zone's own folders only) or the host's.
+//! (unix sockets in the zone's own folders only), the internet through appzones' proxy
+//! (one port on localhost, the profile's parameter PROXY_PORT: crate::proxy), or the host's.
 
 use std::path::{Path, PathBuf};
 
@@ -25,9 +26,20 @@ pub const NEVER_READ: &[&str] = &["/Users", "/Volumes", "/Network", "/System/Vol
 const SERVICES: &[&str] = &["com.apple.system.opendirectoryd.libinfo", "com.apple.system.notification_center",
     "com.apple.system.logger", "com.apple.logd"];
 
+/// With network = "internet": certificate checks (trustd fetches what it needs itself;
+/// TrustEvaluationAgent is how Apple's LibreSSL, in /usr/bin/python3 among others, asks the
+/// system's trust store).
+const INTERNET_SERVICES: &[&str] = &["com.apple.trustd", "com.apple.trustd.agent", "com.apple.TrustEvaluationAgent"];
+
+/// The profile's parameter that holds the proxy's port (`sandbox-exec -D PROXY_PORT=N`):
+/// known only when the zone starts. A profile that names it and is run without it is
+/// refused by sandbox-exec (fails closed).
+pub const PROXY_PORT: &str = "PROXY_PORT";
+
 /// And with network = "host": names, proxies and certificate checks.
 const NET_SERVICES: &[&str] = &["com.apple.dnssd.service", "com.apple.SystemConfiguration.configd",
     "com.apple.SystemConfiguration.DNSConfiguration", "com.apple.trustd", "com.apple.trustd.agent",
+    "com.apple.TrustEvaluationAgent",
     "com.apple.networkd", "com.apple.nehelper"];
 
 /// sysctls that tell this machine (or this boot of it) from another.
@@ -131,6 +143,8 @@ pub fn profile(p: &Profile) -> Result<String, String> {
     let mut services: Vec<&str> = SERVICES.to_vec();
     if p.network == "host" {
         services.extend(NET_SERVICES);
+    } else if p.network == "internet" {
+        services.extend(INTERNET_SERVICES);
     }
     s += "; the system's services it may reach\n";
     s += &format!("(allow mach-lookup\n  {})\n",
@@ -139,6 +153,15 @@ pub fn profile(p: &Profile) -> Result<String, String> {
     match p.network {
         "host" => s += "; network = \"host\": the host's network, all of it\n\
                         (allow network* system-socket)\n",
+        "internet" => {
+            // the proxy's port on localhost and nothing else; unix sockets as with none
+            let own = format!("(path-prefix {}) (path-prefix {})", q(p.home)?, q(p.tmp)?);
+            s += "; network = \"internet\": appzones' proxy (one port on localhost), unix sockets in the zone's own folders\n";
+            s += "(allow system-socket (socket-domain AF_UNIX) (socket-domain AF_INET) (socket-domain AF_INET6))\n";
+            s += &format!("(allow network-outbound (remote ip (string-append \"localhost:\" (param \"{PROXY_PORT}\"))))\n");
+            s += &format!("(allow network-bind network-inbound (local unix-socket {own}))\n");
+            s += &format!("(allow network-outbound (remote unix-socket {own}))\n");
+        }
         _ => {
             // unix sockets of its own (a language server, an agent's helper), nothing else
             let own = format!("(subpath {}) (subpath {})", q(p.home)?, q(p.tmp)?);
@@ -161,10 +184,6 @@ pub fn unsupported(z: &Zone) -> Vec<String> {
         .unwrap_or_default();
     let mut e = Vec::new();
     let p = format!("zone {}:", z.name);
-    if is("network", "internet") {
-        e.push(format!("{p} network = \"internet\" is not on macOS yet (it needs appzones' proxy, design/macos.md); \
-                        use \"none\" or \"host\" there for now"));
-    }
     if crate::config::truthy(st("netbird")) {
         e.push(format!("{p} netbird = true: not on macOS"));
     }
@@ -215,6 +234,10 @@ pub fn less(z: &Zone) -> Vec<String> {
     let devices: Vec<&str> = z.get("devices").as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
     if !devices.is_empty() {
         out.push(format!("devices {}: not given to zones on macOS yet", devices.join(", ")));
+    }
+    if z.get("network").as_str() == Some("internet") {
+        out.push("network = \"internet\": through appzones' proxy (HTTPS_PROXY, HTTP_PROXY, ALL_PROXY); programs \
+                  that do not use it get no network, and names resolve only through it".into());
     }
     if z.get("machine_id").as_str() == Some("zone") {
         out.push("machine_id = \"zone\": on macOS the zone can still read the Mac's hardware UUID (gethostuuid), \
@@ -320,6 +343,10 @@ mod tests {
         assert!(s.rfind("(deny file-read* file-write* (literal \"/z/seatbelt-ab.no\"))").unwrap() > ro);
         let host = profile(&Profile { network: "host", ..p }).unwrap();
         assert!(host.contains("(allow network* system-socket)") && host.contains("com.apple.dnssd.service"));
+        // internet: the proxy's port alone, by the parameter; no names, no other network
+        let inet = profile(&Profile { network: "internet", ..p }).unwrap();
+        assert!(inet.contains("(allow network-outbound (remote ip (string-append \"localhost:\" (param \"PROXY_PORT\"))))"));
+        assert!(!inet.contains("(allow network*") && !inet.contains("com.apple.dnssd.service") && inet.contains("com.apple.trustd"));
     }
 
     #[test]
@@ -328,10 +355,12 @@ mod tests {
         assert!(unsupported(cfg.zone("dev").unwrap()).is_empty(), "the defaults pass");
         let l = less(cfg.zone("dev").unwrap());
         assert!(l.len() == 2 && l[0] == "devices gpu, audio: not given to zones on macOS yet" && l[1].contains("gethostuuid"), "{l:?}");
-        let cfg = zone("network = \"internet\"\ndevices = [\"camera\"]");
-        let e = unsupported(cfg.zone("dev").unwrap());
-        assert_eq!(e.len(), 2, "{e:?}");
-        assert!(e[0].contains("network = \"internet\"") && e[1].contains("devices camera"));
+        let cfg = zone("network = \"internet\"\ndevices = [\"camera\"]\ndns = \"public\"");
+        let z = cfg.zone("dev").unwrap();
+        let e = unsupported(z);
+        assert_eq!(e.len(), 2, "{e:?}"); // (internet itself is fine: through the proxy)
+        assert!(e[0].contains("dns = \"public\"") && e[1].contains("devices camera"));
+        assert!(less(z).iter().any(|l| l.contains("through appzones' proxy")));
     }
 
     #[test]

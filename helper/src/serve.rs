@@ -710,7 +710,21 @@ fn run_seatbelt(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String
     }
     let (ctl, alive_r, alive_w) = (ls.into_raw_fd(), alive[0], alive[1]);
     let mut cmd = spawn(&argv);
-    cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v))).env("ZONE_CTL_FD", ctl.to_string())
+    cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+    if plan.get("network").and_then(Value::as_str) == Some("internet") {
+        // appzones' proxy, in this server: the zone's only way out (crate::proxy)
+        let port = crate::proxy::start(std::sync::Arc::new(|l: &str| say(l)))
+            .map_err(|e| format!("the zone's proxy: {e}"))?;
+        let http = format!("http://127.0.0.1:{port}");
+        let socks = format!("socks5h://127.0.0.1:{port}");
+        for (k, v) in [("HTTP_PROXY", &http), ("HTTPS_PROXY", &http), ("ALL_PROXY", &socks), ("http_proxy", &http),
+                       ("https_proxy", &http), ("all_proxy", &socks)] {
+            cmd.env(k, v);
+        }
+        // (Node's fetch uses them only when asked)
+        cmd.env("NODE_USE_ENV_PROXY", "1").env("ZONE_SANDBOX_PROXY_PORT", port.to_string());
+    }
+    cmd.env("ZONE_CTL_FD", ctl.to_string())
         .env("ZONE_SERVER_FD", alive_r.to_string()).env("ZONE_SANDBOX", &profile).env("ZONE_SANDBOX_YES", &yes)
         .env("ZONE_SANDBOX_NO", &no).env("ZONE_START_TIMEOUT", format!("{timeout_s:?}")).stdin(Stdio::null())
         .current_dir("/");
