@@ -33,7 +33,7 @@ ip link set lo up
 # the build VM's /dev is minimal: pasta's device, as udev makes it on a real system
 [ -e /dev/net/tun ] || { mkdir -p /dev/net && mknod /dev/net/tun c 10 200; }
 # 0666 is the mode udev gives /dev/net/tun; this is the throw-away test VM
-chmod 666 /dev/net/tun  # NOSONAR
+chmod 666 /dev/net/tun
 ip link add az0 type dummy && ip link set az0 up
 ip addr add 192.0.2.1/24 dev az0
 # a route for pasta where there is none (the offline images); a networked VM keeps its own

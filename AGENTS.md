@@ -27,11 +27,6 @@
 - `mount_helper.rs` runs as root through sudo. It reads no environment and keeps
   `unsafe` in its `mod sys`; keep it that way.
 - `main` takes only squash merges through a PR.
-- SonarQube Cloud checks every PR. A finding that is not a real problem (a validated
-  argument, a test address) gets the reason in a comment on the line above and a bare
-  `// NOSONAR` at the end of its own line. A bare NOSONAR hides every finding on that
-  line, so keep such lines small. A maintainer marks the rest false positive in
-  SonarQube, again when the line changes.
 - A release PR bumps the version in `nix/package.nix`, `helper/Cargo.toml` and `helper/Cargo.lock`
   (the package build fails when they differ) and `Version:` in `contrib/fedora/appzones.spec`.
   The RPM and the AUR package build with their distribution's cargo (crates from crates.io,

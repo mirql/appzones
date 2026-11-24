@@ -1418,7 +1418,7 @@ fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
         write(&xo, &XDG_OPEN.replace("{links}", &links_setting).replace("{target}", target)
             .replace("{open_link}", &open_link).replace("{xdg_open}", real_xdg))?;
         // the zone's xdg-open shim must be executable; it sits in the zone's own runtime directory (0700)
-        std::fs::set_permissions(&xo, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?; // NOSONAR
+        std::fs::set_permissions(&xo, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
         let mut cmd = zone_py.clone();
         cmd.extend([s("_link"), target.clone()]);
         links = json!({"socket": sh(&zrt.join("ctl").join("links.sock")), "command": cmd});

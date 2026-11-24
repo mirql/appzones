@@ -17,8 +17,6 @@
   <a href="https://github.com/mirql/appzones/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/mirql/appzones"></a>
   <a href="https://github.com/mirql/appzones/graphs/commit-activity"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/mirql/appzones"></a>
   <a href="https://coderabbit.ai"><img alt="CodeRabbit reviews" src="https://img.shields.io/coderabbit/prs/github/mirql/appzones?labelColor=171717&color=FF570A&label=CodeRabbit%20reviews"></a>
-  <a href="https://sonarcloud.io/summary/overall?id=mirql_appzones"><img alt="Quality gate" src="https://sonarcloud.io/api/project_badges/measure?project=mirql_appzones&metric=alert_status"></a>
-  <a href="https://sonarcloud.io/summary/overall?id=mirql_appzones"><img alt="Security rating" src="https://sonarcloud.io/api/project_badges/measure?project=mirql_appzones&metric=security_rating"></a>
   <a href="CONTRIBUTING.md"><img alt="One Rust binary, dependencies pinned" src="https://img.shields.io/badge/Rust-one%20binary-brightgreen?logo=rust&logoColor=white"></a>
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 <a href="#contributors"><img alt="All contributors" src="https://img.shields.io/badge/all_contributors-6-orange"></a>

@@ -14,8 +14,6 @@ nav_order: 1
 [![License: MIT](https://img.shields.io/badge/license-MIT-89b4fa?labelColor=181825)](https://github.com/mirql/appzones/blob/main/LICENSE)
 [![NixOS flake and module](https://img.shields.io/badge/NixOS-flake%20%2B%20module-89b4fa?logo=nixos&logoColor=white&labelColor=181825)](#install)
 [![GitHub stars](https://img.shields.io/github/stars/mirql/appzones?labelColor=181825&color=f9e2af)](https://github.com/mirql/appzones/stargazers)
-[![Quality gate](https://sonarcloud.io/api/project_badges/measure?project=mirql_appzones&metric=alert_status)](https://sonarcloud.io/summary/overall?id=mirql_appzones)
-[![Security rating](https://sonarcloud.io/api/project_badges/measure?project=mirql_appzones&metric=security_rating)](https://sonarcloud.io/summary/overall?id=mirql_appzones)
 [![One Rust binary](https://img.shields.io/badge/Rust-one%20binary-a6e3a1?logo=rust&logoColor=white&labelColor=181825)](https://github.com/mirql/appzones/blob/main/CONTRIBUTING.md)
 {: .badges }
 
