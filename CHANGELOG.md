@@ -5,6 +5,15 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`allow`: an allow list of host names per zone** (#24, config release 7): with
+  `network = "internet"`, `allow = ["api.anthropic.com", "*.githubusercontent.com"]` lets the
+  zone reach only those names. Its apps go out through appzones' own proxy (`HTTPS_PROXY`,
+  `HTTP_PROXY`, `ALL_PROXY`), which refuses every other name and every address before any
+  lookup, and still refuses the host, its networks and the private ranges. On Linux the
+  zone's nft rules then let out only TCP to the proxy, at pasta's gateway address (the host's
+  loopback, one port of it); names do not resolve in the zone. Refusals are in the zone's log;
+  `appzones check --probe` checks them. Zones without `allow` are unchanged.
+
 ## 0.13.0
 
 appzones runs on macOS now (Apple silicon, in development): command-line zones under macOS's own sandbox, Seatbelt, with every `network` setting (`internet` through appzones' own proxy, which refuses the host, the LAN and the private ranges as the nft rules do on Linux), `appzones check --probe` there, and a package and nix-darwin module (`darwinModules.default`). Nothing changes for Linux zones, except that a setting the host cannot give a zone (`nix_ld` without nix-ld) now refuses only that zone, not the whole `zones.toml`.

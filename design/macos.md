@@ -212,8 +212,9 @@ What appzones can take from it, on both systems:
   cargo and pip work; the LAN's gateway, the Mac's own address, localhost, the tailnet
   and the NAT64 form of the gateway are refused; a direct connection, ignoring the proxy,
   fails.
-- **Not done**: `dns = "public"` (the proxy would ask 1.1.1.1 itself), `netbird`, and the
-  per-zone allow list of host names (#24), which fits here. Any local process can use the
+- **Not done**: `dns = "public"` (the proxy would ask 1.1.1.1 itself) and `netbird`. The
+  per-zone allow list of host names (#24) is built on this proxy, on both systems
+  (`allow`, config release 7; on Linux the zone's nft rules then let out only the proxy). Any local process can use the
   port too (other zones cannot: their profiles name only their own); it reaches nothing
   the host could not reach itself.
 

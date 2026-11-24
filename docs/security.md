@@ -21,7 +21,8 @@
      for now;
    - with `gpu`: talk to the GPU driver;
    - use the internet as the host (same public IP), and with `netbird` the
-     mesh as the host;
+     mesh as the host (with `allow`: only the names on its list, through
+     appzones' proxy);
    - reach a network the host joined after the zone started, until the
      zone restarts (the deny list is computed at start);
    - resolve internal DNS names (with `dns = "host"`);

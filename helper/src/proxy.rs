@@ -197,13 +197,41 @@ pub fn parse_head(head: &[u8]) -> Result<Request, &'static str> {
 /// What the proxy says in the zone's log (rate-limited by the caller).
 pub type Log = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// A zone's proxy: how often it may write to the log, and its allow list (None: any name).
+pub struct Ctx {
+    budget: crate::host_dns::Budget,
+    allow: Option<Vec<String>>,
+}
+
+/// Whether HOST (a name, lowercase) is on ALLOW: a name equal to an entry, or under a
+/// `*.domain` entry at any depth (never the domain itself). An address never is.
+pub fn allowed(host: &str, allow: &[String]) -> bool {
+    let host = host.trim_end_matches('.');
+    if host.parse::<IpAddr>().is_ok() {
+        return false;
+    }
+    allow.iter().any(|a| match a.strip_prefix("*.") {
+        Some(domain) => host.len() > domain.len() + 1 && host.ends_with(domain)
+            && host.as_bytes()[host.len() - domain.len() - 1] == b'.',
+        None => host == a,
+    })
+}
+
 /// The first address of T the zone may reach, connected; Err: why not (for the client and
 /// the log).
-fn open(t: &Target, log: &Log, budget: &crate::host_dns::Budget) -> Result<TcpStream, (&'static str, String)> {
+fn open(t: &Target, log: &Log, cx: &Ctx) -> Result<TcpStream, (&'static str, String)> {
+    // the allow list first: a name off it is never looked up
+    if cx.allow.as_deref().is_some_and(|a| !allowed(&t.host, a)) {
+        let msg = format!("refused {}:{} (not on the zone's allow list)", t.host, t.port);
+        if cx.budget.take_at(Instant::now()) {
+            log(&format!("[proxy] {msg}"));
+        }
+        return Err(("403 Forbidden", msg));
+    }
     let addrs: Vec<SocketAddr> = (t.host.as_str(), t.port).to_socket_addrs()
         .map_err(|_| ("502 Bad Gateway", format!("{}: no such name", t.host)))?.collect();
     let Some(host) = host_nets() else {
-        if budget.take_at(Instant::now()) {
+        if cx.budget.take_at(Instant::now()) {
             log("[proxy] the host's networks cannot be read: nothing is let through");
         }
         return Err(("502 Bad Gateway", "the host's networks cannot be read".into()));
@@ -221,7 +249,7 @@ fn open(t: &Target, log: &Log, budget: &crate::host_dns::Budget) -> Result<TcpSt
     match why {
         Some(r) if !addrs.iter().any(|a| refused(a.ip(), &host).is_none()) => {
             let msg = format!("refused {}:{} ({r})", t.host, t.port);
-            if budget.take_at(Instant::now()) {
+            if cx.budget.take_at(Instant::now()) {
                 log(&format!("[proxy] {msg}"));
             }
             Err(("403 Forbidden", msg))
@@ -244,7 +272,7 @@ fn splice(a: TcpStream, b: TcpStream) {
     let _ = one.join();
 }
 
-fn http(mut c: TcpStream, first: u8, log: &Log, budget: &crate::host_dns::Budget) {
+fn http(mut c: TcpStream, first: u8, log: &Log, cx: &Ctx) {
     let end = Instant::now() + HEAD_TIMEOUT;
     let mut buf = vec![first];
     let head_end = loop {
@@ -273,7 +301,7 @@ fn http(mut c: TcpStream, first: u8, log: &Log, budget: &crate::host_dns::Budget
         Ok(Request::Http(t, head)) => (t, Some(head)),
         Err(status) => return answer(&mut c, status, "the zone's proxy takes CONNECT and http:// URLs"),
     };
-    match open(&target, log, budget) {
+    match open(&target, log, cx) {
         Err((status, msg)) => answer(&mut c, status, &msg),
         Ok(mut up) => {
             let sent = match &send {
@@ -288,7 +316,7 @@ fn http(mut c: TcpStream, first: u8, log: &Log, budget: &crate::host_dns::Budget
 }
 
 /// SOCKS5, no authentication, CONNECT only (a name, IPv4 or IPv6).
-fn socks5(mut c: TcpStream, log: &Log, budget: &crate::host_dns::Budget) {
+fn socks5(mut c: TcpStream, log: &Log, cx: &Ctx) {
     let _ = c.set_read_timeout(Some(HEAD_TIMEOUT));
     let mut b = [0u8; 2];
     if c.read_exact(&mut b[..1]).is_err() {
@@ -351,7 +379,7 @@ fn socks5(mut c: TcpStream, log: &Log, budget: &crate::host_dns::Budget) {
         return;
     };
     let _ = c.set_read_timeout(None);
-    match open(&target, log, budget) {
+    match open(&target, log, cx) {
         Err((status, _)) => {
             let _ = reply(&mut c, if status.starts_with("403") { 2 } else { 4 });
         }
@@ -363,16 +391,16 @@ fn socks5(mut c: TcpStream, log: &Log, budget: &crate::host_dns::Budget) {
     }
 }
 
-fn handle(c: TcpStream, log: &Log, budget: &crate::host_dns::Budget) {
+fn handle(c: TcpStream, log: &Log, cx: &Ctx) {
     let mut first = [0u8; 1];
     let _ = c.set_read_timeout(Some(HEAD_TIMEOUT));
     if (&c).read_exact(&mut first).is_err() {
         return;
     }
     if first[0] == 5 {
-        socks5(c, log, budget);
+        socks5(c, log, cx);
     } else {
-        http(c, first[0], log, budget);
+        http(c, first[0], log, cx);
     }
 }
 
@@ -395,11 +423,11 @@ fn listeners() -> std::io::Result<Vec<TcpListener>> {
 
 /// The proxy on a new port of loopback (listeners), in threads of its own for as long as
 /// this process runs; its port. LOG: a line for the zone's log (refusals, a few a second).
-pub fn start(log: Log) -> std::io::Result<u16> {
+pub fn start(log: Log, allow: Option<Vec<String>>) -> std::io::Result<u16> {
     let ls = listeners()?;
     let port = ls[0].local_addr()?.port();
     let open = Arc::new(AtomicUsize::new(0));
-    let budget = Arc::new(crate::host_dns::Budget::new(2.0, 20.0));
+    let budget = Arc::new(Ctx { budget: crate::host_dns::Budget::new(2.0, 20.0), allow });
     /// One connection's place in the count, given back when it ends (or its thread could
     /// not be started: the closure holding it is dropped then).
     struct Slot(Arc<AtomicUsize>);
@@ -482,11 +510,41 @@ mod tests {
     }
 
     #[test]
+    fn allow_lists() {
+        let a: Vec<String> = ["api.anthropic.com", "*.githubusercontent.com", "github.com"].iter().map(|x| x.to_string()).collect();
+        for (h, want) in [("api.anthropic.com", true), ("api.anthropic.com.", true), ("anthropic.com", false),
+                          ("x.api.anthropic.com", false), ("raw.githubusercontent.com", true),
+                          ("a.b.githubusercontent.com", true), ("githubusercontent.com", false),
+                          ("evilgithubusercontent.com", false), ("github.com", true), ("github.com.evil.org", false),
+                          ("140.82.112.3", false), ("::1", false)] {
+            assert_eq!(allowed(h, &a), want, "{h}");
+        }
+        // the proxy: a name off the list is refused before it is looked up, by every way in
+        let lines = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let l2 = lines.clone();
+        let port = start(Arc::new(move |s: &str| l2.lock().unwrap().push(s.to_string())), Some(a)).unwrap();
+        let talk = |send: &[u8], want: usize| {
+            let mut c = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            c.write_all(send).unwrap();
+            let mut got = vec![0u8; want];
+            c.read_exact(&mut got).unwrap();
+            got
+        };
+        assert!(talk(b"CONNECT not-allowed.appzones.invalid:443 HTTP/1.1\r\n\r\n", 12).starts_with(b"HTTP/1.1 403"));
+        assert!(talk(b"GET http://example.com/ HTTP/1.1\r\n\r\n", 12).starts_with(b"HTTP/1.1 403"));
+        // SOCKS5 to an address (1.1.1.1): never on a list of names
+        assert_eq!(&talk(&[5, 1, 0, 5, 1, 0, 1, 1, 1, 1, 1, 1, 187], 4)[..4], &[5, 0, 5, 2]);
+        let l = lines.lock().unwrap();
+        assert!(l.iter().any(|x| x.contains("refused example.com:80 (not on the zone's allow list)")), "{l:?}");
+    }
+
+    #[test]
     fn refuses_through_every_way_in() {
         // the proxy itself: loopback and the host refused by CONNECT, plain HTTP and SOCKS5
         let lines = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let l2 = lines.clone();
-        let port = start(Arc::new(move |s: &str| l2.lock().unwrap().push(s.to_string()))).unwrap();
+        let port = start(Arc::new(move |s: &str| l2.lock().unwrap().push(s.to_string())), None).unwrap();
         let talk = |send: &[u8], want: usize| {
             let mut c = TcpStream::connect(("127.0.0.1", port)).unwrap();
             c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();

@@ -189,9 +189,12 @@ let
 
   zonesToml = pkgs.writeText "zones.toml" ''
     version = 1
-    requires = 5
+    requires = 7
     [defaults]
     devices = []
+    [zones.tw]
+    colour = "#9399b2"
+    allow = ["allowed.test"]
     [zones.ta]
     colour = "#a6e3a1"
     devices = ["audio"]
@@ -380,6 +383,11 @@ pkgs.testers.runNixOSTest {
         address = "192.0.2.2";
         interface = "eth1";
       };
+      # names of the public peer, for the allow list (zone tw): the proxy resolves them here
+      networking.hosts."198.51.100.2" = [
+        "allowed.test"
+        "other.test"
+      ];
       # the measured hole: a service on a tailnet address of
       # the host (a dummy link), and one on its loopback.
       systemd.services.host-listeners = {
@@ -636,6 +644,26 @@ pkgs.testers.runNixOSTest {
         peer.succeed("true")
         refused("ta", f"curl -sS -m 5 'http://[{me6}]:8081/'", "the host's own IPv6 address refused")
         refused("tb", "curl -sS -m 5 http://198.51.100.2/", "network = none: no internet")
+
+    with subtest("allow: only the names on the zone's list, through its proxy"):
+        tcp = "timeout 3 bash -c '</dev/tcp/{}/{}'"
+        ok("tw", "curl -sS -m 10 http://allowed.test/ | grep -q peer-ok", "allow: a name on the list, through the proxy")
+        ok("tw", "[ \"$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://other.test/)\" = 403 ]",
+           "allow: a name off the list (the same address): 403 from the proxy")
+        ok("tw", "[ \"$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://198.51.100.2/)\" = 403 ]",
+           "allow: an address, never on a list of names: 403")
+        refused("tw", "curl -sS -m 5 --noproxy '*' http://198.51.100.2/", "allow: around the proxy, refused")
+        # pasta's gateway address is the host's loopback: only the proxy's port of it
+        machine.succeed("curl -sS -m 5 http://127.0.0.1:8080/ >/dev/null")
+        refused("tw", tcp.format("192.0.2.2", 8080), "allow: the host's loopback on another port refused")
+        ok("tw", "[ \"$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://localhost:8080/)\" = 403 ]",
+           "allow: the host's loopback through the proxy: 403")
+        refused("tw", tcp.format("192.168.1.2", 80), "allow: the LAN peer refused")
+        logs = u("appzones logs tw 2>&1")
+        assert "refused other.test:80 (not on the zone's allow list)" in logs, logs
+        print("PASS  allow: refusals in the zone's log")
+        print(u("appzones check --probe tw"))
+        print("PASS  allow: every probe in tw")
         # the xdg-open shim (links = "zone") is first on PATH: never writable from inside
         ok("tz", "test -x /run/zone/bin/xdg-open", "xdg-open shim present (links = zone)")
         refused("tz", "touch /run/zone/bin/firefox", "xdg-open shim directory read-only")

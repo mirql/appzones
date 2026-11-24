@@ -13,7 +13,7 @@ use toml::{Table, Value};
 use crate::policy::{py_path, py_repr, realpath, zone_name_ok, Policy, RESERVED};
 use crate::pyfmt::{close_match, fnmatchcase, json_dumps, repr, repr_strs, sha256_hex};
 
-pub const RELEASE: i64 = 6;
+pub const RELEASE: i64 = 7;
 pub const NAME_PATTERN: &str = "^[a-z][a-z0-9-]{1,20}$";
 const TOP: &[&str] = &["version", "requires", "defaults", "zones", "apps"];
 pub const APP_KEYS: &[&str] = &["command", "desktop", "zones", "args", "bus"];
@@ -22,7 +22,7 @@ pub const BUSES: &[&str] = &["host", "zone", "none"];
 /// (setting, the release that added it), in zonecfg.SINCE's order.
 const SINCE: &[(&str, i64)] = &[("requires", 2), ("bus", 2), ("apps.bus", 2), ("bus = \"zone\"", 2),
     ("bus = \"none\"", 2), ("nix_ld", 3), ("tmp", 3), ("usb", 4), ("supervisor", 5), ("start_timeout", 5),
-    ("linger", 5), ("wayland", 6)];
+    ("linger", 5), ("wayland", 6), ("allow", 7)];
 const SERVER_ONLY: &[&str] = &["supervisor", "start_timeout"];
 
 const DBUS_NEVER: &[&str] = &["org.freedesktop.systemd1*", "org.freedesktop.secrets*", "org.kde.kwalletd*",
@@ -211,7 +211,8 @@ pub fn keys() -> Vec<(&'static str, Value)> {
     let mut dbus = Table::new();
     dbus.insert("talk".into(), Value::Array(vec![]));
     dbus.insert("own".into(), Value::Array(vec![]));
-    vec![("network", s("internet")), ("netbird", Value::Boolean(false)), ("dns", s("host")), ("links", s("portal")),
+    vec![("network", s("internet")), ("netbird", Value::Boolean(false)), ("dns", s("host")),
+         ("allow", Value::Array(vec![])), ("links", s("portal")),
          ("keyring", s("basic")), ("devices", strs(&["gpu", "audio"])), ("camera", s("portal")),
          ("usb", Value::Array(vec![])), ("wayland", s("zone")), ("x11", s("none")), ("clipboard", s("both")),
          ("autostart", Value::Boolean(false)), ("autostart_apps", Value::Array(vec![])),
@@ -313,6 +314,18 @@ fn usb_id_ok(x: &str) -> bool {
     }
 }
 
+/// An `allow` entry: a host name with at least one dot, or `*.` and one (its subdomains, at
+/// any depth; not the domain itself). Lowercase letters, digits and -, labels of 1 to 63.
+/// Never an address: the zone's proxy refuses addresses when a zone has an allow list.
+pub fn allow_name_ok(n: &str) -> bool {
+    let name = n.strip_prefix("*.").unwrap_or(n);
+    let labels: Vec<&str> = name.split('.').collect();
+    name.len() <= 253 && labels.len() >= 2
+        && labels.iter().all(|l| !l.is_empty() && l.len() <= 63 && !l.starts_with('-') && !l.ends_with('-')
+            && l.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'))
+        && !labels.last().is_some_and(|l| l.bytes().all(|b| b.is_ascii_digit()))
+}
+
 fn colour_ok(c: &str) -> bool {
     c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit())
 }
@@ -326,6 +339,11 @@ impl Ctx {
                 (!v.is_bool()).then(|| "must be true or false".to_string())
             }
             "dns" => enum_check(v, &["host", "public"]),
+            "allow" => strlist(Some(v)).or_else(|| {
+                let bad: Vec<&str> = v.as_array()?.iter().filter_map(str_of).filter(|n| !allow_name_ok(n)).collect();
+                (!bad.is_empty()).then(|| format!("entries must be host names (lowercase, with a dot) or *.domain, \
+                                                  never addresses: {}", repr_strs(&bad)))
+            }),
             "links" => {
                 let ok = matches!(v.as_str(), Some("portal") | Some("zone"))
                     || v.as_str().and_then(|x| x.strip_prefix("zone:")).is_some_and(zone_name_ok);
@@ -729,6 +747,17 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
         if truly("netbird") && !is("network", "internet") {
             errs.push(format!("{p} netbird = true needs network = \"internet\""));
         }
+        if z.get("allow").as_array().is_some_and(|a| !a.is_empty()) {
+            // (the zone then reaches only the names on it, through appzones' proxy)
+            if !is("network", "internet") {
+                errs.push(format!("{p} allow needs network = \"internet\""));
+            } else if truly("netbird") {
+                errs.push(format!("{p} allow and netbird = true: the NetBird mesh would be reachable around the list"));
+            } else if is("dns", "public") {
+                errs.push(format!("{p} allow: names are resolved by appzones' proxy, with the host's resolver; \
+                                   dns = \"public\" cannot apply (leave it out)"));
+            }
+        }
         if is("network", "host") && z.name == "untrusted" && !value_truthy(z.get("force_host")) {
             errs.push(format!("{p} network = \"host\" in untrusted needs force_host = true"));
         }
@@ -876,7 +905,8 @@ pub fn settings_hash(z: &Zone) -> String {
     let mut t = Table::new();
     for (k, v) in &z.settings {
         if SERVER_ONLY.contains(&k.as_str()) || (k == "linger" && v.as_str() == Some(""))
-            || (k == "wayland" && v.as_str() == Some("zone")) {
+            || (k == "wayland" && v.as_str() == Some("zone"))
+            || (k == "allow" && v.as_array().is_some_and(|a| a.is_empty())) {
             continue;
         }
         t.insert(k.clone(), v.clone());
@@ -958,10 +988,15 @@ pub fn config_json_main(args: &[OsString]) -> u8 {
     let cfg = load(Path::new(file), &shown, code_dir);
     let mut zones = serde_json::Map::new();
     for z in &cfg.zones {
+        // (keys added after the Python answers were kept, at their default, are left out of
+        // this view: those answers stay as they were, helper/tests/golden)
+        let unset = |k: &str| k == "allow" && z.get("allow").as_array().is_some_and(|a| a.is_empty());
         let mut settings = String::new();
-        json_dumps(&Value::Table(z.settings.clone()), &mut settings);
-        let origin: serde_json::Map<String, serde_json::Value> =
-            z.origin.iter().map(|(k, o)| ((*k).to_string(), serde_json::Value::String((*o).into()))).collect();
+        let mut shown = z.settings.clone();
+        shown.retain(|k, _| !unset(k));
+        json_dumps(&Value::Table(shown), &mut settings);
+        let origin: serde_json::Map<String, serde_json::Value> = z.origin.iter().filter(|(k, _)| !unset(k))
+            .map(|(k, o)| ((*k).to_string(), serde_json::Value::String((*o).into()))).collect();
         zones.insert(z.name.clone(), serde_json::json!({
             "settings": serde_json::from_str::<serde_json::Value>(&settings).unwrap_or_default(),
             "origin": origin,
@@ -1033,6 +1068,31 @@ mod tests {
         assert!(ctx.check("packages", &t("[\"a; b\"]")).is_some_and(|e| e.contains("not nixpkgs attribute names")));
         assert!(ctx.check("packages", &t("[\"../x\"]")).is_some());
         assert!(ctx.check("usb", &t("[\"abcd\\n\"]")).is_some(), "a trailing newline is not a match");
+        assert_eq!(ctx.check("allow", &t("[\"api.anthropic.com\", \"*.githubusercontent.com\", \"a-b.c9.io\"]")), None);
+        for bad in ["\"github\"", "\"GitHub.com\"", "\"1.2.3.4\"", "\"*.com.\"", "\"*\"", "\"a..b\"", "\"-a.b\"",
+                    "\"a.b/x\"", "\"a.b:443\"", "\"*.*.b.c\""] {
+            assert!(ctx.check("allow", &t(&format!("[{bad}]"))).is_some(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn allow_needs_internet() {
+        let load = |z: &str| load_text(&format!("version = 1\nrequires = 7\n[zones.aa]\ncolour = \"#112233\"\n{z}\n"), "z.toml",
+                                       "/nonexistent".into());
+        assert!(load("allow = [\"github.com\"]").errors.is_empty());
+        for (z, says) in [("network = \"none\"\nallow = [\"github.com\"]", "needs network"),
+                          ("netbird = true\nallow = [\"github.com\"]", "NetBird"),
+                          ("dns = \"public\"\nallow = [\"github.com\"]", "dns = \"public\"")] {
+            let e = load(z).errors;
+            assert!(e.len() == 1 && e[0].contains(says), "{z}: {e:?}");
+        }
+        // an empty list is no list, and leaves the hash as it was
+        let a = load("").zones.remove(0);
+        let b = load("allow = []").zones.remove(0);
+        assert_eq!(settings_hash(&a), settings_hash(&b));
+        assert_ne!(settings_hash(&a), settings_hash(&load("allow = [\"github.com\"]").zones.remove(0)));
+        let e = load_text("version = 1\n[zones.aa]\ncolour = \"#112233\"\nallow = [\"github.com\"]\n", "z.toml", "/x".into()).errors;
+        assert!(e.iter().any(|e| e.contains("requires = 7")), "{e:?}");
     }
 
     #[test]

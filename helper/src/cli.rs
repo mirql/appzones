@@ -1235,6 +1235,17 @@ impl Cli {
         let mut skipped: Vec<String> = Vec::new();
         if z.get("network").as_str() == Some("internet") {
             probes.push(("nft flush refused".into(), 1, "nft flush ruleset 2>/dev/null".into()));
+            if z.get("allow").as_array().is_some_and(|a| !a.is_empty()) {
+                // an allow list: only the proxy, which refuses a name off the list before any lookup
+                probes.push(("a name off the allow list refused by the proxy".into(), 0,
+                             "[ \"$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://not-allowed.appzones.invalid/)\" = 403 ]".into()));
+                let addr: std::net::SocketAddr = "1.1.1.1:443".parse().expect("a literal address");
+                if std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok() {
+                    probes.push(("no direct internet, around the proxy".into(), 1, tcp("1.1.1.1", 443)));
+                } else {
+                    skipped.push("no direct internet (the host does not reach 1.1.1.1:443 either)".into());
+                }
+            }
             for (title, host, port) in [("LAN 192.168.0.0/16 refused", "192.168.1.1", 53), ("tailnet 100.64.0.0/10 refused",
                                         "100.64.0.1", 8443), ("host loopback refused", "127.0.0.1", 22)] {
                 let addr: std::net::SocketAddr = format!("{host}:{port}").parse().expect("a literal address");
@@ -1325,11 +1336,15 @@ impl Cli {
             }
             "internet" => {
                 direct("no direct connection, around the proxy", "1.1.1.1", 443, &mut probes, &mut skipped);
-                if reaches("1.1.1.1", 443) {
+                if reaches("1.1.1.1", 443) && z.get("allow").as_array().is_none_or(|a| a.is_empty()) {
                     probes.push(("the internet through the proxy".into(), 0,
                                  "curl -sf -m 20 -o /dev/null https://example.com".into()));
                 }
                 probes.push(("no names resolve in the zone".into(), 1, "nslookup -timeout=3 example.com".into()));
+                if z.get("allow").as_array().is_some_and(|a| !a.is_empty()) {
+                    probes.push(("a name off the allow list refused by the proxy".into(), 0,
+                                 "[ \"$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://not-allowed.appzones.invalid/)\" = 403 ]".into()));
+                }
                 let mut targets: Vec<(String, String)> = vec![
                     ("the host's loopback".into(), "127.0.0.1:22".into()), ("a private range".into(), "10.0.0.1:80".into()),
                     ("the tailnet range".into(), "100.64.0.1:8443".into()), ("link-local".into(), "169.254.169.254:80".into()),

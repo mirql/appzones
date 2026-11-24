@@ -20,6 +20,12 @@ resolve in the zone); tell the user so rather than loosening the zone. There `HO
 zone's own home, so `~` is not the user's home; binds are at their real paths.
 `appzones check` names the settings a zone cannot have on macOS.
 
+`allow = ["api.example.com", "*.example.org"]` (with `network = "internet"`, both systems):
+the zone reaches only those names, through appzones' proxy (`HTTPS_PROXY`/`ALL_PROXY`); a
+tool that ignores the proxy, or a name off the list, gets no network (`appzones logs ZONE`
+says `refused NAME:PORT (not on the zone's allow list)`). Adding a name widens the zone:
+ask first (rule 2); it applies after a restart (rule 1). Needs `requires = 7`.
+
 Docs: https://mirql.github.io/appzones/ (every guide page in one file:
 https://mirql.github.io/appzones/llms-full.txt). When a task needs a key or a detail not covered here, read
 the page as raw markdown: https://raw.githubusercontent.com/mirql/appzones/main/docs/configuration/reference.md (every key),

@@ -50,6 +50,7 @@ trap 'exit 143' TERM
 
 cat > "$APPZONES_CONFIG" <<EOF
 version = 1
+requires = 7
 [zones.t-none]
 colour = "#336699"
 network = "none"
@@ -60,11 +61,14 @@ network = "internet"
 [zones.t-host]
 colour = "#993366"
 network = "host"
+[zones.t-allow]
+colour = "#996633"
+allow = ["example.com"]
 EOF
 check "the config is valid" 'az check'
 
 echo "--- check --probe"
-for z in t-none t-inet t-host; do
+for z in t-none t-inet t-host t-allow; do
     out=$(az check --probe "$z" 2>&1); rc=$?
     echo "$out" | grep -E '^(FAIL|SKIP)' | sed "s/^/  $z: /"
     if [ $rc -eq 0 ] && ! echo "$out" | grep -q '^FAIL' && echo "$out" | grep -q '^PASS'; then
@@ -74,7 +78,14 @@ for z in t-none t-inet t-host; do
     fi
 done
 
-az stop t-inet >/dev/null 2>&1; az stop t-host >/dev/null 2>&1   # (only t-none runs from here)
+echo "--- allow"
+code() { az run --wait t-allow -- /bin/sh -c "curl -s -m 20 -o /dev/null -w '%{http_code}' $1" </dev/null 2>/dev/null; }
+check "a name on the list, through the proxy"  '[ "$(code https://example.com/)" = 200 ] || [ "$(code http://example.com/)" = 200 ]'
+check "a name off the list: 403"               '[ "$(code http://example.org/)" = 403 ]'
+check "an address: 403"                        '[ "$(code http://1.1.1.1/)" = 403 ]'
+check "the refusal is in the zone's log"       'az logs t-allow 2>&1 | grep -q "refused example.org:80 (not on the zone.s allow list)"'
+
+az stop t-inet >/dev/null 2>&1; az stop t-host >/dev/null 2>&1; az stop t-allow >/dev/null 2>&1   # (only t-none runs from here)
 
 echo "--- binds"
 inz() { az run --wait t-none -- /bin/sh -c "$1" </dev/null >/dev/null 2>&1; }

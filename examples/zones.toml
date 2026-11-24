@@ -6,13 +6,14 @@
 # Each zone starts with a fresh home in ~/.local/share/appzones/<zone>/home: no
 # app data moves in from the host, host apps stay as they are.
 version = 1
-requires = 6                   # the zones release this file needs (`appzones check` prints its own); an older
+requires = 7                   # the zones release this file needs (`appzones check` prints its own); an older
                                # `appzones` then says "update appzones" instead of "unknown key"
 
 [defaults]                     # every zone starts from these; a zone overrides any key
 network     = "internet"       # none | internet | host   (macOS: internet through appzones' proxy, HTTPS_PROXY)
 netbird     = false            # with network = "internet": also reach the NetBird mesh (the NetBird interface's network, never the host itself)
 dns         = "host"           # host (the host's resolver: its ad blocking and internal names) | public (1.1.1.1, then 1.0.0.1)
+allow       = []               # with internet: only these host names ("*.domain": its subdomains), through appzones' proxy (HTTPS_PROXY); [] = any
 links       = "portal"         # where clicked links open: portal (host default browser) | zone (this zone's browser) | "zone:NAME"
 keyring     = "basic"          # basic (browsers' fixed-key store) | zone (own keyring daemon inside the zone; not built yet)
 devices     = ["gpu"]          # any of: gpu audio mic camera screencast usb   (mic = audio for now)

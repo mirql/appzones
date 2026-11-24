@@ -25,6 +25,7 @@ pub const PIN: &str = "--zones-pin";
 const PLAN_IF: &str = crate::serve::PLAN_IF;
 const PLAN_END: &str = crate::serve::PLAN_END;
 const PLAN_HOST_WAYLAND: &str = crate::serve::PLAN_HOST_WAYLAND;
+const PLAN_PROXY_PORT: &str = crate::serve::PLAN_PROXY_PORT;
 const DNS_ADDR: &str = "127.0.0.53";
 const ZONE_HELPER: &str = "/run/appzones-helper";
 pub const RUST_HELPERS: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve", "plan"];
@@ -804,6 +805,24 @@ fn host_addrs() -> Result<Vec<(String, IpAddr, u8)>, String> {
     Ok(out)
 }
 
+/// The host's IPv4 default gateway (`ip -j route show default`): in an internet zone it is
+/// pasta's way to the host's loopback, where an allow-list zone's proxy listens.
+fn host_gateway4() -> Result<String, String> {
+    let o = Command::new("ip").args(["-4", "-j", "route", "show", "default"]).stdin(Stdio::null()).output()
+        .map_err(|e| format!("ip -4 -j route show default: {e}"))?;
+    let routes: J = serde_json::from_slice(if o.stdout.is_empty() { b"[]" } else { &o.stdout }).map_err(|e| e.to_string())?;
+    routes.as_array().into_iter().flatten().filter_map(|r| r.get("gateway").and_then(J::as_str))
+        .find(|g| g.parse::<Ipv4Addr>().is_ok()).map(String::from)
+        .ok_or_else(|| s("allow: this host has no IPv4 default route, which is the zone's way to its proxy"))
+}
+
+/// The rules of a zone with an allow list: TCP to its proxy (at pasta's gateway address,
+/// which is the host's loopback) and nothing else, its own loopback aside.
+pub fn nft_allow_rules(gateway: &str, port: u16) -> String {
+    format!("table inet zone {{\n  chain out {{\n    type filter hook output priority 0; policy accept;\n    oif \"lo\" accept\n\
+             \x20   ip daddr {gateway} tcp dport {port} accept\n    reject\n  }}\n}}\n")
+}
+
 /// net.nft_rules: the deny list loaded in the zone's own netns.
 fn nft_rules(z: &Zone) -> Result<String, String> {
     let iface = config::env("NETBIRD_IFACE").filter(|v| !v.is_empty()).unwrap_or_else(|| s("wt0"));
@@ -973,9 +992,10 @@ fn environ(k: &str) -> Option<String> {
 
 /// fs.bwrap_argv(plan=True): the zone's bwrap command line, the parts that depend on the
 /// helpers marked.
-fn bwrap_argv(host: &Host, policy: &Policy, z: &Zone, zdir: &Path, zrt: &Path, network: &str,
-              extra_path: &[String]) -> Result<Vec<String>, String> {
+fn bwrap_argv(host: &Host, policy: &Policy, z: &Zone, zdir: &Path, zrt: &Path, extra_path: &[String],
+              proxy_at: Option<&str>) -> Result<Vec<String>, String> {
     let st = |k: &str| z.get(k);
+    let network = st("network").as_str().unwrap_or("internet");
     let home_setting = st("home").as_str().unwrap_or("").to_string();
     let home = zone_home(host, policy, z, zdir)?;
     std::fs::create_dir_all(&home).map_err(|e| format!("{}: {e}", sh(&home)))?;
@@ -1098,7 +1118,16 @@ fn bwrap_argv(host: &Host, policy: &Policy, z: &Zone, zdir: &Path, zrt: &Path, n
     env.set("XDG_RUNTIME_DIR", zrt_in.clone());
     env.set("ZONE", z.name.clone());
     env.set("TERM", s("xterm-256color"));
-    if network == "internet" {
+    if let Some(gw) = proxy_at {
+        // an allow list: the proxy, the zone's only way out (no names resolve in the zone)
+        let http = format!("http://{gw}:{PLAN_PROXY_PORT}");
+        let socks = format!("socks5h://{gw}:{PLAN_PROXY_PORT}");
+        for (k, val) in [("HTTP_PROXY", &http), ("HTTPS_PROXY", &http), ("ALL_PROXY", &socks), ("http_proxy", &http),
+                         ("https_proxy", &http), ("all_proxy", &socks)] {
+            env.set(k, val.clone());
+        }
+        env.set("NODE_USE_ENV_PROXY", s("1"));
+    } else if network == "internet" {
         env.set("ZONE_DNS", s(DNS_ADDR));
     }
     env.set("XDG_DATA_DIRS", sdata);
@@ -1330,6 +1359,7 @@ fn make_seatbelt_plan(host: &Host, name: &str) -> Result<J, String> {
         "dns": tj(z.get("dns")),
         "devices": [],
         "seatbelt": {"profile": sh(&zrt.join("zone.sb")), "yes": sh(&marks.0), "no": sh(&marks.1)},
+        "allow": strs_of(z.get("allow")),
         "env": env.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(),
         "argv": [rp(&helper), "zone-init"],
         "autostart": autostart,
@@ -1448,10 +1478,16 @@ fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
         proxy = json!(p);
     }
     let network = z.get("network").as_str().unwrap_or("internet").to_string();
-    write(&zrt.join("nft.rules"), &nft_rules(z)?)?;
+    // an allow list: the server writes the rules once its proxy has a port
+    let allow = strs_of(z.get("allow"));
+    let proxy_gw = if allow.is_empty() { None } else { Some(host_gateway4()?) };
+    match &proxy_gw {
+        None => write(&zrt.join("nft.rules"), &nft_rules(z)?)?,
+        Some(gw) => write(&zrt.join("nft.rules"), &nft_allow_rules(gw, 0))?, // (no port yet: nothing out)
+    }
     let fp = host.host_rt.join(".flatpak").join(&instance);
     std::fs::create_dir_all(&fp).map_err(|e| e.to_string())?;
-    let inner = bwrap_argv(host, &policy, z, &zdir, &zrt, &network, &extra_path)?;
+    let inner = bwrap_argv(host, &policy, z, &zdir, &zrt, &extra_path, proxy_gw.as_deref())?;
     let mut argv = zone_py.clone();
     argv.extend([s("_netsetup"), if network == "internet" { sh(&zrt.join("nft.rules")) } else { s("-") },
                  sh(&fp.join("bwrapinfo.json")), name.to_string(), s("--")]);
@@ -1461,9 +1497,13 @@ fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
         if let Some(p) = selinux_problem(&pasta) {
             say(&format!("[zone] {name}: {p}"));
         }
-        let mut full = vec![pasta];
-        full.extend(v(&["--config-net", "--no-map-gw", "-t", "none", "-u", "none", "-T", "none", "-U", "none",
-                        "--dns", "none", "-q", "-f", "--"]));
+        let mut full = vec![pasta, s("--config-net")];
+        // (an allow list: the gateway address stays pasta's way to the host's loopback, where
+        // the proxy listens; the zone's nft rules let only that one port through)
+        if proxy_gw.is_none() {
+            full.push(s("--no-map-gw"));
+        }
+        full.extend(v(&["-t", "none", "-u", "none", "-T", "none", "-U", "none", "--dns", "none", "-q", "-f", "--"]));
         full.extend(argv);
         argv = full;
     }
@@ -1473,14 +1513,14 @@ fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
     }).collect();
     let mut cleanup = zone_py.clone();
     cleanup.extend([s("_cleanup"), name.to_string()]);
-    let upstreams = if network != "internet" {
+    let upstreams = if network != "internet" || proxy_gw.is_some() {
         J::Null
     } else if z.get("dns").as_str() == Some("public") {
         json!(["1.1.1.1", "1.0.0.1"])
     } else {
         json!([host_resolver()])
     };
-    Ok(json!({
+    let mut plan = json!({
         "version": 1,
         "name": name,
         "zrt": sh(&zrt),
@@ -1502,7 +1542,12 @@ fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
         "links": links,
         "autostart": autostart,
         "cleanup": cleanup,
-    }))
+    });
+    if let Some(gw) = proxy_gw {
+        // (only with an allow list: other plans stay as they were, helper/tests/golden)
+        plan["proxy"] = json!({"allow": allow, "gateway": gw, "rules": sh(&zrt.join("nft.rules"))});
+    }
+    Ok(plan)
 }
 
 /// net.pasta_selinux_problem.

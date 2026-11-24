@@ -31,6 +31,8 @@ const PLAN_VERSION: u64 = 1;
 pub const PLAN_IF: &str = "\0if:";
 pub const PLAN_END: &str = "\0end";
 pub const PLAN_HOST_WAYLAND: &str = "\0host-wayland";
+/// In a plan's argument: the port of the zone's proxy, known only once the server started it.
+pub const PLAN_PROXY_PORT: &str = "\0proxy-port";
 const WAYLAND_NO_PROTOCOL: i32 = 3;
 const USAGE: &str = "usage: appzones-helper serve (--plan FILE | --zone NAME) --lock-fd L \
                      [--notify-fd N]";
@@ -713,7 +715,8 @@ fn run_seatbelt(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String
     cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
     if plan.get("network").and_then(Value::as_str) == Some("internet") {
         // appzones' proxy, in this server: the zone's only way out (crate::proxy)
-        let port = crate::proxy::start(std::sync::Arc::new(|l: &str| say(l)))
+        let allow = plan.get("allow").and_then(str_list).filter(|a| !a.is_empty());
+        let port = crate::proxy::start(std::sync::Arc::new(|l: &str| say(l)), allow)
             .map_err(|e| format!("the zone's proxy: {e}"))?;
         let http = format!("http://127.0.0.1:{port}");
         let socks = format!("socks5h://127.0.0.1:{port}");
@@ -898,7 +901,22 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
     if zrt.join("bus").exists() {
         have.insert("bus");
     }
-    let argv = resolve_plan_argv(&argv_marked, &have, host_wl.as_deref())?;
+    let mut argv = resolve_plan_argv(&argv_marked, &have, host_wl.as_deref())?;
+    // an allow list: the zone reaches only appzones' proxy (crate::proxy), on the host's
+    // loopback through pasta's gateway address, and its nft rules let nothing else out
+    if let Some(p) = plan.get("proxy").filter(|p| !p.is_null()) {
+        let allow = p.get("allow").and_then(str_list).ok_or("the plan's proxy has no allow")?;
+        let gw = p.get("gateway").and_then(Value::as_str).ok_or("the plan's proxy has no gateway")?;
+        let rules = p.get("rules").and_then(Value::as_str).ok_or("the plan's proxy has no rules")?;
+        let port = crate::proxy::start(std::sync::Arc::new(|l: &str| say(l)), Some(allow))
+            .map_err(|e| format!("the zone's proxy: {e}"))?;
+        std::fs::write(rules, crate::plan::nft_allow_rules(gw, port)).map_err(|e| format!("{rules}: {e}"))?;
+        for a in argv.iter_mut() {
+            if a.contains(PLAN_PROXY_PORT) {
+                *a = a.replace(PLAN_PROXY_PORT, &port.to_string());
+            }
+        }
+    }
     let mut log_sock = None;
     if plan.get("log_socket") == Some(&Value::Bool(true)) {
         // the zone's output through a socket, not through pasta (see run_plan)

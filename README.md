@@ -149,6 +149,14 @@ The agent's login, its tokens and its history stay in the zone's home. It
 can't read `~/.ssh` or your other projects, has no `SSH_AUTH_SOCK`, and
 can't reach your LAN or the host's own services.
 
+To let it talk only to the services it needs, give it an allow list: it then reaches
+those names and nothing else, through appzones' own proxy (`HTTPS_PROXY`, set for its
+apps), and every refused name is in `appzones logs agents`:
+
+```toml
+allow = ["api.anthropic.com", "github.com", "*.githubusercontent.com", "registry.npmjs.org"]
+```
+
 ![A terminal: the host has three projects and a dev server on localhost:3000; inside the agents zone only ~/src/my-app exists, ssh-add finds no agent, and localhost:3000 is refused](docs/demo-agents.gif)
 
 > [!CAUTION]
