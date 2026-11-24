@@ -610,6 +610,11 @@ fn project_zones_are_trusted_at_the_terminal() {
             "{err}");
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@agent", "--", "true"], None);
     assert!(rc == 1 && se.contains("cannot be used now"), "{se}");
+    // the cross-key checks see your additions too: camera without the device
+    fs::write(b.t.join("zones.toml"), format!("{}[projects.\"~/src/app\".zones.dev]\ncamera = \"device\"\n",
+                                              host.replace("version = 1\n", "version = 1\nrequires = 9\n"))).unwrap();
+    let (_, _, err) = b.run(&["check"]);
+    assert!(err.contains("zone dev: camera is set but \"camera\" is not in devices"), "{err}");
     fs::write(b.t.join("zones.toml"), host).unwrap();
     // trusted again unchanged: nothing asked
     let (rc, _, so) = at_terminal(&b, &app, &["trust"], None);

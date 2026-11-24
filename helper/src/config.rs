@@ -835,11 +835,11 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
             }
         }
         let devices = z.get("devices");
-        if devices.is_array() && !list_has(devices, "camera") && z.origin("camera") == "zone" {
+        if devices.is_array() && !list_has(devices, "camera") && matches!(z.origin("camera"), "zone" | "yours") {
             errs.push(format!("{p} camera is set but \"camera\" is not in devices"));
         }
         if let (true, Some(usb)) = (devices.is_array(), z.get("usb").as_array()) {
-            if !usb.is_empty() && !list_has(devices, "usb") && z.origin("usb") == "zone" {
+            if !usb.is_empty() && !list_has(devices, "usb") && matches!(z.origin("usb"), "zone" | "yours") {
                 errs.push(format!("{p} usb is set but \"usb\" is not in devices"));
             }
             if list_has(devices, "usb") && usb.is_empty() {
