@@ -1,6 +1,6 @@
 [package]
 name = "appzones-helper"
-version = "0.13.0"
+version = "0.14.0"
 edition = "2021"
 rust-version = "1.85"
 description = "appzones: every command, the server, zone-init and zone-wayland in one binary, and the mount helper"

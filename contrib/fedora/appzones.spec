@@ -2,7 +2,7 @@
 # it; `just release-rpm VERSION` attaches it to a release). One Rust binary and the mount
 # helper, built with Fedora's cargo (the crates come from crates.io, pinned by Cargo.lock).
 Name:           appzones
-Version:        0.13.0
+Version:        0.14.0
 Release:        1%{?dist}
 Summary:        Long-lived sandboxes for desktop apps, dev tools and AI agents
 License:        MIT

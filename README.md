@@ -52,7 +52,7 @@ appzones list                     # zones, state, network, devices, apps running
 ```
 
 > [!NOTE]
-> appzones is young (0.13). It runs on **x86_64 NixOS**, and as a preview on
+> appzones is young (0.14). It runs on **x86_64 NixOS**, and as a preview on
 > **Ubuntu 24.04, Debian 12, Arch, Fedora and openSUSE**: command-line zones, and desktop apps
 > under sway 1.9+ (tested) or GNOME (`wayland = "host"`, tried by hand).
 > Window borders and tags per zone need Hyprland. On **macOS** (Apple silicon, in
