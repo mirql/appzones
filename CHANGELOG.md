@@ -7,7 +7,7 @@ The config schema has its own release number (`requires = N` in
 
 ## 0.14.0
 
-Two features for zones that run AI agents and dev tools. **Allow lists**: `allow = ["api.anthropic.com", "github.com"]` lets a zone reach only those host names, through appzones' own proxy, on Linux and macOS. **Project zones**: a repository can carry its own zones in an `appzones.toml`, shared by a team; each person trusts it once at the terminal (`appzones trust`), then runs `appzones run @ -- CMD` in the repository. The config release is 8: a `zones.toml` that uses `allow` needs `requires = 7`, one with `[projects]` `requires = 8`. Nothing changes for existing zones.
+Two features for zones that run AI agents and dev tools. **Allow lists**: `allow = ["api.anthropic.com", "github.com"]` lets a zone reach only those host names, through appzones' own proxy, on Linux and macOS. **Project zones**: a repository can carry its own zones in an `appzones.toml`, shared by a team; each person trusts it once at the terminal (`appzones trust`), then runs `appzones run @ -- CMD` in the repository. The config release is 8: a `zones.toml` that uses `allow` needs `requires = 7`, one with `[projects]` `requires = 8`. Existing zones work as before; one fix: `appzones run` from a folder inside a bind reached through a symlink now starts the command in that folder, not in the zone's home.
 
 - **Project zones** (config release 8; docs/configuration/projects.md): a repository's own
   zones in an `appzones.toml` at its root (`[zones.NAME]`, `default`), named `@` and `@NAME`
