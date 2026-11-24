@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+## 0.13.0
+
+appzones runs on macOS now (Apple silicon, in development): command-line zones under macOS's own sandbox, Seatbelt, with every `network` setting (`internet` through appzones' own proxy, which refuses the host, the LAN and the private ranges as the nft rules do on Linux), `appzones check --probe` there, and a package and nix-darwin module (`darwinModules.default`). Nothing changes for Linux zones, except that a setting the host cannot give a zone (`nix_ld` without nix-ld) now refuses only that zone, not the whole `zones.toml`.
+
 - **`nix_ld` on a host without nix-ld** refuses only that zone (`appzones check` names it,
   and it does not start), no longer the whole `zones.toml`: a file shared between machines
   still works for its other zones. The same holds for what macOS cannot give a zone.
