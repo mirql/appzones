@@ -609,10 +609,14 @@ fn project_zones_are_trusted_at_the_terminal() {
     assert!(rc == 1 && se.contains("is not running"), "{se}");
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
     assert!(rc == 1 && se.contains("no appzones.toml"), "{se}");
-    // untrust: forgotten, and @ says so again
+    // untrust: forgotten, its zones stopped (a systemd unit still starting too), and @ says so again
     fs::write(app.join("appzones.toml"), file).unwrap();
+    let calls = b.t.join("systemctl-calls");
+    b.tool("systemctl", &format!("echo \"$*\" >> {}; case \"$*\" in *is-active*) echo activating;; esac", calls.display()));
     let (rc, _, so) = at_terminal(&b, &app, &["untrust"], None);
     assert!(rc == 0 && so.contains("not trusted any more"), "{so}");
+    let called = fs::read_to_string(&calls).unwrap_or_default();
+    assert_eq!(called.lines().filter(|l| l.starts_with("--user stop appzones@p")).count(), 2, "{called}");
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
     assert!(rc == 1 && se.contains("is not trusted"), "{se}");
     // the host can turn project zones off

@@ -1537,7 +1537,8 @@ impl Cli {
         let mut failed = Vec::new();
         for z in zones {
             let id = crate::project::zone_id(root, z);
-            if !(self.answers(&id) || !self.server_pids(&id).is_empty()) {
+            // (running: answers, a server of it, or its systemd unit, also while it starts)
+            if !(self.answers(&id) || !self.server_pids(&id).is_empty() || self.unit_runs(&id)) {
                 continue;
             }
             let ok = Command::new(&exe).args(["cli", "stop", &id]).stdin(Stdio::null()).status().is_ok_and(|s| s.success());
