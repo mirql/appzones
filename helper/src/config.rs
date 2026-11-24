@@ -323,7 +323,9 @@ pub fn allow_name_ok(n: &str) -> bool {
     name.len() <= 253 && labels.len() >= 2
         && labels.iter().all(|l| !l.is_empty() && l.len() <= 63 && !l.starts_with('-') && !l.ends_with('-')
             && l.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'))
-        && !labels.last().is_some_and(|l| l.bytes().all(|b| b.is_ascii_digit()))
+        // the last label starts with a letter (as every top-level domain does): never an
+        // address in any of the forms resolvers read, 8.8.8.8, 134744072, 0x8.0x80808
+        && labels.last().is_some_and(|l| l.bytes().next().is_some_and(|b| b.is_ascii_lowercase()))
 }
 
 fn colour_ok(c: &str) -> bool {
@@ -1070,7 +1072,8 @@ mod tests {
         assert!(ctx.check("usb", &t("[\"abcd\\n\"]")).is_some(), "a trailing newline is not a match");
         assert_eq!(ctx.check("allow", &t("[\"api.anthropic.com\", \"*.githubusercontent.com\", \"a-b.c9.io\"]")), None);
         for bad in ["\"github\"", "\"GitHub.com\"", "\"1.2.3.4\"", "\"*.com.\"", "\"*\"", "\"a..b\"", "\"-a.b\"",
-                    "\"a.b/x\"", "\"a.b:443\"", "\"*.*.b.c\""] {
+                    "\"a.b/x\"", "\"a.b:443\"", "\"*.*.b.c\"", "\"0x8.0x80808\"", "\"*.0x8.0x8\"", "\"8.8.8.8\"",
+                    "\"10.0.0.010\"", "\"a.1com\""] {
             assert!(ctx.check("allow", &t(&format!("[{bad}]"))).is_some(), "{bad}");
         }
     }

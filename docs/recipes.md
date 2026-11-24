@@ -69,7 +69,8 @@ can't reach your LAN or the host's own services.
 
 To let it talk only to the services it needs, give it an allow list: it then reaches
 those names and nothing else, through appzones' own proxy (`HTTPS_PROXY`, set for its
-apps), and every refused name is in `appzones logs agents`:
+apps), and every refused name is in `appzones logs agents`. The key is release 7: set
+`requires = 7` at the top of the file (an older file says 6 or less):
 
 ```toml
 allow = ["api.anthropic.com", "github.com", "*.githubusercontent.com", "registry.npmjs.org"]

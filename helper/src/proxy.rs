@@ -414,8 +414,10 @@ fn listeners() -> std::io::Result<Vec<TcpListener>> {
         let port = v4.local_addr()?.port();
         match TcpListener::bind((Ipv6Addr::LOCALHOST, port)) {
             Ok(v6) => return Ok(vec![v4, v6]),
-            Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable => return Ok(vec![v4]),
-            Err(e) => last = Some(e),
+            // taken on ::1 by another process: another port
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => last = Some(e),
+            // no IPv6 here (no ::1, the family off: ipv6.disable=1): nothing can listen there
+            Err(_) => return Ok(vec![v4]),
         }
     }
     Err(last.unwrap_or_else(|| std::io::Error::other("no free port")))
