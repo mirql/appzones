@@ -450,7 +450,8 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10)); // (until it has exec'd)
         }
         assert_eq!(proc_argv(pid).map(|a| a[1..].to_vec()), Some(vec!["5".to_string()]));
-        assert!(!sandboxed(pid));
+        // (as sandboxed as this test: Nix's builds on macOS run under a profile of their own)
+        assert_eq!(sandboxed(pid), sandboxed(std::process::id() as libc::pid_t));
         // a file this process holds open is seen, one it does not is not
         let dir = std::env::temp_dir().join(format!("az-open-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);

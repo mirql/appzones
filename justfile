@@ -60,7 +60,8 @@ test-macos host:
     ssh "{{host}}" "cd ~/src/appzones && git checkout -q --detach $sha && nix develop -c sh -c 'cd helper && cargo clippy --release -q --all-targets -- -D warnings && cargo test --release -q'"
 
 # On a Mac over ssh: zones themselves, this commit (tests/macos.sh: three zones, check --probe,
-# binds, a zone's end, refusals; in a temporary folder there, never the user's own zones)
+# binds, a zone's end, refusals; in a temporary folder there, never the user's own zones),
+# then a nix-darwin system with the module (tests/darwin-module.nix, built, not activated)
 test-macos-zones host:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -68,7 +69,7 @@ test-macos-zones host:
     ssh "{{host}}" 'test -d ~/src/appzones || git clone -q https://github.com/mirql/appzones ~/src/appzones'
     git push -q "ssh://{{host}}/~/src/appzones" "HEAD:refs/test-macos/$sha"
     # (the checkout goes back to where it was, also when a test fails)
-    ssh "{{host}}" "cd ~/src/appzones && was=\$(git symbolic-ref -q --short HEAD || git rev-parse HEAD) && git checkout -q --detach $sha && { nix develop -c sh -c 'cd helper && cargo build --release -q' && sh tests/macos.sh helper/target/release/appzones-helper; rc=\$?; git checkout -q \$was; exit \$rc; }"
+    ssh "{{host}}" "cd ~/src/appzones && was=\$(git symbolic-ref -q --short HEAD || git rev-parse HEAD) && git checkout -q --detach $sha && { nix develop -c sh -c 'cd helper && cargo build --release -q' && sh tests/macos.sh helper/target/release/appzones-helper && nix build --impure --no-link --expr '(import ./tests/darwin-module.nix).check'; rc=\$?; git checkout -q \$was; exit \$rc; }"
 
 # The Rust dependencies: advisories, licenses, sources (cargo deny; needs the network)
 audit:

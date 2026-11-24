@@ -7,7 +7,7 @@
 | **Arch Linux** (preview) | the same as Ubuntu and Debian; sway names zones started without systemd too | [a PKGBUILD](#arch-linux-preview), or `make install` |
 | **Fedora 45** (preview) | the same, with SELinux enforcing | [the RPM, or `make install`](#fedora-preview) |
 | **openSUSE Leap 16** (preview) | the same, with SELinux enforcing; internet zones need one SELinux setting | [`make install`](#opensuse-preview) |
-| **macOS** (Apple silicon, in development) | command-line zones (`network` none, internet through a proxy, or host) | [from a checkout](#macos-in-development) |
+| **macOS** (Apple silicon, in development) | command-line zones (`network` none, internet through a proxy, or host) | [nix-darwin's module](#macos-in-development), or from a checkout |
 
 Other x86_64 distributions with systemd or another init, glibc 2.17 or newer and the
 same tools should work like these; they are not tested yet.
@@ -283,10 +283,29 @@ different there:
 - No desktop apps yet. `appzones check --probe ZONE` runs macOS's own probes (what a zone
   there may never read, signal or reach).
 
-To build it, in the checkout: `nix develop` (or Rust 1.85 or newer), then
+**With nix-darwin** (Apple silicon):
+
+```nix
+# flake.nix
+inputs.appzones.url = "github:mirql/appzones";
+inputs.appzones.inputs.nixpkgs.follows = "nixpkgs";
+
+# in your nix-darwin configuration
+imports = [ inputs.appzones.darwinModules.default ];
+programs.appzones = {
+  enable = true;
+  deniedPaths = [ "/Volumes/Work" ];   # your own never-list additions
+};
+```
+
+It installs `appzones`; zones start on demand (`appzones up`, `run`, `shell`). Then write
+`~/.config/appzones/zones.toml` (`appzones new NAME -y`) and run `appzones check`. Without
+nix-darwin: `nix profile install github:mirql/appzones`.
+
+**From a checkout**: `nix develop` (or Rust 1.85 or newer), then
 `cargo build --release --manifest-path helper/Cargo.toml`; the command is then
-`helper/target/release/appzones-helper cli` (as `appzones`), from the checkout. The
-design, and what comes next, is in `design/macos.md` in the repository.
+`helper/target/release/appzones-helper cli` (as `appzones`). The design, and what comes
+next, is in `design/macos.md` in the repository.
 
 ## Requirements
 

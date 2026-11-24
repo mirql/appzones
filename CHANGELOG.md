@@ -8,6 +8,10 @@ The config schema has its own release number (`requires = N` in
 - **`nix_ld` on a host without nix-ld** refuses only that zone (`appzones check` names it,
   and it does not start), no longer the whole `zones.toml`: a file shared between machines
   still works for its other zones. The same holds for what macOS cannot give a zone.
+- **A package and a nix-darwin module for macOS** (design/macos.md, stage 5): the flake has
+  `packages.aarch64-darwin.appzones` (`nix profile install github:mirql/appzones` on a Mac)
+  and `darwinModules.default` (`programs.appzones.enable`, `deniedPaths`). The helper's
+  tests run in its build there too (not the golden files: they are Linux's answers).
 - **Isolation probes on macOS** (design/macos.md, stage 4): `appzones check --probe ZONE`
   runs there, with macOS's own probes (the home, `~/.ssh`, `/tmp`, other volumes, the
   never-list, the zone's server and zone-init, the machine's identity, and per `network`

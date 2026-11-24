@@ -1,6 +1,6 @@
 # appzones on macOS
 
-Status: stages 1 to 4 built (2026-11-23): command-line zones with every `network`
+Status: stages 1 to 5 built (2026-11-24): command-line zones with every `network`
 setting (see "Stage 2, as built" and "Stage 3, as built"). Tested on Apple silicon with
 macOS 27.
 
@@ -237,7 +237,12 @@ What appzones can take from it, on both systems:
    `network` kind, every probe in each, then binds and a zone's end, which the probes cannot
    see from inside. Checked against a weakened profile (the home and the network opened):
    the probes for them fail, as they must.
-5. **Packaging**: a nix-darwin module (as the NixOS one) first; Homebrew later.
+5. **Packaging** (done): `packages.aarch64-darwin.appzones` (nix/package-darwin.nix: the
+   binary and `appzones`, nothing else; the helper's unit and CLI tests in its build, which
+   on macOS runs them from /private/tmp, as Nix's build folder is under /nix/var, on the
+   never-list) and `darwinModules.default` (nix/darwin-module.nix: the package and
+   /etc/appzones/denied-paths). tests/darwin-module.nix builds a nix-darwin system with it.
+   Homebrew later; a LaunchAgent for `autostart` with the module, when autostart comes.
 
 ## Decided
 
