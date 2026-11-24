@@ -27,8 +27,9 @@ in
     };
 
     deniedPaths = lib.mkOption {
-      # (never # or a newline: /etc/appzones/denied-paths reads # as a comment, a line per path)
-      type = lib.types.listOf (lib.types.strMatching "(/|~/)[^#\n]*");
+      # (only what /etc/appzones/denied-paths gives back unchanged: it reads # as a comment,
+      # a line per path, and strips whitespace at both ends)
+      type = lib.types.listOf (lib.types.strMatching "(/|~/)([^#[:cntrl:]]*[^#[:space:][:cntrl:]])?");
       default = [ ];
       example = [
         "/Volumes/Work"
