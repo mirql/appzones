@@ -267,7 +267,9 @@ zones (dev tools, package managers, AI agents), with every `network` setting.
 different there:
 
 - A zone's home is its own folder (`~/.local/share/appzones/<zone>/home`), and `HOME`
-  says so: `~` in a zone is that folder, not your home. Binds are at their real paths.
+  says so: `~` in a zone is that folder, not your home. Binds are at their real paths
+  (so a command run from a folder inside a bind, reached through a symlink, starts in its real
+  path there).
 - `network = "internet"` goes through appzones' own proxy: the zone may connect to one
   port on localhost and nothing else, and the proxy reaches the internet for it, never
   your Mac, your LAN, the tailnet or other private ranges. A zone's apps get

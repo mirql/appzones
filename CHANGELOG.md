@@ -16,6 +16,10 @@ The config schema has its own release number (`requires = N` in
   zone has no desktop and no D-Bus. `appzones untrust` forgets a project and stops its zones;
   `[projects] enabled = false` in your zones.toml ignores every project file.
 
+||||||| a96ad17
+- **`appzones run` from a folder reached through a symlink** (a bind of `~/src/app` where
+  `~/src` links elsewhere) now starts the command in that folder in the zone, not in the
+  zone's home: the host's current folder is compared with the binds' real paths too.
 - **`allow`: an allow list of host names per zone** (#24, config release 7): with
   `network = "internet"`, `allow = ["api.anthropic.com", "*.githubusercontent.com"]` lets the
   zone reach only those names. Its apps go out through appzones' own proxy (`HTTPS_PROXY`,

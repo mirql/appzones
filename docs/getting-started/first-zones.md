@@ -28,6 +28,9 @@ appzones umount work thing         # gone again (busy: says by what; --lazy deta
 
 - **Processes.** If the zone is stopped, `appzones ps ZONE` prints a
   start hint on stderr and exits with status 1.
+- **The starting folder.** Run from a folder inside one of the zone's binds (also one reached
+  through a symlink, as `~/src` linked elsewhere), `appzones run` starts the command in that
+  folder in the zone; from anywhere else, in the zone's home.
 - **Launcher.** Every app in `[apps]` gets a launcher entry per zone, named
   `Firefox (work)`. The entries are written to
   `~/.local/share/appzones/launcher/share/applications`, which is on
