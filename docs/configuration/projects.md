@@ -85,7 +85,8 @@ itself or above it: a project lives inside your home.
 
 What differs on your machine (a folder of yours, an extra host, an environment variable) goes
 in **your** `zones.toml`, never in the repository. It is your file, so it needs no trust, and
-it may use any zone key (not `colour`):
+it may use any zone key (not `colour`, `autostart` or `autostart_apps`: project zones never
+start at login):
 
 ```toml
 requires = 9                       # additions are release 9

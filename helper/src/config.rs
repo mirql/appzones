@@ -643,6 +643,9 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
                             for (key, val) in zt {
                                 if key == "colour" {
                                     errors.push(format!("{zp} colour: a project zone's colour is its own (never one of yours)"));
+                                } else if key == "autostart" || key == "autostart_apps" {
+                                    errors.push(format!("{zp} {key}: project zones never start at login (start them in \
+                                                         the project: appzones up @NAME)"));
                                 } else if !is_key(key) {
                                     errors.push(unknown_key(&format!("{zp} "), key, keys.iter().map(|(n, _)| *n)));
                                 } else if let Some(e) = ctx.check(key, val) {
@@ -1176,6 +1179,8 @@ mod tests {
         assert_eq!((c.overrides[0].0.ends_with(b"/src/app"), c.overrides[0].1.as_str()), (true, "dev"));
         for (t, says) in [("[projects.\"~/src/app\".zones.dev]\ncolour = \"#123456\"\n", "its own"),
                           ("[projects.\"~/src/app\".zones.dev]\nsandwich = 1\n", "unknown key"),
+                          ("[projects.\"~/src/app\".zones.dev]\nautostart_apps = [\"x\"]\n", "never start at login"),
+                          ("[projects.\"~/src/app\".zones.dev]\nautostart = true\n", "never start at login"),
                           ("[projects.\"~/src/app\".zones.dev]\nnetwork = \"moon\"\n", "network"),
                           ("[projects.\"~/src/app\"]\nnetwork = \"none\"\n", "one table, zones"),
                           ("[projects.\"src/app\".zones.dev]\n", "a project's path")] {

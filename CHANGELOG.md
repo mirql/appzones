@@ -6,7 +6,8 @@ The config schema has its own release number (`requires = N` in
 ## Unreleased
 
 - **Your own additions to a project's zones** (config release 9): in your `zones.toml`,
-  `[projects."~/src/my-app".zones.dev]` with any zone key but `colour`: binds are added to the
+  `[projects."~/src/my-app".zones.dev]` with any zone key but `colour`, `autostart` and
+  `autostart_apps`: binds are added to the
   project's, `env` is merged, any other key replaces the project's value. It is your file, so
   it needs no trust; `appzones which @dev` (now with `@`) marks those keys `(yours)`.
 
