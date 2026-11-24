@@ -82,6 +82,34 @@
             };
             # what holds the repository together: the Hyprland hook's pre-0.6 copy, the docs catalog
             repo = import ./tests/repo.nix { inherit pkgs; };
+            # the modules' deniedPaths type: only entries /etc/appzones/denied-paths gives back unchanged
+            denied-path =
+              let
+                t = import ./nix/denied-path.nix nixpkgs.lib;
+                j = x: builtins.fromJSON ("\"" + x + "\"");
+                ok = [
+                  "/srv/code"
+                  "~/Secrets"
+                  "/My Folder/x"
+                  "/Caf\\u00e9"
+                  "/"
+                ];
+                refused = [
+                  "/opt/Secrets#2026"
+                  "/a\\nb"
+                  "/Secrets "
+                  "/a\\tb"
+                  "/a\\rb"
+                  "/tmp/Secrets\\u00a0"
+                  "/tmp/a\\u2028/tmp/b"
+                  "/a\\u0085b"
+                  "relative"
+                  "~user/x"
+                ];
+              in
+              assert builtins.all (x: t.check (j x)) ok;
+              assert !(builtins.any (x: t.check (j x)) refused);
+              pkgs.runCommand "appzones-denied-path" { } "touch $out";
             # appzones on other distributions, in their disk images (offline, ~3 min each):
             # `make install` with the portable binaries (Ubuntu's outside /usr), and the .deb
             debian12 = import ./tests/distro.nix {
