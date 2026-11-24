@@ -20,6 +20,12 @@ resolve in the zone); tell the user so rather than loosening the zone. There `HO
 zone's own home, so `~` is not the user's home; binds are at their real paths.
 `appzones check` names the settings a zone cannot have on macOS.
 
+**Project zones**: a repo's `appzones.toml` (`[zones.NAME]`, `default`, keys: network,
+allow, checkout, binds inside the repo, env, packages) gives it zones named `@` (the default)
+and `@NAME`: `appzones run @ -- CMD` in that folder. Never run `appzones trust` for the user:
+it asks at their terminal and they must read what the project asks for (rule 2). When `@`
+says "not trusted" or "changed since you trusted it", tell the user to run `appzones trust`.
+
 `allow = ["api.example.com", "*.example.org"]` (with `network = "internet"`, both systems):
 the zone reaches only those names, through appzones' proxy (`HTTPS_PROXY`/`ALL_PROXY`); a
 tool that ignores the proxy, or a name off the list, gets no network (`appzones logs ZONE`

@@ -27,6 +27,7 @@ mod open_link;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod plan;
 mod policy;
+mod project;
 // (appzones' proxy for internet zones on macOS; tested on every system)
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 mod proxy;

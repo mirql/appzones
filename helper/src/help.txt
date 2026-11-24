@@ -22,6 +22,9 @@ appzones: app zones on this host (appzones, https://github.com/mirql/appzones).
     appzones up|stop|restart ZONE|--all
     appzones new NAME [-y]                 print a safe zone block; append it to zones.toml with -y
     appzones check [--probe ZONE]          validate zones.toml; --probe also runs isolation probes in ZONE
+    appzones trust [DIR] | untrust [DIR]   a project's own zones (appzones.toml in DIR or above): show what
+                                           they ask for and trust them, at the terminal | forget them.
+                                           Then ZONE can be @ (the project's default zone) or @NAME
     appzones --version | -V                the package version and the config release, for bug reports
     appzones apps                          (re)write launcher entries "App (zone)" from [apps]
     appzones active [--follow] [--json]    "[zone]" for the focused window on Hyprland or sway (for bars;

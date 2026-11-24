@@ -1,0 +1,14 @@
+# appzones.toml at a repository's root: the project's own zones (docs/configuration/projects.md).
+# Each person runs `appzones trust` in the repository once; then `appzones run @ -- CMD`.
+version  = 1
+requires = 8
+default  = "agent"
+
+[zones.agent]                      # an AI agent: the project read-only, a few hosts
+network  = "internet"
+allow    = ["api.anthropic.com", "github.com", "*.githubusercontent.com", "registry.npmjs.org"]
+
+[zones.dev]                        # building and testing: the project writable
+network  = "internet"
+checkout = "rw"
+env      = { NODE_ENV = "development" }

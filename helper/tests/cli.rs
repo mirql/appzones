@@ -499,3 +499,123 @@ fn what_macos_has_not() {
     assert_eq!(rc, 1);
     assert!(err.contains("zone dd: nix_ld = true: not on macOS") && !err.contains("[zones.dd] nix_ld"), "{err}");
 }
+
+/// ARGS run in CWD on a terminal of their own, whose keyboard types ANSWER: (status, what
+/// the terminal showed, stdout). Without ANSWER: no terminal at all (a session of its own).
+fn at_terminal(b: &Box_, cwd: &Path, args: &[&str], answer: Option<&str>) -> (i32, String, String) {
+    use std::io::{Read, Write};
+    use std::os::fd::FromRawFd;
+    use std::os::unix::process::CommandExt;
+    let mut c = b.cmd(args);
+    c.current_dir(cwd).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let Some(answer) = answer else {
+        // Safety: setsid in the child: no controlling terminal, so /dev/tty cannot open.
+        unsafe { c.pre_exec(|| { libc::setsid(); Ok(()) }) };
+        let (rc, so, se) = out(c.output().unwrap());
+        return (rc, se, so);
+    };
+    let (mut m, mut s) = (0, 0);
+    // Safety: openpty into two locals; the master is close-on-exec, the slave is the child's
+    // controlling terminal (setsid, TIOCSCTTY) and closed here after the spawn.
+    unsafe {
+        assert_eq!(libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()), 0);
+        libc::fcntl(m, libc::F_SETFD, libc::FD_CLOEXEC);
+        c.pre_exec(move || {
+            libc::setsid();
+            libc::ioctl(s, libc::TIOCSCTTY as _, 0);
+            Ok(())
+        });
+    }
+    let child = c.spawn().unwrap();
+    // Safety: our copy of the slave; the master is ours from here on.
+    let mut master = unsafe {
+        libc::close(s);
+        std::fs::File::from_raw_fd(m)
+    };
+    master.write_all(answer.as_bytes()).unwrap();
+    // the terminal read while the child runs: on macOS a process leaving its terminal waits
+    // until what it wrote there was read
+    let reader = std::thread::spawn(move || {
+        let mut shown = Vec::new();
+        let mut buf = [0u8; 4096];
+        while let Ok(n) = master.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            shown.extend_from_slice(&buf[..n]);
+        }
+        shown
+    });
+    let o = child.wait_with_output().unwrap();
+    let shown = reader.join().unwrap();
+    let (rc, so, se) = out(o);
+    (rc, format!("{}{se}", String::from_utf8_lossy(&shown)), so)
+}
+
+#[test]
+fn project_zones_are_trusted_at_the_terminal() {
+    let b = Box_::new("project", Some(TWO));
+    let app = b.t.join("home/src/app");
+    fs::create_dir_all(app.join(".git")).unwrap();
+    fs::create_dir_all(app.join("deep")).unwrap();
+    let file = "version = 1\nrequires = 8\ndefault = \"agent\"\n[zones.agent]\nnetwork = \"internet\"\nallow = [\"github.com\"]\n\
+                [zones.dev]\ncheckout = \"rw\"\n";
+    fs::write(app.join("appzones.toml"), file).unwrap();
+    let store = b.t.join("home/.local/state/appzones/projects");
+    // not trusted: @ says so, and starts nothing
+    let (rc, se, _) = at_terminal(&b, &app.join("deep"), &["run", "@", "--", "true"], None);
+    assert_eq!(rc, 1);
+    assert!(se.contains("is not trusted"), "{se}");
+    // trust: never without a terminal, never on anything but a yes
+    let (rc, se, _) = at_terminal(&b, &app, &["trust"], None);
+    assert!(rc == 1 && se.contains("asks at the terminal"), "{se}");
+    let (rc, shown, so) = at_terminal(&b, &app, &["trust"], Some("n\n"));
+    assert!(rc == 1 && so.contains("not trusted"), "{shown}{so}");
+    assert!(!store.exists() || fs::read_dir(&store).unwrap().next().is_none());
+    let (rc, shown, so) = at_terminal(&b, &app.join("deep"), &["trust"], Some("y\n"));
+    assert_eq!(rc, 0, "{shown}{so}");
+    assert!(shown.contains("It asks for:") && shown.contains("! @agent (the default): the internet, only github.com")
+            && shown.contains("! @dev: the project folder") && shown.contains("READ-WRITE")
+            && shown.contains("@agent (the default): the project folder") && shown.contains(".git/hooks"), "{shown}");
+    assert!(so.contains("trusted:") && so.contains("@agent, @dev"), "{so}");
+    // the copy is in the store (0700), and the zones are the host's now, shown by project
+    let rec: Vec<_> = fs::read_dir(&store).unwrap().flatten().collect();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(fs::read_to_string(rec[0].path().join("appzones.toml")).unwrap(), file);
+    assert_eq!(fs::metadata(rec[0].path()).unwrap().permissions().mode() & 0o777, 0o700);
+    let (rc, so, err) = b.run(&["list"]);
+    assert!(rc == 0 && so.contains("app/agent") && so.contains("app/dev"), "{so}{err}");
+    let (rc, so, err) = b.run(&["check"]);
+    assert!(rc == 0 && so.contains("; 2 project zones (app/agent, app/dev)"), "{so}{err}");
+    // trusted again unchanged: nothing asked
+    let (rc, _, so) = at_terminal(&b, &app, &["trust"], None);
+    assert!(rc == 0 && so.contains("trusted already, unchanged"), "{so}");
+    // changed: @ refuses to start it; trust shows what changed
+    fs::write(app.join("appzones.toml"), file.replace("github.com", "evil.example")).unwrap();
+    let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
+    assert!(rc == 1 && se.contains("changed since you trusted it"), "{se}");
+    let (rc, se, _) = at_terminal(&b, &app, &["run", "@nope", "--", "true"], None);
+    assert!(rc == 1 && se.contains("changed since you trusted it"), "{se}");
+    let (_, shown, _) = at_terminal(&b, &app, &["trust"], Some("n\n"));
+    assert!(shown.contains("Changed since you trusted it:") && shown.contains("+ allow = [\"evil.example\"]")
+            && shown.contains("- allow = [\"github.com\"]"), "{shown}");
+    // a key a project file may never have: refused before anything is asked
+    fs::write(app.join("appzones.toml"), format!("{file}devices = [\"gpu\"]\n")).unwrap();
+    let (rc, se, _) = at_terminal(&b, &app, &["trust"], None);
+    assert!(rc == 1 && se.contains("devices: never in a project file"), "{se}");
+    // untrust: forgotten, and @ says so again
+    fs::write(app.join("appzones.toml"), file).unwrap();
+    let (rc, _, so) = at_terminal(&b, &app, &["untrust"], None);
+    assert!(rc == 0 && so.contains("not trusted any more"), "{so}");
+    let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
+    assert!(rc == 1 && se.contains("is not trusted"), "{se}");
+    // the host can turn project zones off
+    fs::write(b.t.join("zones.toml"), format!("{}[projects]\nenabled = false\n", TWO.replace("version = 1\n", "version = 1\nrequires = 8\n")))
+        .unwrap();
+    let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
+    assert!(rc == 1 && se.contains("project zones are off"), "{se}");
+    // a host zone may not take a project zone's name
+    fs::write(b.t.join("zones.toml"), "version = 1\n[zones.p0123456789]\ncolour = \"#111111\"\n").unwrap();
+    let (rc, _, err) = b.run(&["check"]);
+    assert!(rc == 1 && err.contains("name project zones"), "{err}");
+}

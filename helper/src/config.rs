@@ -13,16 +13,16 @@ use toml::{Table, Value};
 use crate::policy::{py_path, py_repr, realpath, zone_name_ok, Policy, RESERVED};
 use crate::pyfmt::{close_match, fnmatchcase, json_dumps, repr, repr_strs, sha256_hex};
 
-pub const RELEASE: i64 = 7;
+pub const RELEASE: i64 = 8;
 pub const NAME_PATTERN: &str = "^[a-z][a-z0-9-]{1,20}$";
-const TOP: &[&str] = &["version", "requires", "defaults", "zones", "apps"];
+const TOP: &[&str] = &["version", "requires", "defaults", "zones", "apps", "projects"];
 pub const APP_KEYS: &[&str] = &["command", "desktop", "zones", "args", "bus"];
 const DEVICES: &[&str] = &["gpu", "audio", "mic", "camera", "screencast", "usb"];
 pub const BUSES: &[&str] = &["host", "zone", "none"];
 /// (setting, the release that added it), in zonecfg.SINCE's order.
 const SINCE: &[(&str, i64)] = &[("requires", 2), ("bus", 2), ("apps.bus", 2), ("bus = \"zone\"", 2),
     ("bus = \"none\"", 2), ("nix_ld", 3), ("tmp", 3), ("usb", 4), ("supervisor", 5), ("start_timeout", 5),
-    ("linger", 5), ("wayland", 6), ("allow", 7)];
+    ("linger", 5), ("wayland", 6), ("allow", 7), ("projects", 8)];
 const SERVER_ONLY: &[&str] = &["supervisor", "start_timeout"];
 
 const DBUS_NEVER: &[&str] = &["org.freedesktop.systemd1*", "org.freedesktop.secrets*", "org.kde.kwalletd*",
@@ -464,6 +464,8 @@ pub struct Zone {
     pub settings: Table,
     /// key -> "builtin" | "defaults" | "zone"
     pub origin: Vec<(&'static str, &'static str)>,
+    /// a project's zone (crate::project), from a trusted copy: no desktop, no host D-Bus
+    pub project: bool,
 }
 
 impl Zone {
@@ -481,6 +483,10 @@ pub struct Config {
     pub apps: Table,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
+    /// how the project zones among ZONES are shown (load_all)
+    pub projects: Vec<crate::project::ProjectZone>,
+    /// [projects] enabled: whether trusted projects' zones are used (the default: yes)
+    pub projects_enabled: bool,
 }
 
 impl Config {
@@ -523,13 +529,13 @@ pub fn load(path: &Path, shown: &str, code_dir: OsString) -> Config {
                 Some(n) => format!("[Errno {n}] {}: {}", strerror(n), py_repr(shown)),
                 None => e.to_string(),
             };
-            Config { zones: vec![], apps: Table::new(), errors: vec![format!("{shown}: {msg}")], warnings: vec![] }
+            Config { zones: vec![], apps: Table::new(), errors: vec![format!("{shown}: {msg}")], warnings: vec![], projects: vec![], projects_enabled: true }
         }
         Ok(b) => match String::from_utf8(b) {
             Ok(text) => load_text(&text, shown, code_dir),
             Err(e) => Config { zones: vec![], apps: Table::new(), errors: vec![format!(
                 "{shown}: 'utf-8' codec can't decode byte 0x{:02x} in position {}: invalid start byte",
-                e.as_bytes()[e.utf8_error().valid_up_to()], e.utf8_error().valid_up_to())], warnings: vec![] },
+                e.as_bytes()[e.utf8_error().valid_up_to()], e.utf8_error().valid_up_to())], warnings: vec![], projects: vec![], projects_enabled: true },
         },
     }
 }
@@ -542,7 +548,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
         Ok(t) => t,
         Err(e) => {
             return Config { zones: vec![], apps: Table::new(), errors: vec![format!("{path}: {}", parse_error(text, &e))],
-                            warnings: vec![] };
+                            warnings: vec![], projects: vec![], projects_enabled: true };
         }
     };
     for k in raw.keys() {
@@ -554,7 +560,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
         .filter(|k| raw.get(**k).is_some_and(|v| !v.is_table())).map(|k| format!("{k} must be a table")).collect();
     if !shapes.is_empty() {
         errors.extend(shapes);
-        return Config { zones: vec![], apps: Table::new(), errors, warnings: vec![] };
+        return Config { zones: vec![], apps: Table::new(), errors, warnings: vec![], projects: vec![], projects_enabled: true };
     }
     if !equals_one(raw.get("version")) {
         errors.push("version must be 1".into());
@@ -573,6 +579,8 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
             errors.push(format!("zone name {} must match {NAME_PATTERN}", py_repr(zname)));
         } else if RESERVED.contains(&zname.as_str()) {
             errors.push(format!("zone name {} is reserved (bin, etc, launcher, lib, share)", py_repr(zname)));
+        } else if crate::project::is_internal_name(zname) {
+            errors.push(format!("zone name {}: p and 10 hex digits name project zones", py_repr(zname)));
         }
         let Value::Table(zraw) = zraw else {
             errors.push(format!("[zones.{zname}] must be a table"));
@@ -598,10 +606,25 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
         }
         // a name seen twice (TOML refuses that already): the last one, as a dict would
         zones.retain(|z| &z.name != zname);
-        zones.push(Zone { name: zname.clone(), settings, origin });
+        zones.push(Zone { name: zname.clone(), settings, origin, project: false });
     }
     let apps = raw.get("apps").and_then(Value::as_table).cloned().unwrap_or_default();
     errors.extend(validate(&ctx, &zones, &apps));
+    // [projects]: whether trusted projects' zones are used (crate::project)
+    let mut projects_enabled = true;
+    match raw.get("projects") {
+        None => {}
+        Some(Value::Table(t)) => {
+            for (k, v) in t {
+                match (k.as_str(), v) {
+                    ("enabled", Value::Boolean(b)) => projects_enabled = *b,
+                    ("enabled", _) => errors.push("[projects] enabled must be true or false".into()),
+                    _ => errors.push(unknown_key("[projects] ", k, ["enabled"])),
+                }
+            }
+        }
+        Some(_) => errors.push("projects must be a table".into()),
+    }
     let req = raw.get("requires").cloned().unwrap_or(Value::Integer(1));
     let req_int = match &req {
         Value::Integer(i) => Some(*i),
@@ -615,7 +638,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
                                              update appzones (and rebuild) to get the newer one. Until then, what this \
                                              zone does not know:")];
                 errs.extend(errors.iter().map(|e| format!("  {e}")));
-                return Config { zones, apps, errors: errs, warnings: vec![] };
+                return Config { zones, apps, errors: errs, warnings: vec![], projects: vec![], projects_enabled: true };
             }
         }
         _ => errors.push("requires must be a release number (an integer, 1 or more)".into()),
@@ -688,7 +711,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
                              and the app in the other zone would hand its work (a URL, a file) to that one; a zone \
                              never hands anything to another zone", py_repr(&n), zs.join(", ")));
     }
-    Config { zones, apps, errors, warnings }
+    Config { zones, apps, errors, warnings, projects: vec![], projects_enabled }
 }
 
 /// zonecfg.names_overlap: bus names (or "prefix.*" patterns) that can name the same name.
@@ -708,8 +731,8 @@ fn uses(raw: &Table, what: &str) -> bool {
     tables.extend(raw.get("zones").and_then(Value::as_table).into_iter().flat_map(|z| z.values().filter_map(Value::as_table)));
     let apps: Vec<&Table> = raw.get("apps").and_then(Value::as_table).into_iter()
         .flat_map(|a| a.values().filter_map(Value::as_table)).collect();
-    if what == "requires" {
-        return raw.contains_key("requires");
+    if what == "requires" || what == "projects" {
+        return raw.contains_key(what);
     }
     if let Some(k) = what.strip_prefix("apps.") {
         return apps.iter().any(|a| a.contains_key(k));
@@ -968,6 +991,24 @@ pub fn host_refusals(z: &Zone) -> Vec<String> {
             vec![]
         }
     }
+}
+
+/// The check of zone key K's value V, as the host's file has it (project files use it).
+pub fn check_key(k: &str, v: &Value) -> Option<String> {
+    Ctx { policy: policy("/nonexistent".into()), activatable: std::cell::OnceCell::new() }.check(k, v)
+}
+
+/// The host's configuration (load) and, when it is valid and allows them, the zones of the
+/// trusted projects (crate::project) of the user whose home is HOME.
+pub fn load_all(path: &Path, shown: &str, code_dir: OsString, home: &Path) -> Config {
+    let mut cfg = load(path, shown, code_dir);
+    if cfg.errors.is_empty() && cfg.projects_enabled {
+        let (zones, projects, warnings) = crate::project::zones(home, &cfg.zones);
+        cfg.zones.extend(zones);
+        cfg.projects = projects;
+        cfg.warnings.extend(warnings);
+    }
+    cfg
 }
 
 pub fn config_json_main(args: &[OsString]) -> u8 {

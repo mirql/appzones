@@ -24,7 +24,7 @@ use crate::pyfmt::{close_match, json_dumps_unsorted, py_json};
 
 const HELP: &str = include_str!("help.txt");
 const COMMANDS: &[&str] = &["active", "apps", "check", "list", "logs", "mount", "mounts", "new", "ping", "ps", "restart",
-    "run", "serve", "shell", "stop", "umount", "up", "which"];
+    "run", "serve", "shell", "stop", "trust", "umount", "untrust", "up", "which"];
 const PALETTE: &[&str] = &["#a6e3a1", "#89b4fa", "#f38ba8", "#f9e2af", "#cba6f7", "#94e2d5", "#fab387", "#f5c2e7",
     "#74c7ec", "#eba0ac", "#b4befe", "#89dceb"];
 const START_TIMEOUT: f64 = 30.0;
@@ -168,7 +168,7 @@ impl Cli {
     }
 
     fn load(&self) -> Config {
-        config::load(&self.host.config, &self.config_path(), self.host.here.as_os_str().to_owned())
+        config::load_all(&self.host.config, &self.config_path(), self.host.here.as_os_str().to_owned(), &self.host.home)
     }
 
     /// common.load_cfg.
@@ -654,8 +654,10 @@ impl Cli {
     fn each_zone(&self, cmd: &str, rest: &[String]) -> i32 {
         let Some(first) = rest.first() else { die(&format!("usage: appzones {cmd} ZONE|--all")) };
         let every = first == "--all";
+        let first = &self.zone_arg(first, cmd != "stop");
+        // (--all: up and restart are for the host's own zones; stop ends project zones too)
         let mut names: Vec<String> = if every {
-            self.load_cfg(true).zones.iter().map(|z| z.name.clone()).collect()
+            self.load_cfg(true).zones.iter().filter(|z| cmd == "stop" || !z.project).map(|z| z.name.clone()).collect()
         } else {
             vec![first.clone()]
         };
@@ -1029,6 +1031,9 @@ impl Cli {
         let mut zones = Vec::new();
         for z in &cfg.zones {
             let n = &z.name;
+            // a project zone: as `my-app/agent` (its internal name is for appzones alone)
+            let project = cfg.projects.iter().find(|p| &p.name == n);
+            let label = project.map_or_else(|| n.clone(), |p| p.shown.clone());
             let st = |k: &str| z.get(k).as_str().unwrap_or("").to_string();
             let net = format!("{}{}", st("network"), if config::truthy(z.get("netbird")) { "+netbird" } else { "" });
             let (state, apps_t, apps_j) = if self.answers(n) {
@@ -1045,10 +1050,14 @@ impl Cli {
             let devs: Vec<String> = z.get("devices").as_array().map(|a| a.iter().filter_map(|x| x.as_str()).map(|d| {
                 if d == "usb" { format!("usb({})", usb.join("+")) } else { d.to_string() }
             }).collect()).unwrap_or_default();
-            rows.push([n.clone(), state.clone(), net.clone(), st("dns"), if devs.is_empty() { "-".into() } else { devs.join(",") },
+            rows.push([label.clone(), state.clone(), net.clone(), st("dns"), if devs.is_empty() { "-".into() } else { devs.join(",") },
                        apps_t, st("colour")]);
-            zones.push(json!({"name": n, "state": state, "network": net, "dns": st("dns"), "devices": devs, "apps": apps_j,
-                              "colour": st("colour")}));
+            let mut j = json!({"name": n, "state": state, "network": net, "dns": st("dns"), "devices": devs, "apps": apps_j,
+                               "colour": st("colour")});
+            if let Some(p) = project {
+                j["project"] = json!({"zone": label, "root": sh(&p.root)});
+            }
+            zones.push(j);
         }
         if as_json {
             out(&py_json(&J::Array(zones)));
@@ -1088,7 +1097,8 @@ impl Cli {
             die(&format!("zone name {} must match {} and not be one of {}", py_repr(name), config::NAME_PATTERN,
                          crate::pyfmt::repr_strs(&r)));
         }
-        let empty = || Config { zones: vec![], apps: toml::Table::new(), errors: vec![], warnings: vec![] };
+        let empty = || Config { zones: vec![], apps: toml::Table::new(), errors: vec![], warnings: vec![], projects: vec![],
+                                projects_enabled: true };
         if !write {
             let cfg = if self.host.config.symlink_metadata().is_ok() { self.load_cfg(true) } else { empty() };
             if cfg.zone(name).is_some() {
@@ -1155,8 +1165,12 @@ impl Cli {
         if !refused.is_empty() {
             return 1;
         }
-        out(&format!("ok: {}: {} zones ({}), {} apps (this zone is release {})", self.config_path(), cfg.zones.len(),
-                     cfg.zones.iter().map(|z| z.name.as_str()).collect::<Vec<_>>().join(", "), cfg.apps.len(), config::RELEASE));
+        let host: Vec<&str> = cfg.zones.iter().filter(|z| !z.project).map(|z| z.name.as_str()).collect();
+        let projects = if cfg.projects.is_empty() { String::new() } else {
+            format!("; {} project zones ({})", cfg.projects.len(), cfg.projects.iter().map(|p| p.shown.as_str()).collect::<Vec<_>>().join(", "))
+        };
+        out(&format!("ok: {}: {} zones ({}), {} apps (this zone is release {}){projects}", self.config_path(), host.len(),
+                     host.join(", "), cfg.apps.len(), config::RELEASE));
         let Some(probe) = probe else { return 0 };
         let cfg = self.load_zone(probe, true);
         let z = cfg.zone(probe).expect("checked");
@@ -1363,6 +1377,141 @@ impl Cli {
             _ => skipped.push("network refusals (network = \"host\": the zone has the host's network)".into()),
         }
         (probes, skipped)
+    }
+
+    // ── project zones (crate::project) ───────────────────────────────────
+
+    /// ARG as a zone name: itself, or for `@` / `@NAME` the internal name of the current
+    /// project's default zone or zone NAME. VERIFY (commands that start a zone): the project
+    /// file must be the one trusted, byte for byte.
+    fn zone_arg(&self, arg: &str, verify: bool) -> String {
+        let Some(want) = arg.strip_prefix('@') else { return arg.to_string() };
+        let cfg = self.load_cfg(true);
+        if !cfg.projects_enabled {
+            die(&format!("project zones are off in {} ([projects] enabled = false)", self.config_path()));
+        }
+        let cwd = std::env::current_dir().unwrap_or_else(|e| die(&format!("the current folder: {e}")));
+        let root = crate::project::find_root(&cwd, &self.host.home).unwrap_or_else(|e| die(&e));
+        let shown_root = crate::project::shown(&sh(&root));
+        let Some(t) = crate::project::trusted_at(&self.host.home, &root) else {
+            die(&format!("the project at {shown_root} is not trusted: look at what it asks for with `appzones trust` \
+                          (in that folder)"));
+        };
+        if verify {
+            let now = crate::project::read_file(&root).unwrap_or_else(|e| die(&e));
+            if now != t.copy {
+                die(&format!("{shown_root}/{} changed since you trusted it: `appzones trust` shows what changed", crate::project::FILE));
+            }
+        }
+        let file = crate::project::parse(&t.copy, crate::project::FILE)
+            .unwrap_or_else(|e| die(&format!("the trusted file of {shown_root}: {}; appzones trust it again", e.join("; "))));
+        let zone = if want.is_empty() { file.default.clone() } else { want.to_string() };
+        if !file.zones.iter().any(|(n, _)| *n == zone) {
+            die(&format!("the project at {shown_root} has no zone {} (zones: {})", py_repr(&crate::project::shown(&zone)),
+                         file.zones.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ")));
+        }
+        let id = crate::project::zone_id(&root, &zone);
+        if verify && !cfg.zones.iter().any(|z| z.name == id) {
+            for w in &cfg.warnings {
+                warn(&format!("warning: {w}"));
+            }
+            die(&format!("zone @{zone} of {shown_root} cannot be used now (see above)"));
+        }
+        id
+    }
+
+    /// `appzones trust [DIR]`: show what the project there asks for, and trust it on a yes
+    /// typed at the terminal (never from a pipe or a script).
+    fn trust(&self, dir: Option<&String>) -> i32 {
+        let start = dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|e| die(&e.to_string())));
+        let root = crate::project::find_root(&start, &self.host.home).unwrap_or_else(|e| die(&e));
+        let shown_root = crate::project::shown(&sh(&root));
+        let policy = config::policy(self.host.here.as_os_str().to_owned());
+        if let Some(e) = policy.bind_error(root.as_os_str().as_bytes()) {
+            die(&format!("the project's folder cannot be a zone's: {}", crate::project::shown(&e)));
+        }
+        // the bytes read once: those shown are those recorded
+        let now = crate::project::read_file(&root).unwrap_or_else(|e| die(&e));
+        let file = match crate::project::parse(&now, &format!("{shown_root}/{}", crate::project::FILE)) {
+            Ok(f) => f,
+            Err(errs) => {
+                for e in errs {
+                    eprintln!("error: {e}");
+                }
+                return 1;
+            }
+        };
+        if let Err(e) = crate::project::check_binds(&root, &file) {
+            die(&e);
+        }
+        let old = crate::project::trusted_at(&self.host.home, &root);
+        if old.as_ref().is_some_and(|o| o.copy == now) {
+            out(&format!("{shown_root}: trusted already, unchanged"));
+            return 0;
+        }
+        let mut tty = std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty")
+            .unwrap_or_else(|_| die("appzones trust asks at the terminal, and there is none here"));
+        let mut text = format!("\nProject {shown_root} ({})\n", crate::project::FILE);
+        if let Some(o) = &old {
+            text += "\nChanged since you trusted it:\n";
+            let (a, b) = (String::from_utf8_lossy(&o.copy), String::from_utf8_lossy(&now));
+            let (al, bl): (Vec<&str>, Vec<&str>) = (a.lines().collect(), b.lines().collect());
+            for l in al.iter().filter(|l| !bl.contains(l)) {
+                text += &format!("  - {}\n", crate::project::shown(l));
+            }
+            for l in bl.iter().filter(|l| !al.contains(l)) {
+                text += &format!("  + {}\n", crate::project::shown(l));
+            }
+        }
+        let (wide, rest) = crate::project::summary(&root, &file);
+        if !wide.is_empty() {
+            text += "\nIt asks for:\n";
+            for l in wide {
+                text += &format!("  ! {l}\n");
+            }
+        }
+        text += "\nAnd:\n";
+        for l in rest {
+            text += &format!("    {l}\n");
+        }
+        text += "\nIts zones have no desktop (no windows, sound or devices), no D-Bus, and only what is above.\n\
+                 A zone with the folder read-write can change files you later run on this host (.git/hooks,\n\
+                 .git/config, scripts): look at what it changed before you run them.\n\nTrust it? [y/N] ";
+        use std::io::{BufRead, Write as _};
+        let _ = tty.write_all(text.as_bytes());
+        let mut answer = String::new();
+        let _ = std::io::BufReader::new(&tty).read_line(&mut answer);
+        if !matches!(answer.trim(), "y" | "Y" | "yes") {
+            out("not trusted");
+            return 1;
+        }
+        crate::project::record(&self.host.home, &root, &now).unwrap_or_else(|e| die(&e));
+        out(&format!("trusted: {shown_root}; its zones: {} (appzones run @ -- CMD, in that folder)",
+                     file.zones.iter().map(|(n, _)| format!("@{n}")).collect::<Vec<_>>().join(", ")));
+        0
+    }
+
+    /// `appzones untrust [DIR]`: forget the project there and stop its zones (also when its
+    /// folder is gone: DIR as it was).
+    fn untrust(&self, dir: Option<&String>) -> i32 {
+        let start = dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|e| die(&e.to_string())));
+        let root = crate::project::find_root(&start, &self.host.home)
+            .or_else(|e| if start.is_absolute() && !start.exists() { Ok(start.clone()) } else { Err(e) })
+            .unwrap_or_else(|e| die(&e));
+        let shown_root = crate::project::shown(&sh(&root));
+        let Some(t) = crate::project::trusted_at(&self.host.home, &root) else { die(&format!("{shown_root} is not trusted")) };
+        // forgotten first (nothing starts it again), then its zones stopped
+        crate::project::forget(&t.dir).unwrap_or_else(|e| die(&e));
+        let zones: Vec<String> = crate::project::parse(&t.copy, crate::project::FILE).map(|f| f.zones.into_iter()
+            .map(|(n, _)| n).collect()).unwrap_or_default();
+        for z in &zones {
+            let id = crate::project::zone_id(&root, z);
+            if self.answers(&id) || !self.server_pids(&id).is_empty() {
+                self.stop_zone(&id);
+            }
+        }
+        out(&format!("not trusted any more: {shown_root}"));
+        0
     }
 
     fn find_desktop(&self, name: &str) -> Vec<(String, String)> {
@@ -1999,12 +2148,12 @@ pub fn main(args: &[OsString]) -> i32 {
         "which" => cli.which(&one()),
         "up" | "stop" | "restart" => cli.each_zone(cmd, rest),
         "ping" => {
-            let r = agent::ping(cli.rt(), &one());
+            let r = agent::ping(cli.rt(), &cli.zone_arg(&one(), false));
             out(&py_json(r.as_ref().unwrap_or(&J::Null)));
             i32::from(!r.is_some_and(|v| v.as_object().is_none_or(|o| !o.is_empty())))
         }
         "ps" => {
-            let n = one();
+            let n = cli.zone_arg(&one(), false);
             match agent::zone_procs(cli.rt(), &n) {
                 Ok(procs) => {
                     for p in procs {
@@ -2021,9 +2170,11 @@ pub fn main(args: &[OsString]) -> i32 {
             let follow = rest.iter().any(|a| a == "-f" || a == "--follow");
             let rest2: Vec<&String> = rest.iter().filter(|a| *a != "-f" && *a != "--follow").collect();
             let Some(n) = rest2.first() else { die("usage: appzones logs ZONE") };
-            cli.logs(n, follow)
+            cli.logs(&cli.zone_arg(n, false), follow)
         }
-        "shell" => cli.shell(&one()),
+        "shell" => cli.shell(&cli.zone_arg(&one(), true)),
+        "trust" => cli.trust(rest.first()),
+        "untrust" => cli.untrust(rest.first()),
         "run" => {
             let (mut wait, mut restart, mut bus): (bool, bool, Option<String>) = (false, false, None);
             let mut take = |ws: &mut Vec<String>| {
@@ -2052,7 +2203,7 @@ pub fn main(args: &[OsString]) -> i32 {
             if r.is_empty() {
                 die("usage: appzones run [--restart] [--bus host|zone|none] [--wait] ZONE APP|-- CMD...");
             }
-            let name = r.remove(0);
+            let name = cli.zone_arg(&r.remove(0), true);
             take(&mut r);
             if wait && r.first().map(String::as_str) != Some("--") {
                 die("--wait runs a command: appzones run --wait ZONE -- CMD...");
@@ -2066,7 +2217,8 @@ pub fn main(args: &[OsString]) -> i32 {
                 r.remove(0);
             }
             let probe = if r.first().map(|a| a.as_str()) == Some("--probe") { r.get(1).map(|a| a.as_str()) } else { None };
-            cli.check(probe)
+            let probe = probe.map(|p| cli.zone_arg(p, true));
+            cli.check(probe.as_deref())
         }
         "apps" => cli.apps(),
         "active" => crate::active::main(rest.iter().any(|a| a == "--follow"), rest.iter().any(|a| a == "--json"), &cli.host.host_rt),

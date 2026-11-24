@@ -42,6 +42,9 @@
     - file: configuration/nix-ld.md
       title: Generic binaries
       about: prebuilt Linux binaries with nix_ld
+    - file: configuration/projects.md
+      title: Project zones
+      about: a repository's own zones in appzones.toml, trusted once per person and machine
 - section: Background
   pages:
     - file: desktop.md

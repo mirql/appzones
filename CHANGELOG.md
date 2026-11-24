@@ -5,6 +5,17 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **Project zones** (config release 8; docs/configuration/projects.md): a repository's own
+  zones in an `appzones.toml` at its root (`[zones.NAME]`, `default`), named `@` and `@NAME`
+  in `run`, `shell`, `up`, `stop`, `restart`, `ps`, `logs` and `check --probe`. Nothing of the
+  file is used before `appzones trust`, which shows what it asks for (widenings first) and asks
+  at the terminal; the zones then run from a copy of the file in appzones' state folder, and
+  `@` refuses to start them when the repository's file changed. A project file may only set
+  `network` (none or internet), `allow`, `checkout` (the project folder, read-only by default),
+  binds inside the project, `env`, `packages`, `tmp`, `linger`, `start_timeout`; a project
+  zone has no desktop and no D-Bus. `appzones untrust` forgets a project and stops its zones;
+  `[projects] enabled = false` in your zones.toml ignores every project file.
+
 - **`allow`: an allow list of host names per zone** (#24, config release 7): with
   `network = "internet"`, `allow = ["api.anthropic.com", "*.githubusercontent.com"]` lets the
   zone reach only those names. Its apps go out through appzones' own proxy (`HTTPS_PROXY`,

@@ -1235,7 +1235,7 @@ pub fn make_plan(host: &Host, name: &str) -> Result<J, String> {
 /// The configuration a plan is made from: valid, its warnings said, with zone NAME in it and
 /// nothing about that zone that this host (WHERE, for the message) refuses.
 fn plan_config(host: &Host, name: &str, where_: &str) -> Result<Config, String> {
-    let cfg = config::load(&host.config, &sh(&host.config), host.here.as_os_str().to_owned());
+    let cfg = config::load_all(&host.config, &sh(&host.config), host.here.as_os_str().to_owned(), &host.home);
     if !cfg.errors.is_empty() {
         return Err(format!("{} is invalid:\n  {}", sh(&host.config), cfg.errors.join("\n  ")));
     }
@@ -1465,7 +1465,8 @@ fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
         say(&format!("[zone] no WAYLAND_DISPLAY: zone {name} starts without a Wayland socket"));
     }
     let mut proxy = J::Null;
-    let bus = environ("DBUS_SESSION_BUS_ADDRESS").filter(|b| !b.is_empty());
+    // (a project zone: no host D-Bus at all, crate::project)
+    let bus = environ("DBUS_SESSION_BUS_ADDRESS").filter(|b| !b.is_empty() && !z.project);
     if bus.is_some() && host.find_tool("xdg-dbus-proxy").is_none() {
         say(&format!("[zone] {name}: xdg-dbus-proxy not found: the zone starts without a session bus (no portals, \
                       notifications or tray; install xdg-dbus-proxy for them)"));

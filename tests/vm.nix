@@ -189,7 +189,7 @@ let
 
   zonesToml = pkgs.writeText "zones.toml" ''
     version = 1
-    requires = 7
+    requires = 8
     [defaults]
     devices = []
     [zones.tw]
@@ -664,6 +664,45 @@ pkgs.testers.runNixOSTest {
         print("PASS  allow: refusals in the zone's log")
         print(u("appzones check --probe tw"))
         print("PASS  allow: every probe in tw")
+
+    with subtest("project zones: a repository's own zones, trusted at the terminal"):
+        P = "/home/alice/src/app"
+        u(f"mkdir -p {P}/.git {P}/sub && cd {P} && printf '%s\\n' 'version = 1' 'requires = 8' 'default = \"agent\"' "
+          "'[zones.agent]' 'network = \"internet\"' 'allow = [\"allowed.test\"]' '[zones.dev]' 'checkout = \"rw\"' > appzones.toml")
+        rc, out = u(f"cd {P} && appzones run --wait @ -- true </dev/null 2>&1", check=False)
+        assert rc != 0 and "is not trusted" in out, out
+        print("PASS  project: untrusted, nothing starts")
+        out = u(f"cd {P}/sub && echo y | script -qec 'appzones trust' /dev/null")
+        assert "! @agent (the default): the internet, only allowed.test" in out and "trusted:" in out, out
+        print("PASS  project: trusted at the terminal, what it asks for shown first")
+        def at(zone, cmd):
+            return u(f"cd {P}/sub && appzones run --wait {zone} -- bash -c {shlex.quote(cmd)} </dev/null 2>&1", check=False)
+        rc, out = at("@", "curl -sS -m 10 http://allowed.test/")
+        assert rc == 0 and "peer-ok" in out, out
+        rc, out = at("@", "[ \"$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://other.test/)\" = 403 ]")
+        assert rc == 0, out
+        print("PASS  project: @ (the default) reaches only its allow list")
+        rc, out = at("@", "pwd")
+        assert rc == 0 and out.strip() == f"{P}/sub", out
+        print("PASS  project: the command starts in the same folder")
+        rc, out = at("@", f"touch {P}/x")
+        assert rc != 0, out
+        rc, out = at("@dev", f"touch {P}/x && echo written")
+        assert rc == 0 and "written" in out, out
+        print("PASS  project: the checkout read-only in @, read-write in @dev (checkout = rw)")
+        rc, out = at("@", "ls /home/alice/Shared /home/alice/.ssh 2>&1; ls -A /run/user/1000; echo wl=$WAYLAND_DISPLAY bus=$DBUS_SESSION_BUS_ADDRESS")
+        assert "No such file" in out and "wl= bus=" in out and "bus\n" not in out and "wayland-0" not in out, out
+        print("PASS  project: nothing else of the home, no Wayland, no D-Bus")
+        listing = u("appzones list")
+        assert "app/agent" in listing and "app/dev" in listing, listing
+        u(f"cd {P} && sed -i 's/allowed.test/other.test/' appzones.toml")
+        rc, out = at("@", "true")
+        assert rc != 0 and "changed since you trusted it" in out, out
+        print("PASS  project: a changed file is refused until trusted again")
+        u(f"cd {P} && appzones untrust")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "! appzones list | grep -q app/agent"), timeout=30)
+        assert machine.execute("pgrep -u alice -f 'appzones-helper cli serve p'")[0] != 0
+        print("PASS  project: untrust forgets it and stops its zones")
         # the xdg-open shim (links = "zone") is first on PATH: never writable from inside
         ok("tz", "test -x /run/zone/bin/xdg-open", "xdg-open shim present (links = zone)")
         refused("tz", "touch /run/zone/bin/firefox", "xdg-open shim directory read-only")

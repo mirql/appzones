@@ -12,7 +12,7 @@ this `appzones` is release M: update appzones (and rebuild)" and lists what it d
 failing on an unknown key. A file that uses a newer setting without raising
 `requires` is an error, so the field stays true. Release 2 added `bus` and
 `requires`; release 3 `nix_ld`, `tmp` and `appzones mount`; release 4 the `usb`
-device and key; release 5 `supervisor`, `start_timeout` and `linger`; release 6 `wayland`; release 7 `allow`; `appzones check` prints
+device and key; release 5 `supervisor`, `start_timeout` and `linger`; release 6 `wayland`; release 7 `allow`; release 8 project zones and `[projects]`; `appzones check` prints
 the tool's own release. (A `zone` (the old name) from
 before release 2 does not know `requires` either: it still says "unknown
 key" until it is updated once.) A real typo stays an error, with the nearest

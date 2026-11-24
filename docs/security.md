@@ -27,6 +27,9 @@
      zone restarts (the deny list is computed at start);
    - resolve internal DNS names (with `dns = "host"`);
    - ask for a screencast or a file. That is your dialog, every time.
+   - a [project zone](configuration/projects.md) with its folder read-write can change files
+     you later run on the host (`.git/hooks`, `.git/config`, scripts): trust limits what the
+     zone reaches, not what you run afterwards from what it wrote.
 3. **Logins inside zones use the basic store.** Browsers and Electron apps
    keep cookies and passwords under a fixed key, protected only by disk
    encryption.

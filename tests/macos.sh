@@ -50,7 +50,7 @@ trap 'exit 143' TERM
 
 cat > "$APPZONES_CONFIG" <<EOF
 version = 1
-requires = 7
+requires = 8
 [zones.t-none]
 colour = "#336699"
 network = "none"
@@ -86,6 +86,38 @@ check "an address: 403"                        '[ "$(code http://1.1.1.1/)" = 40
 check "the refusal is in the zone's log"       'az logs t-allow 2>&1 | grep -q "refused example.org:80 (not on the zone.s allow list)"'
 
 az stop t-inet >/dev/null 2>&1; az stop t-host >/dev/null 2>&1; az stop t-allow >/dev/null 2>&1   # (only t-none runs from here)
+
+echo "--- project zones"
+P="$T/proj/app"
+mkdir -p "$P/.git" "$P/sub"
+printf '%s\n' 'version = 1' 'requires = 8' 'default = "agent"' '[zones.agent]' 'network = "internet"' \
+    'allow = ["example.com"]' '[zones.dev]' 'checkout = "rw"' > "$P/appzones.toml"
+pz() { (cd "$P/sub" && az run --wait "$1" -- /bin/sh -c "$2" </dev/null 2>&1); }
+check "untrusted: nothing starts"                '! pz @ true'
+# a yes typed at a terminal of its own (macOS's script(1) sends an end of input first)
+(cd "$P/sub" && python3 -c '
+import os, pty, sys
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(sys.argv[1], [sys.argv[1], "cli", "trust"])
+os.write(fd, b"y\n")
+while True:
+    try:
+        if not os.read(fd, 4096):
+            break
+    except OSError:
+        break
+sys.exit(os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1]))' "$BIN" >/dev/null 2>&1)
+check "trusted at the terminal"                  'pz @ true'
+check "@ reaches its allow list"                 '[ "$(pz @ "curl -s -m 20 -o /dev/null -w %{http_code} http://example.com/")" = 200 ]'
+check "@ not other names"                        '[ "$(pz @ "curl -s -m 20 -o /dev/null -w %{http_code} http://example.org/")" = 403 ]'
+check "@: the checkout read-only"                '! pz @ "touch $P/x"'
+check "@dev: the checkout read-write"            'pz @dev "touch $P/x"'
+check "the project's zones are listed"           'az list | grep -q app/agent'
+sed -i '' 's/example.com/example.org/' "$P/appzones.toml"
+check "a changed file is refused"                'pz @ true | grep -q "changed since you trusted it"'
+(cd "$P" && az untrust >/dev/null 2>&1)
+check "untrust forgets it"                       '! az list | grep -q app/agent'
 
 echo "--- binds"
 inz() { az run --wait t-none -- /bin/sh -c "$1" </dev/null >/dev/null 2>&1; }
