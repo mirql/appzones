@@ -13,7 +13,7 @@ use toml::{Table, Value};
 use crate::policy::{py_path, py_repr, realpath, zone_name_ok, Policy, RESERVED};
 use crate::pyfmt::{close_match, fnmatchcase, json_dumps, repr, repr_strs, sha256_hex};
 
-pub const RELEASE: i64 = 8;
+pub const RELEASE: i64 = 9;
 pub const NAME_PATTERN: &str = "^[a-z][a-z0-9-]{1,20}$";
 const TOP: &[&str] = &["version", "requires", "defaults", "zones", "apps", "projects"];
 pub const APP_KEYS: &[&str] = &["command", "desktop", "zones", "args", "bus"];
@@ -22,7 +22,8 @@ pub const BUSES: &[&str] = &["host", "zone", "none"];
 /// (setting, the release that added it), in zonecfg.SINCE's order.
 const SINCE: &[(&str, i64)] = &[("requires", 2), ("bus", 2), ("apps.bus", 2), ("bus = \"zone\"", 2),
     ("bus = \"none\"", 2), ("nix_ld", 3), ("tmp", 3), ("usb", 4), ("supervisor", 5), ("start_timeout", 5),
-    ("linger", 5), ("wayland", 6), ("allow", 7), ("projects", 8)];
+    ("linger", 5), ("wayland", 6), ("allow", 7), ("projects", 8),
+    ("[projects.\"PATH\"]", 9)];
 const SERVER_ONLY: &[&str] = &["supervisor", "start_timeout"];
 
 const DBUS_NEVER: &[&str] = &["org.freedesktop.systemd1*", "org.freedesktop.secrets*", "org.kde.kwalletd*",
@@ -487,6 +488,9 @@ pub struct Config {
     pub projects: Vec<crate::project::ProjectZone>,
     /// [projects] enabled: whether trusted projects' zones are used (the default: yes)
     pub projects_enabled: bool,
+    /// [projects."PATH".zones.NAME]: the user's own additions to a project's zone (the path
+    /// as written, expanded; the zone; its keys)
+    pub overrides: Vec<(Vec<u8>, String, Table)>,
 }
 
 impl Config {
@@ -529,13 +533,13 @@ pub fn load(path: &Path, shown: &str, code_dir: OsString) -> Config {
                 Some(n) => format!("[Errno {n}] {}: {}", strerror(n), py_repr(shown)),
                 None => e.to_string(),
             };
-            Config { zones: vec![], apps: Table::new(), errors: vec![format!("{shown}: {msg}")], warnings: vec![], projects: vec![], projects_enabled: true }
+            Config { zones: vec![], apps: Table::new(), errors: vec![format!("{shown}: {msg}")], warnings: vec![], projects: vec![], projects_enabled: true, overrides: vec![] }
         }
         Ok(b) => match String::from_utf8(b) {
             Ok(text) => load_text(&text, shown, code_dir),
             Err(e) => Config { zones: vec![], apps: Table::new(), errors: vec![format!(
                 "{shown}: 'utf-8' codec can't decode byte 0x{:02x} in position {}: invalid start byte",
-                e.as_bytes()[e.utf8_error().valid_up_to()], e.utf8_error().valid_up_to())], warnings: vec![], projects: vec![], projects_enabled: true },
+                e.as_bytes()[e.utf8_error().valid_up_to()], e.utf8_error().valid_up_to())], warnings: vec![], projects: vec![], projects_enabled: true, overrides: vec![] },
         },
     }
 }
@@ -548,7 +552,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
         Ok(t) => t,
         Err(e) => {
             return Config { zones: vec![], apps: Table::new(), errors: vec![format!("{path}: {}", parse_error(text, &e))],
-                            warnings: vec![], projects: vec![], projects_enabled: true };
+                            warnings: vec![], projects: vec![], projects_enabled: true, overrides: vec![] };
         }
     };
     for k in raw.keys() {
@@ -560,7 +564,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
         .filter(|k| raw.get(**k).is_some_and(|v| !v.is_table())).map(|k| format!("{k} must be a table")).collect();
     if !shapes.is_empty() {
         errors.extend(shapes);
-        return Config { zones: vec![], apps: Table::new(), errors, warnings: vec![], projects: vec![], projects_enabled: true };
+        return Config { zones: vec![], apps: Table::new(), errors, warnings: vec![], projects: vec![], projects_enabled: true, overrides: vec![] };
     }
     if !equals_one(raw.get("version")) {
         errors.push("version must be 1".into());
@@ -612,6 +616,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
     errors.extend(validate(&ctx, &zones, &apps));
     // [projects]: whether trusted projects' zones are used (crate::project)
     let mut projects_enabled = true;
+    let mut overrides: Vec<(Vec<u8>, String, Table)> = Vec::new();
     match raw.get("projects") {
         None => {}
         Some(Value::Table(t)) => {
@@ -619,7 +624,35 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
                 match (k.as_str(), v) {
                     ("enabled", Value::Boolean(b)) => projects_enabled = *b,
                     ("enabled", _) => errors.push("[projects] enabled must be true or false".into()),
-                    _ => errors.push(unknown_key("[projects] ", k, ["enabled"])),
+                    // the user's own additions to a project's zones (their file: no trust needed)
+                    (path, _) if path.starts_with('/') || path.starts_with("~/") => {
+                        let p = format!("[projects.{}]", py_repr(path));
+                        let Some(Value::Table(zs)) = v.as_table().and_then(|t| {
+                            (t.len() == 1).then(|| t.get("zones")).flatten()
+                        }) else {
+                            errors.push(format!("{p} has one table, zones (zones.NAME = {{ key = value }})"));
+                            continue;
+                        };
+                        for (zname, zt) in zs {
+                            let zp = format!("{p} zones.{zname}");
+                            let Value::Table(zt) = zt else {
+                                errors.push(format!("{zp} must be a table"));
+                                continue;
+                            };
+                            for (key, val) in zt {
+                                if key == "colour" {
+                                    errors.push(format!("{zp} colour: a project zone's colour is its own (never one of yours)"));
+                                } else if !is_key(key) {
+                                    errors.push(unknown_key(&format!("{zp} "), key, keys.iter().map(|(n, _)| *n)));
+                                } else if let Some(e) = ctx.check(key, val) {
+                                    errors.push(format!("{zp} {key} {e}"));
+                                }
+                            }
+                            overrides.push((ctx.policy.expand(path.as_bytes()), zname.clone(), zt.clone()));
+                        }
+                    }
+                    _ => errors.push(format!("[projects] {}: enabled, or a project's path (absolute or ~/...) with \
+                                              its zones", py_repr(k))),
                 }
             }
         }
@@ -638,7 +671,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
                                              update appzones (and rebuild) to get the newer one. Until then, what this \
                                              zone does not know:")];
                 errs.extend(errors.iter().map(|e| format!("  {e}")));
-                return Config { zones, apps, errors: errs, warnings: vec![], projects: vec![], projects_enabled: true };
+                return Config { zones, apps, errors: errs, warnings: vec![], projects: vec![], projects_enabled: true, overrides: vec![] };
             }
         }
         _ => errors.push("requires must be a release number (an integer, 1 or more)".into()),
@@ -711,7 +744,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
                              and the app in the other zone would hand its work (a URL, a file) to that one; a zone \
                              never hands anything to another zone", py_repr(&n), zs.join(", ")));
     }
-    Config { zones, apps, errors, warnings, projects: vec![], projects_enabled }
+    Config { zones, apps, errors, warnings, projects: vec![], projects_enabled, overrides }
 }
 
 /// zonecfg.names_overlap: bus names (or "prefix.*" patterns) that can name the same name.
@@ -733,6 +766,9 @@ fn uses(raw: &Table, what: &str) -> bool {
         .flat_map(|a| a.values().filter_map(Value::as_table)).collect();
     if what == "requires" || what == "projects" {
         return raw.contains_key(what);
+    }
+    if what == "[projects.\"PATH\"]" {
+        return raw.get("projects").and_then(Value::as_table).is_some_and(|t| t.keys().any(|k| k != "enabled"));
     }
     if let Some(k) = what.strip_prefix("apps.") {
         return apps.iter().any(|a| a.contains_key(k));
@@ -1003,7 +1039,7 @@ pub fn check_key(k: &str, v: &Value) -> Option<String> {
 pub fn load_all(path: &Path, shown: &str, code_dir: OsString, home: &Path) -> Config {
     let mut cfg = load(path, shown, code_dir);
     if cfg.errors.is_empty() && cfg.projects_enabled {
-        let (zones, projects, warnings) = crate::project::zones(home, &cfg.zones);
+        let (zones, projects, warnings) = crate::project::zones(home, &cfg.zones, &cfg.overrides);
         cfg.zones.extend(zones);
         cfg.projects = projects;
         cfg.warnings.extend(warnings);
@@ -1117,6 +1153,26 @@ mod tests {
                     "\"10.0.0.010\"", "\"a.1com\""] {
             assert!(ctx.check("allow", &t(&format!("[{bad}]"))).is_some(), "{bad}");
         }
+    }
+
+    #[test]
+    fn project_overrides() {
+        let load = |t: &str| load_text(&format!("version = 1\nrequires = 9\n{t}"), "z.toml", "/nonexistent".into());
+        let c = load("[projects.\"~/src/app\".zones.dev]\nenv = { A = \"1\" }\nbinds = [{ path = \"~/data\", mode = \"ro\" }]\n");
+        assert!(c.errors.is_empty(), "{:?}", c.errors);
+        assert_eq!(c.overrides.len(), 1);
+        assert_eq!((c.overrides[0].0.ends_with(b"/src/app"), c.overrides[0].1.as_str()), (true, "dev"));
+        for (t, says) in [("[projects.\"~/src/app\".zones.dev]\ncolour = \"#123456\"\n", "its own"),
+                          ("[projects.\"~/src/app\".zones.dev]\nsandwich = 1\n", "unknown key"),
+                          ("[projects.\"~/src/app\".zones.dev]\nnetwork = \"moon\"\n", "network"),
+                          ("[projects.\"~/src/app\"]\nnetwork = \"none\"\n", "one table, zones"),
+                          ("[projects.\"src/app\".zones.dev]\n", "a project's path")] {
+            let e = load(t).errors.join("\n");
+            assert!(e.contains(says), "{t}: {e}");
+        }
+        let old = load_text("version = 1\nrequires = 8\n[projects.\"~/src/app\".zones.dev]\nenv = { A = \"1\" }\n", "z.toml",
+                            "/nonexistent".into());
+        assert!(old.errors.iter().any(|e| e.contains("requires = 9")), "{:?}", old.errors);
     }
 
     #[test]

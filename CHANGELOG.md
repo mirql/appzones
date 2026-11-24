@@ -5,6 +5,11 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **Your own additions to a project's zones** (config release 9): in your `zones.toml`,
+  `[projects."~/src/my-app".zones.dev]` with any zone key but `colour`: binds are added to the
+  project's, `env` is merged, any other key replaces the project's value. It is your file, so
+  it needs no trust; `appzones which @dev` (now with `@`) marks those keys `(yours)`.
+
 ## 0.14.0
 
 Two features for zones that run AI agents and dev tools. **Allow lists**: `allow = ["api.anthropic.com", "github.com"]` lets a zone reach only those host names, through appzones' own proxy, on Linux and macOS. **Project zones**: a repository can carry its own zones in an `appzones.toml`, shared by a team; each person trusts it once at the terminal (`appzones trust`), then runs `appzones run @ -- CMD` in the repository. The config release is 8: a `zones.toml` that uses `allow` needs `requires = 7`, one with `[projects]` `requires = 8`. Existing zones work as before; one fix: `appzones run` from a folder inside a bind reached through a symlink now starts the command in that folder, not in the zone's home.

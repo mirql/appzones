@@ -81,6 +81,25 @@ From the current folder up, the first folder with an `appzones.toml` is the proj
 search stops at a folder holding `.git` (the repository's root), and never looks at your home
 itself or above it: a project lives inside your home.
 
+## Your own additions
+
+What differs on your machine (a folder of yours, an extra host, an environment variable) goes
+in **your** `zones.toml`, never in the repository. It is your file, so it needs no trust, and
+it may use any zone key (not `colour`):
+
+```toml
+requires = 9                       # additions are release 9
+
+[projects."~/src/my-app".zones.dev]
+binds = [{ path = "~/datasets", mode = "ro" }]          # added to the project's own binds
+env   = { API_URL = "http://localhost:8080" }            # merged with the project's env
+allow = ["api.anthropic.com", "internal.example.com"]   # any other key replaces the project's value
+```
+
+The path is the project's folder (absolute or `~/`). `appzones which @dev` marks what comes from
+you with `(yours)`. The never-list applies to your binds as everywhere; a project zone still has
+no host D-Bus.
+
 ## Your own zones.toml
 
 ```toml
