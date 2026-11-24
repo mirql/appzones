@@ -457,7 +457,15 @@ pub fn zones(home: &Path, host: &[Zone], overrides: &[(Vec<u8>, String, Table)])
                     }
                 }
             }
-            zones.push(Zone { name: name.clone(), settings, origin, project: true });
+            let zone = Zone { name: name.clone(), settings, origin, project: true };
+            // the whole zone checked as the host's are (the user's additions may not fit the rest)
+            let errs = config::check_zone(&zone, host);
+            if !errs.is_empty() {
+                warnings.push(format!("project {} zone {zname}: {} (with your additions in zones.toml); not used",
+                                      shown(&t.root.to_string_lossy()), errs.join("; ")));
+                continue;
+            }
+            zones.push(zone);
             shown_as.push(ProjectZone { name, shown: format!("{label}/{zname}"), root: t.root.clone() });
         }
     }

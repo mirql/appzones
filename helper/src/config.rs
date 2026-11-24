@@ -459,6 +459,7 @@ impl Ctx {
     }
 }
 
+#[derive(Clone)]
 pub struct Zone {
     pub name: String,
     /// Every key, in KEYS's order.
@@ -1027,6 +1028,17 @@ pub fn host_refusals(z: &Zone) -> Vec<String> {
             vec![]
         }
     }
+}
+
+/// Every check of the host's file that zone Z, built elsewhere (a project's zone with the
+/// user's additions), fails, next to the host's zones HOST (which it may name).
+pub fn check_zone(z: &Zone, host: &[Zone]) -> Vec<String> {
+    let ctx = Ctx { policy: policy("/nonexistent".into()), activatable: std::cell::OnceCell::new() };
+    let mut all: Vec<Zone> = host.to_vec();
+    all.push(z.clone());
+    let mine = format!("[zones.{}]", z.name);
+    validate(&ctx, &all, &Table::new()).into_iter().filter(|e| e.starts_with(&mine))
+        .map(|e| e[mine.len()..].trim_start().to_string()).collect()
 }
 
 /// The check of zone key K's value V, as the host's file has it (project files use it).
