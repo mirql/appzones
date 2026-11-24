@@ -609,8 +609,18 @@ fn project_zones_are_trusted_at_the_terminal() {
     assert!(rc == 1 && se.contains("is not running"), "{se}");
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
     assert!(rc == 1 && se.contains("no appzones.toml"), "{se}");
+    // a zone that binds the project's file cannot be built without it: its log is still there
+    fs::write(app.join("appzones.toml"), "version = 1\nrequires = 8\n[zones.agent]\nbinds = [{ path = \"appzones.toml\" }]\n").unwrap();
+    let (rc, shown, so) = at_terminal(&b, &app, &["trust"], Some("y\n"));
+    assert_eq!(rc, 0, "{shown}{so}");
+    fs::remove_file(app.join("appzones.toml")).unwrap();
+    b.tool("tail", "echo tail \"$@\"");
+    let (rc, _, so) = at_terminal(&b, &app, &["logs", "@"], None);
+    assert!(rc == 0 && so.starts_with("tail -n 200 ") && so.contains("/p"), "{so}");
     // untrust: forgotten, its zones stopped (a systemd unit still starting too), and @ says so again
     fs::write(app.join("appzones.toml"), file).unwrap();
+    let (rc, shown, so) = at_terminal(&b, &app, &["trust"], Some("y\n"));
+    assert_eq!(rc, 0, "{shown}{so}");
     let calls = b.t.join("systemctl-calls");
     b.tool("systemctl", &format!("echo \"$*\" >> {}; case \"$*\" in *is-active*) echo activating;; esac", calls.display()));
     let (rc, _, so) = at_terminal(&b, &app, &["untrust"], None);

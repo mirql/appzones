@@ -1679,9 +1679,10 @@ impl Cli {
     }
 
     fn logs(&self, name: &str, follow: bool) -> i32 {
-        let cfg = self.load_zone(name, true);
-        let z = cfg.zone(name).expect("checked");
-        let err = if !self.unit_runs(name) && (!self.server_pids(name).is_empty() || !self.use_systemd(Some(z))) {
+        // (a project zone that cannot be built now, its file gone: its log all the same)
+        let cfg = if crate::project::is_internal_name(name) { self.load_cfg(true) } else { self.load_zone(name, true) };
+        let z = cfg.zone(name);
+        let err = if !self.unit_runs(name) && (!self.server_pids(name).is_empty() || !self.use_systemd(z)) {
             let mut c = Command::new("tail");
             c.args(["-n", "200"]);
             if follow {
