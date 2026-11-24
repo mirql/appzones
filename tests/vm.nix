@@ -695,6 +695,12 @@ pkgs.testers.runNixOSTest {
         print("PASS  project: nothing else of the home, no Wayland, no D-Bus")
         listing = u("appzones list")
         assert "app/agent" in listing and "app/dev" in listing, listing
+        serving = lambda: len(machine.succeed("pgrep -u alice -f 'appzones-helper cli serve p' || true").split())
+        assert serving() == 2, serving()
+        # trusted again without @dev: its running zone is stopped (nothing else would find it)
+        u(f"cd {P} && sed -i '/zones.dev/,$d' appzones.toml && echo y | script -qec 'appzones trust' /dev/null")
+        machine.wait_until_succeeds("[ $(pgrep -u alice -f 'appzones-helper cli serve p' | wc -l) = 1 ]", timeout=30)
+        print("PASS  project: a zone dropped from the file is stopped when it is trusted again")
         u(f"cd {P} && sed -i 's/allowed.test/other.test/' appzones.toml")
         rc, out = at("@", "true")
         assert rc != 0 and "changed since you trusted it" in out, out

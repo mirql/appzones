@@ -603,6 +603,12 @@ fn project_zones_are_trusted_at_the_terminal() {
     fs::write(app.join("appzones.toml"), format!("{file}devices = [\"gpu\"]\n")).unwrap();
     let (rc, se, _) = at_terminal(&b, &app, &["trust"], None);
     assert!(rc == 1 && se.contains("devices: never in a project file"), "{se}");
+    // the file gone: managing commands still find the trusted project (starting needs the file)
+    fs::remove_file(app.join("appzones.toml")).unwrap();
+    let (rc, se, _) = at_terminal(&b, &app.join("deep"), &["ps", "@"], None);
+    assert!(rc == 1 && se.contains("is not running"), "{se}");
+    let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
+    assert!(rc == 1 && se.contains("no appzones.toml"), "{se}");
     // untrust: forgotten, and @ says so again
     fs::write(app.join("appzones.toml"), file).unwrap();
     let (rc, _, so) = at_terminal(&b, &app, &["untrust"], None);

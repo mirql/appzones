@@ -84,6 +84,7 @@ itself or above it: a project lives inside your home.
 ## Your own zones.toml
 
 ```toml
+requires = 8                       # [projects] is release 8: raise your file's requires to 8
 [projects]
 enabled = false                    # ignore every project file (the default: true)
 ```

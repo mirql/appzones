@@ -1391,7 +1391,13 @@ impl Cli {
             die(&format!("project zones are off in {} ([projects] enabled = false)", self.config_path()));
         }
         let cwd = std::env::current_dir().unwrap_or_else(|e| die(&format!("the current folder: {e}")));
-        let root = crate::project::find_root(&cwd, &self.host.home).unwrap_or_else(|e| die(&e));
+        // (stop, ps, logs: also when the project's file is gone, by the trusted project holding
+        // this folder; starting a zone always needs the file)
+        let root = match crate::project::find_root(&cwd, &self.host.home) {
+            Ok(r) => r,
+            Err(e) if verify => die(&e),
+            Err(e) => crate::project::trusted_holding(&self.host.home, &cwd).map(|t| t.root).unwrap_or_else(|| die(&e)),
+        };
         let shown_root = crate::project::shown(&sh(&root));
         let Some(t) = crate::project::trusted_at(&self.host.home, &root) else {
             die(&format!("the project at {shown_root} is not trusted: look at what it asks for with `appzones trust` \
@@ -1486,6 +1492,12 @@ impl Cli {
             return 1;
         }
         crate::project::record(&self.host.home, &root, &now).unwrap_or_else(|e| die(&e));
+        // zones the file had and has no more: stopped now (nothing else would find them)
+        if let Some(o) = &old {
+            let new: Vec<String> = file.zones.iter().map(|(n, _)| n.clone()).collect();
+            let gone: Vec<String> = crate::project::zone_names(&o.copy).into_iter().filter(|z| !new.contains(z)).collect();
+            self.stop_project_zones(&root, &gone);
+        }
         out(&format!("trusted: {shown_root}; its zones: {} (appzones run @ -- CMD, in that folder)",
                      file.zones.iter().map(|(n, _)| format!("@{n}")).collect::<Vec<_>>().join(", ")));
         0
@@ -1495,23 +1507,41 @@ impl Cli {
     /// folder is gone: DIR as it was).
     fn untrust(&self, dir: Option<&String>) -> i32 {
         let start = dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|e| die(&e.to_string())));
-        let root = crate::project::find_root(&start, &self.host.home)
-            .or_else(|e| if start.is_absolute() && !start.exists() { Ok(start.clone()) } else { Err(e) })
-            .unwrap_or_else(|e| die(&e));
-        let shown_root = crate::project::shown(&sh(&root));
-        let Some(t) = crate::project::trusted_at(&self.host.home, &root) else { die(&format!("{shown_root} is not trusted")) };
-        // forgotten first (nothing starts it again), then its zones stopped
+        // the project there: by its file, else the trusted project holding the folder, else
+        // (the folder gone) the path as given
+        let t = crate::project::find_root(&start, &self.host.home).ok()
+            .and_then(|r| crate::project::trusted_at(&self.host.home, &r))
+            .or_else(|| crate::project::trusted_holding(&self.host.home, &start))
+            .or_else(|| (start.is_absolute() && !start.exists()).then(|| crate::project::trusted_at(&self.host.home, &start)).flatten())
+            .unwrap_or_else(|| die(&format!("{} is not in a trusted project", crate::project::shown(&sh(&start)))));
+        let shown_root = crate::project::shown(&sh(&t.root));
+        // forgotten first (nothing starts its zones again), then every one of them stopped
         crate::project::forget(&t.dir).unwrap_or_else(|e| die(&e));
-        let zones: Vec<String> = crate::project::parse(&t.copy, crate::project::FILE).map(|f| f.zones.into_iter()
-            .map(|(n, _)| n).collect()).unwrap_or_default();
-        for z in &zones {
-            let id = crate::project::zone_id(&root, z);
-            if self.answers(&id) || !self.server_pids(&id).is_empty() {
-                self.stop_zone(&id);
-            }
+        let failed = self.stop_project_zones(&t.root, &crate::project::zone_names(&t.copy));
+        if !failed.is_empty() {
+            die(&format!("not trusted any more: {shown_root}; but these of its zones still run: {} (`appzones stop NAME` \
+                          each, or `appzones stop --all`)", failed.join(", ")));
         }
         out(&format!("not trusted any more: {shown_root}"));
         0
+    }
+
+    /// Stop the zones ZONES of the project at ROOT that run, each on its own (one that fails
+    /// does not keep the others running); the internal names of those that still run.
+    fn stop_project_zones(&self, root: &Path, zones: &[String]) -> Vec<String> {
+        let exe = std::env::current_exe().unwrap_or_else(|e| die(&e.to_string()));
+        let mut failed = Vec::new();
+        for z in zones {
+            let id = crate::project::zone_id(root, z);
+            if !(self.answers(&id) || !self.server_pids(&id).is_empty()) {
+                continue;
+            }
+            let ok = Command::new(&exe).args(["cli", "stop", &id]).stdin(Stdio::null()).status().is_ok_and(|s| s.success());
+            if !ok {
+                failed.push(id);
+            }
+        }
+        failed
     }
 
     fn find_desktop(&self, name: &str) -> Vec<(String, String)> {

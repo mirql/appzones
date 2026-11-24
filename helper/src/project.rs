@@ -282,6 +282,18 @@ pub fn trusted_at(home: &Path, root: &Path) -> Option<Trusted> {
     read_record(&record_dir(home, root))
 }
 
+/// The trusted project whose root holds START (resolved), the innermost: for commands that
+/// manage a project's zones also when its file is gone.
+pub fn trusted_holding(home: &Path, start: &Path) -> Option<Trusted> {
+    let start = std::fs::canonicalize(start).ok()?;
+    all_trusted(home).into_iter().filter(|t| start.starts_with(&t.root)).max_by_key(|t| t.root.as_os_str().len())
+}
+
+/// The zone names of a project file's bytes (none when it does not parse).
+pub fn zone_names(bytes: &[u8]) -> Vec<String> {
+    parse(bytes, FILE).map(|f| f.zones.into_iter().map(|(n, _)| n).collect()).unwrap_or_default()
+}
+
 /// Every trusted project.
 pub fn all_trusted(home: &Path) -> Vec<Trusted> {
     let s = store(home);
@@ -378,8 +390,14 @@ pub fn check_binds(root: &Path, f: &ProjectFile) -> Result<(), String> {
 pub fn zones(home: &Path, host: &[Zone]) -> (Vec<Zone>, Vec<ProjectZone>, Vec<String>) {
     let (mut zones, mut shown_as, mut warnings) = (Vec::new(), Vec::new(), Vec::new());
     let mut colours: Vec<String> = host.iter().filter_map(|z| z.get("colour").as_str().map(str::to_lowercase)).collect();
+    // the host zones' own homes, resolved (a home whose path does not resolve: "/", which
+    // every project is inside, so no project is used next to it)
     let homes: Vec<PathBuf> = host.iter().filter_map(|z| z.get("home").as_str()).filter(|h| !h.is_empty())
-        .map(|h| PathBuf::from(String::from_utf8_lossy(&config::policy(Default::default()).expand(h.as_bytes())).into_owned()))
+        .map(|h| {
+            let p = config::policy(Default::default()).expand(h.as_bytes());
+            crate::policy::realpath(&p).map(|r| PathBuf::from(std::ffi::OsString::from(std::ffi::OsStr::from_bytes(&r))))
+                .unwrap_or_else(|| PathBuf::from("/"))
+        })
         .collect();
     for t in all_trusted(home) {
         let label = t.root.file_name().map(|n| shown(&n.to_string_lossy())).unwrap_or_else(|| "?".into());
