@@ -1258,13 +1258,17 @@ impl Cli {
         let home = std::fs::canonicalize(&self.host.home).map(|h| sh(&h)).unwrap_or_else(|_| sh(&self.host.home));
         let mut probes: Vec<(String, i32, String)> = vec![
             ("your home is closed".into(), 1, format!("ls {}", q(&home))),
-            ("no writes in your home".into(), 1, format!("f={}/.appzones-probe-$$; : > \"$f\" && rm -f \"$f\"", q(&home))),
+            // (the write's own status: a cleanup that fails never hides a write that worked)
+            ("no writes in your home".into(), 1, format!("f={}/.appzones-probe-$$; : > \"$f\"; s=$?; rm -f \"$f\"; exit $s", q(&home))),
             ("/tmp is closed".into(), 1, "ls /private/tmp".into()),
             ("other volumes are closed".into(), 1, "ls /Volumes".into()),
             ("no host secrets in env".into(), 1, "env | grep -E 'SSH_AUTH|TOKEN|SECRET|PASSWORD'".into()),
-            ("the boot UUID is hidden".into(), 0, "[ -z \"$(sysctl -n kern.bootuuid 2>/dev/null)\" ]".into()),
+            // (a tool that is not there proves nothing: a failure, never a pass)
+            ("the boot UUID is hidden".into(), 0,
+             "command -v sysctl >/dev/null && sysctl -n kern.ostype >/dev/null && [ -z \"$(sysctl -n kern.bootuuid 2>/dev/null)\" ]".into()),
             ("the hardware UUID is hidden from IOKit".into(), 1,
-             "ioreg -rd1 -c IOPlatformExpertDevice | grep -q -e IOPlatformUUID -e IOPlatformSerialNumber".into()),
+             "command -v ioreg >/dev/null || exit 0; o=$(ioreg -rd1 -c IOPlatformExpertDevice) || exit 0; \
+              [ -n \"$o\" ] || exit 0; echo \"$o\" | grep -q -e IOPlatformUUID -e IOPlatformSerialNumber".into()),
         ];
         if Path::new(&home).join(".ssh").exists() {
             probes.push(("~/.ssh is closed".into(), 1, format!("ls -d {}/.ssh", q(&home))));

@@ -22,14 +22,31 @@ fails=0
 ok() { echo "PASS  $1"; }
 no() { echo "FAIL  $1"; fails=$((fails + 1)); }
 check() { if eval "$2" >/dev/null 2>&1; then ok "$1"; else no "$1"; fi; }
-servers() { pgrep -f "$BIN cli serve $1" ; }
-inits() { pgrep -f "$BIN zone-init" ; }
+# this run's processes only: a server or zone-init of this binary whose environment names
+# this run's config (never another zone of the user's, never this shell)
+ours() {
+    for p in $(pgrep -f "$1"); do
+        [ "$p" = $$ ] && continue
+        ps -E -o command= -p "$p" 2>/dev/null | grep -q -F "APPZONES_CONFIG=$APPZONES_CONFIG" && echo "$p"
+    done
+}
+servers() { ours "$BIN cli serve $1"; }
+# zone-init's environment is the zone's (no APPZONES_CONFIG): it is ours when its parent is
+# one of our servers, or it was (an orphan, its server killed) and it holds our runtime dir
+inits() {
+    for p in $(pgrep -f "$BIN zone-init"); do
+        pp=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+        if servers "" | grep -q -x "$pp" || lsof -a -p "$p" -d cwd,0-20 2>/dev/null | grep -q -F "$T"; then echo "$p"; fi
+    done
+}
 cleanup() {
     az stop --all >/dev/null 2>&1
-    for p in $(pgrep -f "$BIN"); do kill -9 "$p" 2>/dev/null; done
+    for p in $(servers "") $(inits); do kill -9 "$p" 2>/dev/null; done
     rm -rf "$T"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 cat > "$APPZONES_CONFIG" <<EOF
 version = 1
@@ -74,12 +91,21 @@ sleep 1
 check "they run"                          '[ "$(pgrep -f "sleep 40[123]" | wc -l)" -ge 3 ]'
 az stop t-none >/dev/null 2>&1; sleep 1
 check "stop ends them, detached ones too" '[ -z "$(pgrep -f "sleep 40[123]")" ]'
-az up t-none >/dev/null 2>&1; az run t-none -- sleep 404 >/dev/null 2>&1; sleep 0.5
-for p in $(servers t-none); do kill -9 "$p"; done; sleep 2
-check "its server killed: the zone ends"  '[ -z "$(pgrep -f "sleep 404")" ] && [ -z "$(inits)" ]'
-az up t-none >/dev/null 2>&1; az run t-none -- sleep 405 >/dev/null 2>&1; sleep 0.5
-for p in $(inits); do kill -9 "$p"; done; sleep 2
-check "zone-init killed: the zone ends"   '[ -z "$(pgrep -f "sleep 405")" ] && [ -z "$(servers t-none)" ]'
+# each: started and seen running first, so an end that did not happen cannot pass
+running() { az up t-none >/dev/null 2>&1 && az run t-none -- sleep "$1" >/dev/null 2>&1 && sleep 0.5 \
+            && [ -n "$(pgrep -f "sleep $1")" ] && [ -n "$(servers t-none)" ] && [ -n "$(inits)" ]; }
+if running 404; then
+    for p in $(servers t-none); do kill -9 "$p"; done; sleep 2
+    check "its server killed: the zone ends" '[ -z "$(pgrep -f "sleep 404")" ] && [ -z "$(inits)" ]'
+else
+    no "its server killed: the zone did not start"
+fi
+if running 405; then
+    for p in $(inits); do kill -9 "$p"; done; sleep 2
+    check "zone-init killed: the zone ends" '[ -z "$(pgrep -f "sleep 405")" ] && [ -z "$(servers t-none)" ]'
+else
+    no "zone-init killed: the zone did not start"
+fi
 
 echo "--- refusals"
 cat >> "$APPZONES_CONFIG" <<EOF
