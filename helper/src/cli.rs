@@ -1496,7 +1496,11 @@ impl Cli {
         if let Some(o) = &old {
             let new: Vec<String> = file.zones.iter().map(|(n, _)| n.clone()).collect();
             let gone: Vec<String> = crate::project::zone_names(&o.copy).into_iter().filter(|z| !new.contains(z)).collect();
-            self.stop_project_zones(&root, &gone);
+            let failed = self.stop_project_zones(&root, &gone);
+            if !failed.is_empty() {
+                die(&format!("trusted: {shown_root}; but zones it no longer has still run: {} (`appzones stop NAME` each, \
+                              or `appzones stop --all`)", failed.join(", ")));
+            }
         }
         out(&format!("trusted: {shown_root}; its zones: {} (appzones run @ -- CMD, in that folder)",
                      file.zones.iter().map(|(n, _)| format!("@{n}")).collect::<Vec<_>>().join(", ")));
