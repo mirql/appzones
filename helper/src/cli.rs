@@ -795,15 +795,18 @@ impl Cli {
             }
         }
         self.up(name, wait);
+        // the current folder, where the zone sees it (the host's is resolved: a bind written
+        // through a symlink, ~/src -> /data/src, is compared by its real path too)
         let cwd = std::env::current_dir().map(|c| sh(&c)).unwrap_or_default();
-        let inside = self.bind_paths(z).iter().any(|b| cwd == *b || cwd.starts_with(&format!("{}/", b.trim_end_matches('/'))));
+        let binds: Vec<(String, String)> = self.bind_paths(z).into_iter().map(|b| { let r = plan::rp(&b); (b, r) }).collect();
+        let zcwd = zone_cwd(&cwd, &binds);
         let mut env = serde_json::Map::new();
         for k in ["TERM", "MOZ_HEADLESS", "COLUMNS", "LINES"] {
             if let Some(v) = std::env::var_os(k) {
                 env.insert(k.into(), J::String(v.to_string_lossy().into_owned()));
             }
         }
-        let req = json!({"op": "run", "argv": argv, "wait": wait, "cwd": if inside { J::String(cwd) } else { J::Null },
+        let req = json!({"op": "run", "argv": argv, "wait": wait, "cwd": zcwd.map_or(J::Null, J::String),
                          "bus": bus, "env": env});
         let s = if wait {
             // Safety: isatty on our stdio.
@@ -1897,6 +1900,23 @@ impl Cli {
     }
 }
 
+/// CWD (the host's current folder, resolved) where the zone sees it, when it is inside one
+/// of BINDS: (the path as written, expanded; its real path). A Linux zone has a bind at the
+/// path as written; a macOS zone sees real paths. None: outside every bind.
+fn zone_cwd(cwd: &str, binds: &[(String, String)]) -> Option<String> {
+    let under = |dir: &str| -> Option<String> {
+        let dir = dir.trim_end_matches('/');
+        if cwd == dir { Some(String::new()) } else { cwd.strip_prefix(&format!("{dir}/")).map(|r| format!("/{r}")) }
+    };
+    binds.iter().find_map(|(as_written, real)| {
+        if let Some(rest) = under(as_written) {
+            return Some(format!("{}{rest}", as_written.trim_end_matches('/')));
+        }
+        let rest = under(real)?;
+        Some(if cfg!(target_os = "linux") { format!("{}{rest}", as_written.trim_end_matches('/')) } else { cwd.to_string() })
+    })
+}
+
 fn random_hex(n: usize) -> String {
     let mut b = vec![0u8; n];
     let _ = std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b));
@@ -2218,6 +2238,18 @@ mod tests {
         assert_eq!(p("/homeX/a"), Some(true)); // /homeX is not under /home
         assert_eq!(Cli::propagation_shared_in(Path::new("/x"), &t.join("missing")), None);
         let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn current_folder_in_the_zone() {
+        let b = vec![("/home/u/src/app".to_string(), "/data/src/app".to_string()), ("/home/u/docs".into(), "/home/u/docs".into())];
+        assert_eq!(zone_cwd("/home/u/docs/x", &b).as_deref(), Some("/home/u/docs/x"));
+        assert_eq!(zone_cwd("/home/u/src/app", &b).as_deref(), Some("/home/u/src/app"));
+        // through the symlink: the real folder, where the zone sees it
+        let want = if cfg!(target_os = "linux") { "/home/u/src/app/sub" } else { "/data/src/app/sub" };
+        assert_eq!(zone_cwd("/data/src/app/sub", &b).as_deref(), Some(want));
+        assert_eq!(zone_cwd("/data/src/application", &b), None); // a prefix is not a folder
+        assert_eq!(zone_cwd("/home/u", &b), None);
     }
 
     #[test]

@@ -198,7 +198,7 @@ let
     [zones.ta]
     colour = "#a6e3a1"
     devices = ["audio"]
-    binds = [ { path = "~/Shared", mode = "rw" } ]
+    binds = [ { path = "~/Shared", mode = "rw" }, { path = "~/linked", mode = "rw" } ]
     [zones.tb]
     colour = "#89b4fa"
     network = "none"
@@ -504,6 +504,8 @@ pkgs.testers.runNixOSTest {
     # The home is laid out as appzones 0.5 left it (~/.config/zones,
     # ~/.local/share/zones): the first subtest upgrades it.
     machine.succeed("install -d -o alice -g users /home/alice/.config/zones /home/alice/.ssh /home/alice/Shared")
+    # a bind written through a symlink (~/linked -> ~/realproj): `run` from inside it
+    machine.succeed("install -d -o alice -g users /home/alice/realproj/sub && ln -s realproj /home/alice/linked && chown -h alice:users /home/alice/linked")
     machine.succeed("install -o alice -g users -m 644 ${zonesToml} /home/alice/.config/zones/zones.toml")
     machine.succeed("chown alice:users /home/alice/.config")  # install -d made it root's
     u("mkdir -p ~/.local/share/zones/ta/home ~/.local/share/zones/launcher/share/applications "
@@ -594,6 +596,10 @@ pkgs.testers.runNixOSTest {
         refused("tb", "test -e ~/probe", "the other zone cannot see ~/probe")
         ok("ta", "touch ~/Shared/from-zone", "rw bind writable")
         machine.succeed("test -e /home/alice/Shared/from-zone")
+        # cwd through a symlinked bind: the host's folder is the real one (getcwd), the zone's is the bind's
+        out = u("cd ~/linked/sub && appzones run --wait ta -- pwd </dev/null 2>&1").strip()
+        assert out == "/home/alice/linked/sub", out
+        print("PASS  run from a symlinked bind starts in the same folder in the zone")
         refused("ta", "ls -d ~/.ssh", "~/.ssh absent")
         refused("ta", "ls -d /srv/code", "/srv/code absent")
         refused("ta", "ls /run/user/1000/systemd", "host runtime dir absent")
