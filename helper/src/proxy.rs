@@ -417,10 +417,18 @@ fn listeners() -> std::io::Result<Vec<TcpListener>> {
             // taken on ::1 by another process: another port
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => last = Some(e),
             // no IPv6 here (no ::1, the family off: ipv6.disable=1): nothing can listen there
-            Err(_) => return Ok(vec![v4]),
+            Err(e) if no_ipv6(&e) => return Ok(vec![v4]),
+            // anything else (no descriptors left, ...): ::1:PORT could be another's, so no proxy
+            Err(e) => return Err(e),
         }
     }
     Err(last.unwrap_or_else(|| std::io::Error::other("no free port")))
+}
+
+/// Whether binding ::1 failed because this host has no IPv6 (never for any other reason).
+fn no_ipv6(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::AddrNotAvailable
+        || matches!(e.raw_os_error(), Some(libc::EADDRNOTAVAIL | libc::EAFNOSUPPORT | libc::EPROTONOSUPPORT))
 }
 
 /// The proxy on a new port of loopback (listeners), in threads of its own for as long as
@@ -508,6 +516,18 @@ mod tests {
                     b"CONNECT a b:1 HTTP/1.1", b"CONNECT ex\x01.com:1 HTTP/1.1", b"get http://a/ HTTP/1.1",
                     b"CONNECT example.com:0 HTTP/1.1", b"CONNECT example.com:443 SPDY/3"] {
             assert_eq!(parse_head(bad), Err("400 Bad Request"), "{}", String::from_utf8_lossy(bad));
+        }
+    }
+
+    #[test]
+    fn ipv6_absent_or_not() {
+        use std::io::Error;
+        for e in [libc::EADDRNOTAVAIL, libc::EAFNOSUPPORT, libc::EPROTONOSUPPORT] {
+            assert!(no_ipv6(&Error::from_raw_os_error(e)), "{e}");
+        }
+        // errors that say nothing about IPv6: the proxy does not start without ::1
+        for e in [libc::EMFILE, libc::ENFILE, libc::EACCES, libc::ENOBUFS, libc::EADDRINUSE] {
+            assert!(!no_ipv6(&Error::from_raw_os_error(e)), "{e}");
         }
     }
 
