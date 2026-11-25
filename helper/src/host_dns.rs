@@ -6,12 +6,17 @@
 //! the answer goes back. Only standard DNS queries leave the zone this way, and only to
 //! that resolver. Framing on dns.sock, both ways: a 2-byte big-endian length, then the
 //! message (as DNS over TCP).
+//!
+//! When nothing answers, the zone only sees timeouts; so the server is told why (Miss):
+//! once at the zone's start (a probe query), and when queries start to be refused on the
+//! host (a VPN's or a firewall's DNS leak protection lets DNS go to its own resolver only:
+//! the send fails with EPERM).
 
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -120,13 +125,60 @@ fn ask_tcp(addr: SocketAddr, msg: &[u8], end: Instant) -> Option<Vec<u8>> {
     (ans.len() >= 2 && ans[..2] == msg[..2]).then_some(ans)
 }
 
+/// Why a query got no answer: REFUSED when every attempt was refused on this host
+/// (EPERM, EACCES: a firewall); WHY says so, for a person ("1.1.1.1:53 and 1.0.0.1:53
+/// refused on this host (Operation not permitted)", "no answer from 1.1.1.1:53").
+#[derive(Debug, Clone, PartialEq)]
+pub struct Miss {
+    pub refused: bool,
+    pub why: String,
+}
+
+/// What one attempt came to, when no answer: the address, and the error of its send.
+type Tried = Vec<(SocketAddr, Option<std::io::Error>)>;
+
+fn os_text(e: &std::io::Error) -> String {
+    let t = e.to_string();
+    t.split(" (os error").next().unwrap_or(&t).to_string()
+}
+
+fn miss(tried: &Tried, servers: &[String]) -> Miss {
+    let mut addrs: Vec<String> = Vec::new();
+    for (a, _) in tried {
+        if !addrs.contains(&a.to_string()) {
+            addrs.push(a.to_string());
+        }
+    }
+    if addrs.is_empty() {
+        addrs = servers.to_vec(); // (a name that does not resolve: nothing was tried)
+    }
+    let mut errs: Vec<String> = Vec::new();
+    for e in tried.iter().filter_map(|(_, e)| e.as_ref()) {
+        if !errs.contains(&os_text(e)) {
+            errs.push(os_text(e));
+        }
+    }
+    let refused = !tried.is_empty()
+        && tried.iter().all(|(_, e)| e.as_ref().is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied));
+    let why = if refused {
+        format!("{} refused on this host ({})", addrs.join(" and "), errs.join("; "))
+    } else if errs.is_empty() {
+        format!("no answer from {}", addrs.join(" or "))
+    } else {
+        format!("no answer from {} ({})", addrs.join(" or "), errs.join("; "))
+    };
+    Miss { refused, why }
+}
+
 /// MSG to SERVER over UDP, then over TCP when the answer was truncated; the answer, or
-/// None. Only an answer with the query's id counts; nothing goes on past END.
-fn ask(server: &str, msg: &[u8], end: Instant, lim: Limits) -> Option<Vec<u8>> {
+/// None. Only an answer with the query's id counts; nothing goes on past END. Each
+/// address tried without an answer goes in TRIED.
+fn ask(server: &str, msg: &[u8], end: Instant, lim: Limits, tried: &mut Tried) -> Option<Vec<u8>> {
     for addr in addrs(server, lim.port) {
         let bind: SocketAddr = if addr.is_ipv4() { "0.0.0.0:0".parse().ok()? } else { "[::]:0".parse().ok()? };
         let Ok(s) = UdpSocket::bind(bind) else { continue };
-        if s.connect(addr).is_err() || s.send(msg).is_err() {
+        if let Err(e) = s.connect(addr).and_then(|_| s.send(msg)) {
+            tried.push((addr, Some(e)));
             continue; // only the server's own replies come in
         }
         let udp_end = end.min(Instant::now() + lim.udp_timeout);
@@ -142,7 +194,10 @@ fn ask(server: &str, msg: &[u8], end: Instant, lim: Limits) -> Option<Vec<u8>> {
                 Err(_) => break None,
             }
         };
-        let Some(ans) = ans else { continue };
+        let Some(ans) = ans else {
+            tried.push((addr, None));
+            continue;
+        };
         if ans[2] & 0x02 != 0 {
             return Some(ask_tcp(addr, msg, end).unwrap_or(ans)); // TC: the whole answer over TCP
         }
@@ -151,27 +206,59 @@ fn ask(server: &str, msg: &[u8], end: Instant, lim: Limits) -> Option<Vec<u8>> {
     None
 }
 
-/// The answer from the first server that gives one (two rounds), within DEADLINE.
-pub fn resolve(servers: &[String], msg: &[u8]) -> Option<Vec<u8>> {
+/// The answer from the first server that gives one (two rounds), within DEADLINE; else why not.
+pub fn resolve(servers: &[String], msg: &[u8]) -> Result<Vec<u8>, Miss> {
     resolve_with(servers, msg, LIMITS)
 }
 
-fn resolve_with(servers: &[String], msg: &[u8], lim: Limits) -> Option<Vec<u8>> {
+fn resolve_with(servers: &[String], msg: &[u8], lim: Limits) -> Result<Vec<u8>, Miss> {
     let end = Instant::now() + lim.deadline;
-    for _ in 0..2 {
+    let mut tried = Tried::new();
+    'rounds: for _ in 0..2 {
         for server in servers {
             if Instant::now() >= end {
-                return None;
+                break 'rounds;
             }
-            if let Some(ans) = ask(server, msg, end, lim) {
-                return Some(ans);
+            if let Some(ans) = ask(server, msg, end, lim, &mut tried) {
+                return Ok(ans);
             }
         }
     }
-    None
+    Err(miss(&tried, servers))
 }
 
-fn handle(mut conn: UnixStream, servers: &[String], budget: &Budget) {
+/// A query for the root's name servers: any answer to it (even a refusal) says the
+/// resolver is reached.
+pub fn probe_query() -> Vec<u8> {
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
+    let id = (std::process::id() as u16) ^ (nanos >> 8) as u16;
+    let mut q = id.to_be_bytes().to_vec();
+    q.extend_from_slice(&[0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1]);
+    q
+}
+
+/// SERVERS reached from here: Ok, or why not (the probe query, within DEADLINE).
+pub fn reach(servers: &[String]) -> Result<(), Miss> {
+    resolve(servers, &probe_query()).map(|_| ())
+}
+
+/// MISS for a person, with the zone's DNS setting: `dns = "public": 1.1.1.1:53 and 1.0.0.1:53
+/// refused on this host (Operation not permitted); ...` (the zone's log, `check --probe`).
+pub fn said(dns: &str, m: &Miss) -> String {
+    let hint = if !m.refused {
+        ""
+    } else if dns == "public" {
+        "; a VPN's or a firewall's DNS leak protection? dns = \"host\" asks the host's resolver"
+    } else {
+        "; a firewall?"
+    };
+    format!("dns = \"{dns}\": {}{hint}", m.why)
+}
+
+/// Told why the zone's DNS gets no answer (the zone's server logs it).
+pub type Tell = Arc<dyn Fn(&Miss) + Send + Sync>;
+
+fn handle(mut conn: UnixStream, servers: &[String], budget: &Budget, tell: &Tell, told: &AtomicBool) {
     let _ = conn.set_read_timeout(Some(CONN_TIMEOUT));
     let _ = conn.set_write_timeout(Some(CONN_TIMEOUT));
     let mut head = [0u8; 2];
@@ -186,21 +273,38 @@ fn handle(mut conn: UnixStream, servers: &[String], budget: &Budget) {
     if conn.read_exact(&mut msg).is_err() || !is_query(&msg) || !budget.take_at(Instant::now()) {
         return; // not a query, or over the zone's budget: the client asks again later
     }
-    if let Some(ans) = resolve(servers, &msg) {
-        let mut out = (ans.len() as u16).to_be_bytes().to_vec();
-        out.extend_from_slice(&ans);
-        let _ = conn.write_all(&out);
+    match resolve(servers, &msg) {
+        Ok(ans) => {
+            told.store(false, Ordering::SeqCst);
+            let mut out = (ans.len() as u16).to_be_bytes().to_vec();
+            out.extend_from_slice(&ans);
+            let _ = conn.write_all(&out);
+        }
+        // refused on the host: said once, until a query is answered again (no answer in
+        // time can be a slow network; that is not said for each query)
+        Err(m) if m.refused && !told.swap(true, Ordering::SeqCst) => tell(&m),
+        Err(_) => {}
     }
 }
 
 /// Listen on PATH (the zone's dns.sock, host side) and answer in threads until the
-/// process ends.
-pub fn serve(path: &Path, servers: Vec<String>) -> std::io::Result<()> {
+/// process ends. TELL is told when SERVERS do not answer the probe query at the start,
+/// and when queries start to be refused on this host.
+pub fn serve(path: &Path, servers: Vec<String>, tell: Tell) -> std::io::Result<()> {
     let _ = std::fs::remove_file(path);
     let listener = UnixListener::bind(path)?;
     let servers = Arc::new(servers);
     let budget = Arc::new(Budget::new(RATE, BURST));
     let inflight = Arc::new(AtomicUsize::new(0));
+    let told = Arc::new(AtomicBool::new(false));
+    let (servers0, tell0, told0) = (servers.clone(), tell.clone(), told.clone());
+    thread::Builder::new().name("dns-probe".into()).spawn(move || {
+        match reach(&servers0) {
+            Err(m) if m.refused && told0.swap(true, Ordering::SeqCst) => {} // (a query said it first)
+            Err(m) => tell0(&m),
+            Ok(()) => {}
+        }
+    })?;
     thread::Builder::new().name("dns".into()).spawn(move || {
         for conn in listener.incoming() {
             let conn = match conn {
@@ -217,8 +321,9 @@ pub fn serve(path: &Path, servers: Vec<String>) -> std::io::Result<()> {
                 continue; // too many at once: the client retries
             }
             let (servers2, budget2, inflight2) = (servers.clone(), budget.clone(), inflight.clone());
+            let (tell2, told2) = (tell.clone(), told.clone());
             let spawned = thread::Builder::new().spawn(move || {
-                handle(conn, &servers2, &budget2);
+                handle(conn, &servers2, &budget2, &tell2, &told2);
                 inflight2.fetch_sub(1, Ordering::SeqCst);
             });
             if spawned.is_err() {
@@ -313,6 +418,7 @@ mod tests {
         });
         let lim = Limits { port, ..LIMITS };
         let local = vec!["127.0.0.1".to_string()];
+        assert!(reach_with(&local, lim).is_ok(), "the probe query: any answer");
         let r = resolve_with(&local, &named(0x1111, "example.com"), lim).unwrap();
         assert_eq!((&r[..2], u16::from_be_bytes([r[6], r[7]])), (&[0x11u8, 0x11][..], 2));
         let big = resolve_with(&local, &named(0x2222, "big.example"), lim).unwrap(); // whole over TCP
@@ -323,8 +429,39 @@ mod tests {
         let lim = Limits { port: silent.local_addr().unwrap().port(), deadline: Duration::from_millis(600),
                            udp_timeout: Duration::from_millis(250) };
         let t0 = Instant::now();
-        assert!(resolve_with(&[local[0].clone(), local[0].clone()], &named(5, "example.com"), lim).is_none());
+        let m = resolve_with(&[local[0].clone(), local[0].clone()], &named(5, "example.com"), lim).unwrap_err();
         assert!(t0.elapsed() < Duration::from_millis(900), "{:?}", t0.elapsed());
+        assert_eq!(m, Miss { refused: false, why: format!("no answer from 127.0.0.1:{}", lim.port) });
+    }
+
+    fn reach_with(servers: &[String], lim: Limits) -> Result<(), Miss> {
+        resolve_with(servers, &probe_query(), lim).map(|_| ())
+    }
+
+    #[test]
+    fn misses() {
+        use std::io::Error;
+        let a: SocketAddr = "1.1.1.1:53".parse().unwrap();
+        let b: SocketAddr = "1.0.0.1:53".parse().unwrap();
+        let eperm = || Some(Error::from_raw_os_error(libc::EPERM));
+        let servers = ["1.1.1.1".to_string(), "1.0.0.1".to_string()];
+        // a VPN's leak protection: every send refused, both rounds
+        let m = miss(&vec![(a, eperm()), (b, eperm()), (a, eperm()), (b, eperm())], &servers);
+        assert_eq!(m, Miss { refused: true, why: "1.1.1.1:53 and 1.0.0.1:53 refused on this host (Operation not permitted)".into() });
+        // one of them answers nothing: not refused (that one may be a slow network)
+        let m = miss(&vec![(a, eperm()), (b, None)], &servers);
+        assert_eq!(m, Miss { refused: false, why: "no answer from 1.1.1.1:53 or 1.0.0.1:53 (Operation not permitted)".into() });
+        let m = miss(&vec![(a, Some(Error::from_raw_os_error(libc::ENETUNREACH)))], &servers[..1]);
+        assert!(!m.refused && m.why.starts_with("no answer from 1.1.1.1:53 ("), "{m:?}");
+        let m = miss(&vec![], &["dns.invalid".to_string()]);
+        assert_eq!(m, Miss { refused: false, why: "no answer from dns.invalid".into() });
+        assert_eq!(probe_query().len(), 17);
+        assert!(is_query(&probe_query()));
+        let m = Miss { refused: true, why: "1.1.1.1:53 refused on this host (Operation not permitted)".into() };
+        assert_eq!(said("public", &m), "dns = \"public\": 1.1.1.1:53 refused on this host (Operation not permitted); \
+                                       a VPN's or a firewall's DNS leak protection? dns = \"host\" asks the host's resolver");
+        assert_eq!(said("host", &Miss { refused: false, why: "no answer from 127.0.0.53:53".into() }),
+                   "dns = \"host\": no answer from 127.0.0.53:53");
     }
 
     #[test]

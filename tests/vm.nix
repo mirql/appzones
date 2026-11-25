@@ -50,7 +50,10 @@
 #     --lazy, never-list refused (also through a symlink), the root helper
 #     refuses a target outside zones/*/mnt (symlink, ..), a directory the
 #     user cannot reach, and anyone but its sudo caller; the sudo rule
-#     allows nothing else; a zone restart drops every mount.
+#     allows nothing else; a zone restart drops every mount;
+#   - DNS: the host's resolver through the zone's server (UDP, TCP, truncated
+#     answers); dns = "public" refused on the host (a VPN's DNS leak
+#     protection): the zone's log and check --probe say why.
 #
 # Run (needs /dev/kvm, ~6 min):
 #   just test-vm
@@ -230,6 +233,9 @@ let
     bus = "zone"
     [zones.tc]
     colour = "#fab387"
+    [zones.tp]
+    colour = "#f2cdcd"
+    dns = "public"
     [zones.td]
     colour = "#94e2d5"
     nix_ld = true
@@ -1170,7 +1176,9 @@ pkgs.testers.runNixOSTest {
         print("PASS  stop --all leaves no zone process")
 
     with subtest("appzones check --probe"):
-        print(u("appzones check --probe ta"))
+        out = u("appzones check --probe ta")
+        print(out)
+        assert 'PASS  names resolve (dns = "host": ' in out, out
         u("appzones stop ta")
 
     with subtest("Firefox in two zones: each zone's own remote name"):
@@ -1514,5 +1522,25 @@ pkgs.testers.runNixOSTest {
         assert rc != 0 and "192.0.2.99" not in out, (rc, out)
         print("PASS  DNS in a zone: the host's resolver at its own address stays unreachable")
         u("appzones stop tc")
+
+    with subtest("dns = public refused on the host (a VPN's DNS leak protection, #171)"):
+        # as Mullvad's firewall: DNS only to its own resolver; a send to 1.1.1.1:53 fails (EPERM)
+        machine.succeed("nft add table inet leak && nft add chain inet leak out '{ type filter hook output priority 0; }' && "
+                        "nft add rule inet leak out ip daddr '{ 1.1.1.1, 1.0.0.1 }' meta l4proto '{ udp, tcp }' th dport 53 drop")
+        said = ('names do not resolve: dns = "public": 1.1.1.1:53 and 1.0.0.1:53 refused on this host '
+                '(Operation not permitted); a VPN\'s or a firewall\'s DNS leak protection? dns = "host" asks the host\'s resolver')
+        u("appzones run --wait tp -- true </dev/null 2>&1")
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote(ENV + "appzones logs tp | grep -qF " + shlex.quote(said)), timeout=30)
+        rc, out = u("appzones run --wait tp -- dig +time=2 +tries=1 example.com </dev/null 2>&1", check=False)
+        assert rc != 0, (rc, out)
+        logs = u("appzones logs tp")
+        assert logs.count("names do not resolve") == 1, logs
+        print("PASS  dns = public: the zone's log says why names do not resolve, once")
+        rc, out = u("appzones check --probe tp", check=False)
+        print(out)
+        assert rc == 1 and "FAIL  names resolve: " + said[len("names do not resolve: "):] in out, (rc, out)
+        print("PASS  dns = public: check --probe fails, saying why")
+        u("appzones stop tp")
+        machine.succeed("nft delete table inet leak")
   '';
 }
