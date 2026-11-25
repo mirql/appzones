@@ -1074,11 +1074,20 @@ impl Cli {
         0
     }
 
-    fn which(&self, name: &str) -> i32 {
+    fn which(&self, name: &str, as_json: bool) -> i32 {
         let cfg = self.load_zone(name, false);
         let z = cfg.zone(name).expect("checked");
-        for (k, o) in &z.origin {
-            out(&format!("{k:15} {:45} ({o})", json_dumps_unsorted(z.get(k))));
+        if as_json {
+            let mut settings = serde_json::Map::new();
+            for (k, o) in &z.origin {
+                let v: serde_json::Value = serde_json::from_str(&json_dumps_unsorted(z.get(k))).unwrap();
+                settings.insert(k.to_string(), json!({"value": v, "from": *o}));
+            }
+            out(&py_json(&json!({"name": name, "settings": settings})));
+        } else {
+            for (k, o) in &z.origin {
+                out(&format!("{k:15} {:45} ({o})", json_dumps_unsorted(z.get(k))));
+            }
         }
         0
     }
@@ -2201,7 +2210,12 @@ pub fn main(args: &[OsString]) -> i32 {
             }
         }
         "list" => cli.zone_list(rest.iter().any(|a| a == "--json")),
-        "which" => cli.which(&one()),
+        "which" => {
+            let as_json = rest.iter().any(|a| a == "--json");
+            let rest2: Vec<&String> = rest.iter().filter(|a| *a != "--json").collect();
+            let name = rest2.first().cloned().unwrap_or_else(|| die("usage: appzones which ZONE"));
+            cli.which(name, as_json)
+        }
         "up" | "stop" | "restart" => cli.each_zone(cmd, rest),
         "ping" => {
             let r = agent::ping(cli.rt(), &cli.zone_arg(&one(), false));

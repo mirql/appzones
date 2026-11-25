@@ -78,6 +78,7 @@ to "just make it work"; explain the trade-off and let the user decide.
 command -v appzones && appzones list     # zones: state, network, dns, devices, apps running, colour
 appzones list --json                     # the same as JSON, for scripts and bars
 appzones which ZONE                      # every setting in effect and where it came from
+appzones which ZONE --json               # the same as JSON (one object, for scripts)
 appzones --version                       # the version and the config release (for a bug report)
 ```
 
