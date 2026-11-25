@@ -1217,7 +1217,10 @@ impl Cli {
                          if zone_id.is_some() { "" } else { " (the probe did not run)" }));
             // the zone's resolvers, asked from here as its server asks them: refused on this
             // host fails (#171: a VPN's DNS leak protection); no answer may be offline: SKIP
-            if let Some(up) = plan::dns_upstreams(z) {
+            // (a zone started before zones.toml changed still asks the resolvers it started with)
+            if self.stale(probe, z) && plan::dns_upstreams(z).is_some() {
+                skipped.push(format!("names resolve (zones.toml changed for {probe}: `appzones restart {probe}` applies it)"));
+            } else if let Some(up) = plan::dns_upstreams(z) {
                 let dns = z.get("dns").as_str().unwrap_or("host");
                 match crate::host_dns::reach(&up) {
                     Ok(()) => out(&format!("PASS  names resolve (dns = \"{dns}\": {} answers)", up.join(" or "))),

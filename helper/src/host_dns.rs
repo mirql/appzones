@@ -298,13 +298,6 @@ pub fn serve(path: &Path, servers: Vec<String>, tell: Tell) -> std::io::Result<(
     let inflight = Arc::new(AtomicUsize::new(0));
     let told = Arc::new(AtomicBool::new(false));
     let (servers0, tell0, told0) = (servers.clone(), tell.clone(), told.clone());
-    thread::Builder::new().name("dns-probe".into()).spawn(move || {
-        match reach(&servers0) {
-            Err(m) if m.refused && told0.swap(true, Ordering::SeqCst) => {} // (a query said it first)
-            Err(m) => tell0(&m),
-            Ok(()) => {}
-        }
-    })?;
     thread::Builder::new().name("dns".into()).spawn(move || {
         for conn in listener.incoming() {
             let conn = match conn {
@@ -331,6 +324,15 @@ pub fn serve(path: &Path, servers: Vec<String>, tell: Tell) -> std::io::Result<(
             }
         }
     })?;
+    // the start's probe, after the listener: only a diagnosis, so a thread that cannot
+    // be had never stops the zone
+    let _ = thread::Builder::new().name("dns-probe".into()).spawn(move || {
+        match reach(&servers0) {
+            Err(m) if m.refused && told0.swap(true, Ordering::SeqCst) => {} // (a query said it first)
+            Err(m) => tell0(&m),
+            Ok(()) => {}
+        }
+    });
     Ok(())
 }
 

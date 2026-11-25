@@ -62,7 +62,8 @@ tmp       = "disk"             # /tmp and /var/tmp kept across restarts, at ~/.l
 
 [zones.untrusted]              # links and files you do not trust, one-off apps
 colour    = "#f38ba8"          # red
-dns       = "public"           # internal names unknown, no ad blocking
+dns       = "public"           # internal names unknown, no ad blocking; behind a VPN that lets DNS go only to
+                               # its own resolver nothing resolves (`appzones logs untrusted` says so): dns = "host"
 links     = "zone"
 devices   = ["gpu"]            # no sound, no mic, no camera, no screen
 binds     = []                 # nothing from your home; files come in through the file chooser
