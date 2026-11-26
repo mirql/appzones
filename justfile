@@ -4,13 +4,36 @@
 default:
     @just --list
 
-# The Rust tests and clippy (fast, no Nix; the golden tests run in `just build`)
+# Every quick offline check, before a PR: the Rust tests and clippy, the examples, the secret scan
+check: test examples secret-scan
+
+# The Rust tests and clippy (no Nix; the golden tests run in `just build`)
 test:
     cd helper && cargo test --release -q && cargo clippy --release -q --all-targets -- -D warnings
 
-# Validate a zones.toml (default: the example)
-check file="examples/zones.toml":
+# Validate a zones.toml
+validate file:
     cd helper && APPZONES_CONFIG="$(realpath ../{{file}})" cargo run --release -q --bin appzones-helper -- cli check
+
+# The example configurations are valid (with a home of their own: their binds need the folders)
+examples:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    home=$(mktemp -d); trap 'rm -rf "$home"' EXIT
+    mkdir -p "$home"/{Downloads,Pictures,Documents,code}
+    for f in examples/zones.toml examples/minimal.toml; do
+        (cd helper && APPZONES_HOME_FOR_TESTS="$home" APPZONES_CONFIG="$(realpath ../$f)" \
+            cargo run --release -q --bin appzones-helper -- cli check)
+    done
+
+# Secrets in the history or the files (committed, changed or untracked): gitleaks, from `nix develop`
+# (rules: .gitleaks.toml). Without a readable history it fails: an empty scan finds nothing.
+secret-scan:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git rev-parse -q --verify HEAD >/dev/null || { echo "secret-scan: no git history here to scan" >&2; exit 1; }
+    gitleaks git --no-banner --redact --log-level warn .
+    gitleaks dir --no-banner --redact --log-level warn .
 
 # Build the package (every Rust test runs in its build, the golden files' too)
 build:

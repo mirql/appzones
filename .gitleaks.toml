@@ -1,0 +1,7 @@
+# gitleaks (`just secret-scan`): its default rules; build output is not scanned.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "build output"
+paths = ['''^helper/target/''', '''^result''']
