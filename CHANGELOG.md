@@ -5,6 +5,15 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **`dns = "public"` behind a VPN's DNS leak protection** (#171): when the host lets DNS go
+  only to the VPN's resolver (Mullvad's firewall), names did not resolve in the zone and
+  nothing said why. The zone's server now asks its resolvers once at the zone's start and
+  says in the zone's log why they do not answer (`[zone] dev: names do not resolve: dns =
+  "public": 1.1.1.1:53 and 1.0.0.1:53 refused on this host (Operation not permitted); ...
+  dns = "host" asks the host's resolver`), and again, once, when queries start to be refused
+  later. `appzones check --probe ZONE` asks them too: `PASS  names resolve`, a `FAIL` with the
+  same reason when refused on the host, a `SKIP` when nothing answers (offline?).
+
 - **`appzones which ZONE --json`** (#75): the zone's settings as one JSON object, each with its value and where it
   came from (`zone`, `defaults`, `builtin`), in the order `which` prints them.
 

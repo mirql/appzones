@@ -1224,6 +1224,22 @@ impl Cli {
             fails += i32::from(!ok);
             out(&format!("{}  machine-id is the zone's{}", if ok { "PASS" } else { "FAIL" },
                          if zone_id.is_some() { "" } else { " (the probe did not run)" }));
+            // the zone's resolvers, asked from here as its server asks them: refused on this
+            // host fails (#171: a VPN's DNS leak protection); no answer may be offline: SKIP
+            // (a zone started before zones.toml changed still asks the resolvers it started with)
+            if self.stale(probe, z) && plan::dns_upstreams(z).is_some() {
+                skipped.push(format!("names resolve (zones.toml changed for {probe}: `appzones restart {probe}` applies it)"));
+            } else if let Some(up) = plan::dns_upstreams(z) {
+                let dns = z.get("dns").as_str().unwrap_or("host");
+                match crate::host_dns::reach(&up) {
+                    Ok(()) => out(&format!("PASS  names resolve (dns = \"{dns}\": {} answers)", up.join(" or "))),
+                    Err(m) if m.refused => {
+                        fails += 1;
+                        out(&format!("FAIL  names resolve: {}", crate::host_dns::said(dns, &m)));
+                    }
+                    Err(m) => skipped.push(format!("names resolve ({} on this host: offline?)", crate::host_dns::said(dns, &m))),
+                }
+            }
         }
         for s in skipped {
             out(&format!("SKIP  {s}"));

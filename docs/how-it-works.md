@@ -86,7 +86,10 @@ systemd --user: appzones@work.service   (appzones.slice, Type=notify;
   the host's `/etc/resolv.conf`, also a loopback one such as systemd-resolved's
   `127.0.0.53`) or 1.1.1.1, then 1.0.0.1 (`dns = "public"`). Only standard
   queries, at most 4 KB, 64 at a time and 100 a second on average, only to
-  that resolver. A resolver on the host or the LAN stays unreachable from the
+  that resolver. When it does not answer a probe query at the zone's start,
+  or when queries start to be refused on the host (a VPN's or a firewall's
+  DNS leak protection: the send fails with EPERM), the zone's log says why;
+  the zone itself only sees timeouts. A resolver on the host or the LAN stays unreachable from the
   zone directly (the deny list refuses both); a public one like 1.1.1.1 is on
   the internet, which the zone reaches anyway. pasta does no DNS, so any pasta
   version works.

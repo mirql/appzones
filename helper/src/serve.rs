@@ -930,7 +930,13 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
         return Ok(r.abort(""));
     }
     if let Some(up) = plan.get("dns_upstreams").and_then(str_list) {
-        host_dns::serve(&zrt.join("ctl").join("dns.sock"), up).map_err(|e| format!("the zone's DNS: {e}"))?;
+        // why names do not resolve, in the zone's log (#171: a VPN that lets DNS go only to
+        // its own resolver; the zone itself sees only timeouts)
+        let (zname, dns) = (name.clone(), s("dns")?);
+        let tell: host_dns::Tell = std::sync::Arc::new(move |m: &host_dns::Miss| {
+            say(&format!("[zone] {zname}: names do not resolve: {}", host_dns::said(&dns, m)));
+        });
+        host_dns::serve(&zrt.join("ctl").join("dns.sock"), up, tell).map_err(|e| format!("the zone's DNS: {e}"))?;
     }
     let mut cmd = spawn(&argv);
     cmd.env("ZONE_START_TIMEOUT", format!("{timeout_s:?}"));

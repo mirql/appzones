@@ -909,6 +909,18 @@ fn resolv_conf_for(network: &str, dns: &str, dns_host: Option<String>, host_file
     }
 }
 
+/// The resolvers the zone's DNS asks on the host (crate::host_dns), or None when the zone
+/// has none of its own (network = "host" or "none"; an allow list, whose proxy resolves).
+pub fn dns_upstreams(z: &Zone) -> Option<Vec<String>> {
+    if z.get("network").as_str().unwrap_or("internet") != "internet" || !strs_of(z.get("allow")).is_empty() {
+        None
+    } else if z.get("dns").as_str() == Some("public") {
+        Some(vec![s("1.1.1.1"), s("1.0.0.1")])
+    } else {
+        Some(vec![host_resolver()])
+    }
+}
+
 /// net.host_resolver.
 fn host_resolver() -> String {
     host_resolver_for(config::env("DNS_HOST").filter(|v| !v.is_empty()), Path::new("/etc/resolv.conf"))
@@ -1514,13 +1526,7 @@ fn make_bwrap_plan(host: &Host, name: &str) -> Result<J, String> {
     }).collect();
     let mut cleanup = zone_py.clone();
     cleanup.extend([s("_cleanup"), name.to_string()]);
-    let upstreams = if network != "internet" || proxy_gw.is_some() {
-        J::Null
-    } else if z.get("dns").as_str() == Some("public") {
-        json!(["1.1.1.1", "1.0.0.1"])
-    } else {
-        json!([host_resolver()])
-    };
+    let upstreams = dns_upstreams(z).map_or(J::Null, |u| json!(u));
     let mut plan = json!({
         "version": 1,
         "name": name,
