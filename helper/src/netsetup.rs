@@ -1,5 +1,5 @@
 //! `appzones _netsetup RULES INFO ZONE -- CMD`: between pasta and bwrap, in the zone's own
-//! network namespace (the port of server.netsetup): the zone's output to its server's log
+//! network namespace: the zone's output to its server's log
 //! socket, the nft deny list loaded, port 53 allowed for zone-init's DNS, bwrap's info
 //! file as fd 3, zone-init's control socket made on the host side, the server's pidfd
 //! received, every bind pinned (opened and checked here, mounted by descriptor), then exec.
@@ -39,7 +39,7 @@ fn agent_listener(host: &Host, name: &str) -> RawFd {
     // Safety: restoring it.
     unsafe { libc::umask(old) };
     let l = l.unwrap_or_else(|e| die(&format!("{}: {e}", path.display())));
-    // Safety: listen on our socket with Python's backlog.
+    // Safety: listen on our socket (backlog 16).
     unsafe { libc::listen(l.as_raw_fd(), 16) };
     let fd = l.into_raw_fd();
     inheritable(fd);

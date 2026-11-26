@@ -1,5 +1,5 @@
-//! Talking to zone-init, the agent inside a zone, over its host-made socket: the port of
-//! src/appzones/agent.py (a JSON line each way; descriptors for `run --wait` as SCM_RIGHTS).
+//! Talking to zone-init, the agent inside a zone, over its host-made socket: a JSON line
+//! each way; descriptors for `run --wait` as SCM_RIGHTS.
 
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, RawFd};
@@ -175,7 +175,7 @@ pub fn ping(rt: &std::path::Path, name: &str) -> Option<Value> {
     ask(rt, name, &json!({"op": "ping"}), Duration::from_secs(1)).ok()
 }
 
-/// The zone answers: a non-empty answer (Python's truth of the reply).
+/// The zone answers: any reply but an empty object.
 pub fn answers(rt: &std::path::Path, name: &str) -> bool {
     ping(rt, name).is_some_and(|v| v.as_object().is_none_or(|o| !o.is_empty()))
 }

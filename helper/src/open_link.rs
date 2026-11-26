@@ -4,8 +4,7 @@
 //!
 //! Hands URL to the host through the zone's link socket, /run/zone/links.sock: the URL
 //! and a newline; the server answers "ok\n" when a browser takes it. Exit 0 then, 1
-//! otherwise, 2 for usage. The port of the shim's Python one-liner, so a zone needs no
-//! Python of the host's for clicked links. The server checks the URL; this only carries it.
+//! otherwise, 2 for usage. The server checks the URL; this only carries it.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;

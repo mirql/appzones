@@ -1,8 +1,7 @@
 //! The never-list for runtime mounts, as the root step (`appzones mount`) applies it:
-//! the port of zonecfg.mount_source_error and what it uses (denied_paths,
-//! host_denied_paths, policy_error, bind_error, kind_error), with the same answers and
-//! the same messages. The Python side keeps its own for binds; a differential test
-//! (DifferentialPolicyTest in src/test_zonecfg.py) compares both lists and both answers.
+//! mount_source_error and what it uses (denied_paths, host_denied_paths, policy_error,
+//! bind_error, kind_error). The validator uses the same for binds. Its answers and
+//! messages are held by the golden tests (helper/tests/golden/policy.json).
 //!
 //! No unsafe code, no environment: what it needs (the caller's home, appzones' code
 //! directory, the host's denied-paths file) is passed in. Paths stay bytes (OsStr) until a
@@ -36,7 +35,7 @@ pub fn host_file_error(new: &str, legacy: &str) -> Option<String> {
     }
 }
 
-/// The caller's own files that never enter a zone (zonecfg.denied_paths, in its order).
+/// The caller's own files that never enter a zone (in the order the first match gives the message).
 const DENIED_IN_HOME: &[&str] = &[
     ".ssh",
     ".gnupg",
@@ -386,7 +385,7 @@ impl Policy {
         self.home.as_bytes()
     }
 
-    /// zonecfg.expand: a leading "~" is the home.
+    /// A leading "~" is the home.
     pub fn expand(&self, raw: &[u8]) -> Vec<u8> {
         match raw.strip_prefix(b"~") {
             Some(rest) => py_path(&[self.home(), rest].concat()),
@@ -446,7 +445,7 @@ impl Policy {
         Ok(out)
     }
 
-    /// zonecfg.denied_paths, in its order (the first match gives the message).
+    /// The never-list, in its order (the first match gives the message).
     pub fn denied_paths(&self) -> Result<Vec<Vec<u8>>, String> {
         let h = py_path(self.home());
         let mut out: Vec<Vec<u8>> = DENIED_SYSTEM
@@ -499,7 +498,7 @@ impl Policy {
         Ok(out)
     }
 
-    /// zonecfg.policy_error: why the resolved path REAL may never enter a zone.
+    /// Why the resolved path REAL may never enter a zone.
     pub fn policy_error(&self, real: &[u8], raw_b: &[u8]) -> Option<String> {
         let raw = show(raw_b);
         let via = if real != self.expand(raw_b).as_slice() {
@@ -556,7 +555,7 @@ impl Policy {
         None
     }
 
-    /// zonecfg.kind_error: only directories and regular files are bound.
+    /// Only directories and regular files are bound.
     pub fn kind_error(meta: &fs::Metadata, raw: &str) -> Option<String> {
         let t = meta.file_type();
         if t.is_dir() || t.is_file() {
@@ -576,7 +575,7 @@ impl Policy {
         ))
     }
 
-    /// zonecfg.bind_error.
+    /// Why a bind source may not enter a zone.
     #[allow(dead_code)] // appzones-helper's (check-mount-source), not the mount helper's
     pub fn bind_error(&self, raw_b: &[u8]) -> Option<String> {
         let raw = show(raw_b);
@@ -604,7 +603,7 @@ impl Policy {
         }
     }
 
-    /// zonecfg.mount_source_error: why a folder may not be mounted into a zone at run time.
+    /// Why a folder may not be mounted into a zone at run time.
     #[allow(dead_code)] // appzones-helper's (check-mount-source); the mount helper uses the _resolved one
     pub fn mount_source_error(&self, raw_b: &[u8]) -> Option<String> {
         let raw = show(raw_b);
@@ -674,7 +673,7 @@ impl Policy {
     }
 }
 
-/// A zone name (zonecfg.NAME_RE: ^[a-z][a-z0-9-]{1,20}$, no trailing newline either).
+/// A zone name (^[a-z][a-z0-9-]{1,20}$, no trailing newline either).
 #[allow(dead_code)] // the mount helper's; not every binary uses all
 pub fn zone_name_ok(s: &str) -> bool {
     let b = s.as_bytes();
@@ -685,11 +684,11 @@ pub fn zone_name_ok(s: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
 }
 
-/// Directories under the state directory that are not zones (zonecfg.RESERVED).
+/// Directories under the state directory that are not zones .
 #[allow(dead_code)] // the mount helper's; not every binary uses all
 pub const RESERVED: &[&str] = &["launcher", "share", "bin", "lib", "etc"];
 
-/// A runtime mount's name (zonecfg.MOUNT_NAME_RE: ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$).
+/// A runtime mount's name (^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$).
 #[allow(dead_code)] // the mount helper's; not every binary uses all
 pub fn mount_name_ok(s: &str) -> bool {
     let b = s.as_bytes();

@@ -1,4 +1,4 @@
-//! A zone's DNS (network = "internet"), the host side: the port of src/appzones/dns.py.
+//! A zone's DNS (network = "internet"), the host side.
 //!
 //! zone-init answers DNS inside the zone and hands each query, one connection per query,
 //! over the zone's dns.sock to this, in the zone's server on the host. Here the query goes

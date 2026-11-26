@@ -1,9 +1,8 @@
 //! `appzones-helper serve --plan FILE --lock-fd L [--notify-fd N]`: the part of `appzones
-//! serve` that holds a zone, the port of run_plan in src/appzones/server.py (the reference:
-//! the same steps, messages and exit statuses).
+//! serve` that holds a zone.
 //!
-//! `appzones serve` (Python) checks the configuration, writes the zone's files and its plan
-//! (plan.json in the zone's runtime directory: make_plan), then execs this with the zone's
+//! `appzones serve` checks the configuration, writes the zone's files and its plan
+//! (plan.json in the zone's runtime directory: plan.rs), then runs this with the zone's
 //! lock and the readiness descriptor. From the plan alone, with no configuration to read,
 //! this starts the helpers (zone-wayland, the D-Bus proxy), the zone (pasta, _netsetup,
 //! bwrap, zone-init), hands it its server's pidfd, waits for zone-init, says the zone is
@@ -27,7 +26,7 @@ use serde_json::{json, Value};
 use crate::host_dns;
 
 const PLAN_VERSION: u64 = 1;
-// the marks in a plan's command line (src/appzones/fs.py): NUL is never in an argument
+// the marks in a plan's command line: NUL is never in an argument
 pub const PLAN_IF: &str = "\0if:";
 pub const PLAN_END: &str = "\0end";
 pub const PLAN_HOST_WAYLAND: &str = "\0host-wayland";
@@ -105,7 +104,7 @@ fn host_rt() -> PathBuf {
 }
 
 /// The host compositor's socket ($WAYLAND_DISPLAY: a name in $XDG_RUNTIME_DIR, or a path),
-/// resolved, when it is a socket (common.host_wayland_socket).
+/// resolved, when it is a socket.
 pub fn host_wayland_socket() -> Option<String> {
     host_wayland_socket_for(std::env::var_os("WAYLAND_DISPLAY"), &host_rt())
 }
@@ -123,7 +122,7 @@ fn host_wayland_socket_for(display: Option<std::ffi::OsString>, rt: &Path) -> Op
     ok.then(|| real.to_string_lossy().into_owned())
 }
 
-/// Python's returncode of an exit status: the code, or minus the signal.
+/// An exit status as a return code: the code, or minus the signal.
 fn returncode(st: ExitStatus) -> i32 {
     st.code().unwrap_or_else(|| -st.signal().unwrap_or(1))
 }
@@ -842,7 +841,7 @@ fn run_seatbelt(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String
     // Safety: restoring it.
     unsafe { libc::umask(old) };
     let ls = ls.map_err(|e| format!("{}: {e}", path.display()))?;
-    // Safety: listen on our socket with Python's backlog.
+    // Safety: listen on our socket (backlog 16).
     unsafe { libc::listen(ls.as_raw_fd(), 16) };
     let mut alive = [-1 as RawFd; 2];
     if !crate::sys::pipe(&mut alive, false) {
@@ -1433,7 +1432,7 @@ mod tests {
             returncode(ExitStatus::from_raw(libc::SIGTERM)),
             -libc::SIGTERM
         );
-        // a zone killed by SIGTERM: Python's sys.exit(-15) is status 241, as here
+        // a zone killed by SIGTERM: status 241 (-15 as a byte), as before 0.12
         assert_eq!(-libc::SIGTERM as u8, 241);
     }
 

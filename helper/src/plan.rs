@@ -1,9 +1,7 @@
-//! A zone's plan, made in Rust: the port of make_plan in src/appzones/server.py, with
-//! fs.bwrap_argv and what it uses (the theme copy, devices, /tmp, runtime mount points),
-//! net (the nft deny list, resolv.conf, pasta, the resolver) and portals (flatpak-info,
-//! the D-Bus proxy's rules, the xdg-open shim). The same files, messages and plan as
-//! Python's (DifferentialPlanTest). Until stage 3 the zone's command line still starts
-//! with Python's `zone.py _netsetup`, and links and the end go through `zone.py`.
+//! A zone's plan: the bubblewrap command line and what it uses (the theme copy, devices,
+//! /tmp, runtime mount points), the network (the nft deny list, resolv.conf, pasta, the
+//! resolver) and portals (flatpak-info, the D-Bus proxy's rules, the xdg-open shim). Its
+//! files, messages and plan are held by the golden tests (helper/tests/golden).
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;
@@ -324,7 +322,7 @@ impl Host {
         format!("/run/user/{}", self.uid)
     }
 
-    /// common.find_tool.
+    /// A tool's path: $APPZONES_BIN_<NAME>, else PATH, appzones' own folder and the sbin folders.
     pub fn find_tool(&self, name: &str) -> Option<String> {
         let over = config::env(&format!("BIN_{}", name.to_uppercase().replace('-', "_")));
         let dirs: Vec<String> = std::iter::once(sh(&self.here))
@@ -473,7 +471,7 @@ fn system_env(layout: &str, user: &str) -> (String, String, String) {
     )
 }
 
-/// zonecfg.theme_source_error.
+/// Why a theme folder may not be copied into a zone.
 fn theme_source_error(policy: &Policy, real: &[u8]) -> Option<String> {
     use crate::policy::{inside, realpath, same};
     let shown = String::from_utf8_lossy(real).into_owned(); // (only for what is said)
@@ -1426,7 +1424,7 @@ fn host_resolver_for(dns_host: Option<String>, file: &Path) -> String {
     for line in crate::policy::split_lines(&text) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 2 && parts[0] == "nameserver" {
-            // the first nameserver; one that is not an address ends the search (as Python's try)
+            // the first nameserver; one that is not an address ends the search (as before 0.12)
             return if parts[1]
                 .split('%')
                 .next()
@@ -1514,7 +1512,7 @@ fn dbus_rules(z: &Zone) -> Vec<String> {
     r
 }
 
-/// An ordered environment, updated in place as a Python dict.
+/// An ordered environment: a variable set again keeps its place.
 struct EnvList(Vec<(String, String)>);
 
 impl EnvList {

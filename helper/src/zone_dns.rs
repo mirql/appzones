@@ -1,8 +1,7 @@
 //! The zone's DNS (network = "internet"), the zone side: zone-init answers at $ZONE_DNS
 //! (127.0.0.53), UDP and TCP, and hands each query over /run/zone/dns.sock to the zone's
-//! server on the host (appzones/dns.py), which asks the host's resolver. The port of the
-//! DNS part of zone_init.py: same framing (a 2-byte big-endian length, then the message),
-//! same limits.
+//! server on the host (host_dns.rs), which asks the host's resolver. Framing on dns.sock:
+//! a 2-byte big-endian length, then the message.
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};

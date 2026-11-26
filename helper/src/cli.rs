@@ -1,7 +1,6 @@
-//! `appzones`: the commands a user types, and the internal ones the server and the zone use.
-//! The port of src/zone.py, src/appzones/client.py, mounts.py and upgrade.py, with the same
-//! options, outputs, messages and exit statuses. `appzones-helper cli ARGS` (the `appzones`
-//! wrapper runs it when appzones is installed with the Rust helper).
+//! `appzones`: the commands a user types, and the internal ones the server and the zone use
+//! (`appzones-helper cli ARGS`; the `appzones` wrapper runs it). Their options, outputs,
+//! messages and exit statuses are an interface: tests and users' scripts match them.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -147,7 +146,7 @@ impl Cli {
         )
     }
 
-    /// common.load_cfg.
+    /// The configuration, loaded and checked: its errors end the command.
     fn load_cfg(&self, quiet: bool) -> Config {
         let cfg = self.load();
         if !cfg.errors.is_empty() {
@@ -165,7 +164,7 @@ impl Cli {
         cfg
     }
 
-    /// common.load_zone (the zone's name checked; the whole config returned).
+    /// The configuration for zone NAME (its name checked; the whole config returned).
     fn load_zone(&self, name: &str, quiet: bool) -> Config {
         let cfg = self.load_cfg(quiet);
         if cfg.zone(name).is_none() {
@@ -256,7 +255,7 @@ impl Cli {
         code == 0 && so.trim() == "loaded"
     }
 
-    /// common.supervisor.
+    /// Who starts a zone that is not running: systemd or appzones itself (`supervisor`).
     fn supervisor(&self, z: Option<&Zone>) -> String {
         if let Some(s) = z
             .and_then(|z| z.get("supervisor").as_str())
@@ -818,7 +817,7 @@ impl Cli {
             _ => self.restart_zone(n),
         };
         if !every {
-            // one zone: here (its failure is our exit status, as Python's SystemExit was); a
+            // one zone: here (its failure is our exit status); a
             // zone that left the config can still be stopped
             if cmd == "stop" {
                 self.lock_path(first); // (a zone name, or the usual refusal)

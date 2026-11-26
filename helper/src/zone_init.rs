@@ -1,5 +1,5 @@
-//! zone-init: the agent inside a zone (the port of zone_init.py; its docstring is the
-//! protocol, and src/test_zonecfg.py's AgentProtocolTest is the specification).
+//! zone-init: the agent inside a zone (its protocol is tested from outside in
+//! helper/tests/agent.rs).
 //!
 //! Linux: runs as pid 2 of the zone (bwrap is pid 1 and reaps). macOS: runs beside the
 //! zone, outside its sandbox (where the zone's processes cannot signal or read it), and
@@ -215,7 +215,7 @@ fn dim(v: Option<&Value>, default: u16) -> u16 {
 
 /// In the child, between fork and exec (async-signal-safe syscalls only): an empty
 /// signal mask, a session of its own, the controlling tty (fd 0, for a shell), and every
-/// descriptor above 2 close-on-exec, as Python's close_fds did.
+/// descriptor above 2 close-on-exec.
 fn child_setup(ctty: bool) -> std::io::Result<()> {
     // Safety: each call is a plain syscall on this process's own state.
     unsafe {
@@ -397,7 +397,7 @@ struct Init {
     zone: String,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))] // (the zone bus's, Linux only)
     zrt: String,
-    // the environment as the host gave it: bytes, passed on unchanged (as Python's os.environ)
+    // the environment as the host gave it: bytes, passed on unchanged
     env: Env,
     waiting: HashMap<i32, UnixStream>,
     shells: HashMap<i32, Shell>,

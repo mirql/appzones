@@ -1,8 +1,7 @@
-//! zones.toml, loaded and checked: the port of src/zonecfg.py (load, load_text, validate,
-//! KEYS and their checks, RELEASE and SINCE, the D-Bus and environment never-lists), with
-//! the same errors and warnings in the same order, the same settings and origins, and
-//! settings_hash byte for byte. The path policy (binds, the never-list) is policy.rs.
-//! Kept equal to Python by the differential test (DifferentialConfigTest).
+//! zones.toml, loaded and checked: load, load_text, validate, KEYS and their checks,
+//! RELEASE and SINCE, the D-Bus and environment never-lists. Its errors and warnings (in
+//! their order), settings, origins and settings_hash are an interface, held by the golden
+//! tests (helper/tests/golden). The path policy (binds, the never-list) is policy.rs.
 
 use std::ffi::OsString;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -21,7 +20,7 @@ const TOP: &[&str] = &[
 pub const APP_KEYS: &[&str] = &["command", "desktop", "zones", "args", "bus"];
 const DEVICES: &[&str] = &["gpu", "audio", "mic", "camera", "screencast", "usb"];
 pub const BUSES: &[&str] = &["host", "zone", "none"];
-/// (setting, the release that added it), in zonecfg.SINCE's order.
+/// (setting, the release that added it), in the order they came.
 const SINCE: &[(&str, i64)] = &[
     ("requires", 2),
     ("bus", 2),
@@ -121,7 +120,7 @@ fn has_env(name: &str) -> bool {
     std::env::var_os(format!("APPZONES_{name}")).is_some()
 }
 
-/// The user's home as zonecfg.HOME: $APPZONES_HOME_FOR_TESTS, else $HOME, else passwd.
+/// The user's home: $APPZONES_HOME_FOR_TESTS, else $HOME, else passwd.
 pub fn home() -> OsString {
     if let Some(h) = env("HOME_FOR_TESTS").filter(|h| !h.is_empty()) {
         return OsString::from_vec(py_path(h.as_bytes()));
@@ -204,7 +203,7 @@ fn nix_ld_paths() -> (String, String) {
     (shim, lib)
 }
 
-/// zonecfg.host_nix_ld: (the shim's real path, the lib dir) when the host runs nix-ld.
+/// (the shim's real path, the lib dir) when the host runs nix-ld.
 pub fn host_nix_ld() -> Option<(String, String)> {
     let (shim, lib) = nix_ld_paths();
     let real = String::from_utf8_lossy(&realpath(shim.as_bytes())?).into_owned();
@@ -234,10 +233,10 @@ pub fn env_denied(name: &str) -> bool {
 }
 
 /// Every name a host .service file provides; None when that cannot be known
-/// (zonecfg.activatable_names: $APPZONES_DBUS_SERVICE_DIRS, else the session bus).
+/// ($APPZONES_DBUS_SERVICE_DIRS, else the session bus).
 fn activatable_names() -> Option<Vec<String>> {
     if !has_env("DBUS_SERVICE_DIRS") {
-        // (5 s, as Python: a bus that does not answer means the names are not known)
+        // (5 s: a bus that does not answer means the names are not known)
         let out = crate::plan::output_within(
             std::process::Command::new("busctl").args([
                 "--user",
@@ -320,7 +319,7 @@ fn strs(v: &[&str]) -> Value {
     Value::Array(v.iter().map(|x| s(x)).collect())
 }
 
-/// The keys, in zonecfg.KEYS's order, with their built-in defaults.
+/// The keys, in their fixed order, with their built-in defaults.
 pub fn keys() -> Vec<(&'static str, Value)> {
     let mut dbus = Table::new();
     dbus.insert("talk".into(), Value::Array(vec![]));
@@ -394,7 +393,7 @@ fn enum_check(v: &Value, vals: &[&str]) -> Option<String> {
     }
 }
 
-/// zonecfg.duration: seconds of "30s", "10m", "2h" or a whole number; None otherwise.
+/// Seconds of "30s", "10m", "2h" or a whole number; None otherwise.
 pub fn duration(v: &Value) -> Option<f64> {
     let n: f64 = match v {
         Value::Integer(i) => *i as f64,
@@ -483,7 +482,7 @@ fn colour_ok(c: &str) -> bool {
 }
 
 impl Ctx {
-    /// The check of key K (zonecfg.KEYS[k][1]).
+    /// The check of key K.
     fn check(&self, k: &str, v: &Value) -> Option<String> {
         match k {
             "network" => enum_check(v, &["none", "internet", "host"]),
@@ -788,7 +787,7 @@ fn parse_error(text: &str, e: &toml::de::Error) -> String {
     format!("{msg} (at line {line}, column {col})")
 }
 
-/// zonecfg.load: the file at PATH (SHOWN names it in messages).
+/// The file at PATH (SHOWN names it in messages).
 pub fn load(path: &Path, shown: &str, code_dir: OsString) -> Config {
     match std::fs::read(path) {
         Err(e) => {
@@ -807,7 +806,7 @@ pub fn load(path: &Path, shown: &str, code_dir: OsString) -> Config {
     }
 }
 
-/// zonecfg.load_text.
+/// TEXT as a zones.toml read from PATH.
 pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
     let ctx = Ctx {
         policy: policy(code_dir),
@@ -1104,7 +1103,7 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
     }
 }
 
-/// zonecfg.names_overlap: bus names (or "prefix.*" patterns) that can name the same name.
+/// Bus names (or "prefix.*" patterns) that can name the same name.
 fn names_overlap(a: &str, b: &str) -> bool {
     match (a.strip_suffix(".*"), b.strip_suffix(".*")) {
         (None, None) => a == b,
@@ -1116,7 +1115,7 @@ fn names_overlap(a: &str, b: &str) -> bool {
     }
 }
 
-/// zonecfg.uses: whether the raw TOML uses a setting from SINCE.
+/// Whether the raw TOML uses a setting from SINCE.
 fn uses(raw: &Table, what: &str) -> bool {
     let empty = Table::new();
     let mut tables: Vec<&Table> = vec![raw
@@ -1157,7 +1156,7 @@ fn uses(raw: &Table, what: &str) -> bool {
     tables.iter().any(|t| t.contains_key(what))
 }
 
-/// zonecfg.validate.
+/// Every error of the zones and apps, in order.
 fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
     let mut errs = Vec::new();
     // the host's never-list where its paths would be left out: refused for every zone
@@ -1392,7 +1391,7 @@ fn value_truthy(v: &Value) -> bool {
     }
 }
 
-/// common.settings_hash: what a running zone was built from, byte for byte as Python's.
+/// What a running zone was built from (byte for byte as before 0.12: running zones compare it).
 pub fn settings_hash(z: &Zone) -> String {
     let mut t = Table::new();
     for (k, v) in &z.settings {
@@ -1410,7 +1409,7 @@ pub fn settings_hash(z: &Zone) -> String {
     sha256_hex(out.as_bytes())
 }
 
-/// zonecfg.resolve_app: the argv of app APP in ZONE; Ok(None) when APP is not declared.
+/// The argv of app APP in ZONE; Ok(None) when APP is not declared.
 pub fn resolve_app(cfg: &Config, zone: &str, app: &str) -> Result<Option<Vec<String>>, String> {
     let Some(a) = cfg.apps.get(app).and_then(Value::as_table) else {
         return Ok(None);
@@ -1444,7 +1443,7 @@ pub fn resolve_app(cfg: &Config, zone: &str, app: &str) -> Result<Option<Vec<Str
     Ok(Some(argv))
 }
 
-/// zonecfg.app_bus: the bus an app (or, with None, an undeclared command) gets in ZONE.
+/// The bus an app (or, with None, an undeclared command) gets in ZONE.
 pub fn app_bus(cfg: &Config, zone: &str, app: Option<&str>) -> String {
     if let Some(b) = app
         .and_then(|a| cfg.apps.get(a))

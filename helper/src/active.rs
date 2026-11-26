@@ -1,6 +1,6 @@
 //! `appzones active [--follow] [--json]`: "[zone]" for the focused window, on Hyprland or
 //! sway, only from what the appzones hooks set (the tag zone:NAME, the mark zone:NAME:ID),
-//! never from the window's class, title or app id (the port of client.active).
+//! never from the window's class, title or app id.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
