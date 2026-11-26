@@ -1,5 +1,22 @@
 # Upgrading
 
+Each release's notes in the
+[CHANGELOG](https://github.com/mirql/appzones/blob/main/CHANGELOG.md) start with what it
+means for you. After updating, `appzones stop --all` (or `appzones restart ZONE` for
+each running zone) gives running zones the new version; until then they keep the old one.
+`appzones --version` says which version and config release you run.
+
+What needs more than that:
+
+## From 0.11 or earlier
+
+- appzones is one Rust binary since 0.12: **restart running zones** after the update.
+  Building from a checkout needs Rust 1.85 or newer, and `make install` puts the
+  binaries in `PREFIX/libexec/appzones`.
+- `wayland = "host"` (0.11.3) gives the host's socket only where the compositor has no
+  security context (GNOME, Weston, sway before 1.9); on Hyprland, sway 1.9 or later or KDE
+  the zone gets its own.
+
 ## From 0.7
 
 - **NixOS:** nothing to do. Running zones keep working; `appzones restart ZONE`
