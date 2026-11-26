@@ -61,7 +61,11 @@ fn say(msg: &str) {
 
 /// ARGV with each marked group kept when its condition is in HAVE, else dropped, and the
 /// host's Wayland socket filled in (fs.resolve_plan_argv).
-pub fn resolve_plan_argv(argv: &[String], have: &HashSet<&str>, host_wayland: Option<&str>) -> Result<Vec<String>, String> {
+pub fn resolve_plan_argv(
+    argv: &[String],
+    have: &HashSet<&str>,
+    host_wayland: Option<&str>,
+) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut keep = true;
     for a in argv {
@@ -71,7 +75,11 @@ pub fn resolve_plan_argv(argv: &[String], have: &HashSet<&str>, host_wayland: Op
             keep = true;
         } else if keep {
             if a == PLAN_HOST_WAYLAND {
-                out.push(host_wayland.ok_or("the plan uses the host's Wayland socket, but there is none")?.to_string());
+                out.push(
+                    host_wayland
+                        .ok_or("the plan uses the host's Wayland socket, but there is none")?
+                        .to_string(),
+                );
             } else {
                 out.push(a.clone());
             }
@@ -83,7 +91,8 @@ pub fn resolve_plan_argv(argv: &[String], have: &HashSet<&str>, host_wayland: Op
 /// Only an http(s) URL, short, without line breaks or NUL, leaves a zone as a link
 /// (portals.link_ok).
 pub fn link_ok(url: &str) -> bool {
-    (url.starts_with("http://") || url.starts_with("https://")) && url.chars().count() < 8000
+    (url.starts_with("http://") || url.starts_with("https://"))
+        && url.chars().count() < 8000
         && !url.contains(['\n', '\r', '\0'])
 }
 
@@ -104,7 +113,11 @@ pub fn host_wayland_socket() -> Option<String> {
 /// host_wayland_socket for DISPLAY in the runtime directory RT.
 fn host_wayland_socket_for(display: Option<std::ffi::OsString>, rt: &Path) -> Option<String> {
     let d = display.filter(|d| !d.is_empty())?;
-    let p = if d.to_string_lossy().starts_with('/') { PathBuf::from(d) } else { rt.join(d) };
+    let p = if d.to_string_lossy().starts_with('/') {
+        PathBuf::from(d)
+    } else {
+        rt.join(d)
+    };
     let real = std::fs::canonicalize(p).ok()?;
     let ok = std::fs::metadata(&real).ok()?.file_type().is_socket();
     ok.then(|| real.to_string_lossy().into_owned())
@@ -163,7 +176,11 @@ fn read_line(fd: RawFd, timeout: Duration) -> Option<Vec<u8>> {
         if left.is_zero() {
             return None;
         }
-        let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        let mut pfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
         let ms = left.as_millis().min(100) as libc::c_int + 1;
         // Safety: poll on one descriptor we own.
         if unsafe { libc::poll(&mut pfd, 1, ms) } <= 0 {
@@ -193,9 +210,12 @@ fn set_cloexec(fd: RawFd) {
 
 /// Send DATA with descriptor FD over the stream SOCK (SCM_RIGHTS).
 fn send_fd(sock: &UnixStream, data: &[u8], fd: RawFd) -> std::io::Result<()> {
-    let mut iov = libc::iovec { iov_base: data.as_ptr() as *mut _, iov_len: data.len() };
+    let mut iov = libc::iovec {
+        iov_base: data.as_ptr() as *mut _,
+        iov_len: data.len(),
+    };
     let mut cmsg = [0u64; 4]; // CMSG_SPACE(sizeof(int)), aligned
-    // Safety: a msghdr over our buffers with one SCM_RIGHTS message for one descriptor.
+                              // Safety: a msghdr over our buffers with one SCM_RIGHTS message for one descriptor.
     let n = unsafe {
         let mut msg: libc::msghdr = std::mem::zeroed();
         msg.msg_iov = &mut iov;
@@ -246,7 +266,9 @@ fn agent(zrt: &Path, req: &Value, timeout: Duration) -> Option<Value> {
             Err(_) => return None,
         }
     }
-    let line = String::from_utf8_lossy(&buf[..buf.iter().position(|b| *b == b'\n').unwrap_or(buf.len())]).into_owned();
+    let line =
+        String::from_utf8_lossy(&buf[..buf.iter().position(|b| *b == b'\n').unwrap_or(buf.len())])
+            .into_owned();
     if line.trim().is_empty() {
         return Some(json!({}));
     }
@@ -286,7 +308,9 @@ fn connect_now(path: &Path) -> Option<UnixStream> {
 
 /// zone-init answers (agent.ping: a non-empty answer).
 fn ping(zrt: &Path) -> bool {
-    agent(zrt, &json!({"op": "ping"}), Duration::from_secs(1)).and_then(|v| v.as_object().map(|o| !o.is_empty())) == Some(true)
+    agent(zrt, &json!({"op": "ping"}), Duration::from_secs(1))
+        .and_then(|v| v.as_object().map(|o| !o.is_empty()))
+        == Some(true)
 }
 
 /// Whether anything runs in the zone besides bwrap, zone-init and its own helpers; None
@@ -298,14 +322,27 @@ fn apps_running(zrt: &Path) -> Option<bool> {
     }
     let procs = r.get("procs")?.as_array()?;
     let mut skip = vec![json!(1), r.get("init").cloned().unwrap_or(Value::Null)];
-    skip.extend(r.get("helpers").and_then(Value::as_array).cloned().unwrap_or_default());
-    Some(procs.iter().any(|p| p.get(0).map(|pid| !skip.contains(pid)).unwrap_or(false)))
+    skip.extend(
+        r.get("helpers")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+    );
+    Some(
+        procs
+            .iter()
+            .any(|p| p.get(0).map(|pid| !skip.contains(pid)).unwrap_or(false)),
+    )
 }
 
 /// systemd's readiness ($NOTIFY_SOCKET), quietly when there is none.
 fn sd_notify(msg: &str) {
-    let Some(addr) = std::env::var_os("NOTIFY_SOCKET").filter(|a| !a.is_empty()) else { return };
-    let Ok(s) = UnixDatagram::unbound() else { return };
+    let Some(addr) = std::env::var_os("NOTIFY_SOCKET").filter(|a| !a.is_empty()) else {
+        return;
+    };
+    let Ok(s) = UnixDatagram::unbound() else {
+        return;
+    };
     let a = addr.to_string_lossy();
     if let Some(name) = a.strip_prefix('@') {
         // (an abstract socket: Linux only, as systemd)
@@ -323,7 +360,10 @@ fn sd_notify(msg: &str) {
 }
 
 fn str_list(v: &Value) -> Option<Vec<String>> {
-    v.as_array()?.iter().map(|x| x.as_str().map(String::from)).collect()
+    v.as_array()?
+        .iter()
+        .map(|x| x.as_str().map(String::from))
+        .collect()
 }
 
 fn spawn(argv: &[String]) -> Command {
@@ -360,7 +400,11 @@ impl Run {
 
     /// SIGINT (`appzones stop`, Ctrl-C) ends the zone for good: 0. SIGTERM: 143.
     fn stop_code(&self) -> u8 {
-        if stop() == libc::SIGINT { 0 } else { (128 + stop()) as u8 }
+        if stop() == libc::SIGINT {
+            0
+        } else {
+            (128 + stop()) as u8
+        }
     }
 
     /// The zone's last lines in our log: the relay ends when the zone's writers have, or
@@ -394,24 +438,36 @@ impl Run {
     fn offer_pidfd(&mut self) -> bool {
         let path = self.zrt.join("srv.sock");
         let _ = std::fs::remove_file(&path);
-        let Ok(ls) = UnixListener::bind(&path) else { return false };
+        let Ok(ls) = UnixListener::bind(&path) else {
+            return false;
+        };
         let _ = ls.set_nonblocking(true);
         let end = Instant::now() + self.timeout;
         let mut ok = false;
-        while Instant::now() < end && stop() == 0 && self.child.as_mut().map(running).unwrap_or(false) {
+        while Instant::now() < end
+            && stop() == 0
+            && self.child.as_mut().map(running).unwrap_or(false)
+        {
             match ls.accept() {
                 Ok((conn, _)) => {
                     let _ = conn.set_nonblocking(false);
                     // (ours, closed below)
-                    let me = crate::sys::pidfd_open(std::process::id() as libc::pid_t).unwrap_or(-1);
+                    let me =
+                        crate::sys::pidfd_open(std::process::id() as libc::pid_t).unwrap_or(-1);
                     if me < 0 {
-                        say(&format!("[zone] {}: handing over the server's pidfd failed: {}", self.name,
-                                     std::io::Error::last_os_error()));
+                        say(&format!(
+                            "[zone] {}: handing over the server's pidfd failed: {}",
+                            self.name,
+                            std::io::Error::last_os_error()
+                        ));
                         break;
                     }
                     match send_fd(&conn, b"pidfd", me) {
                         Ok(()) => ok = true,
-                        Err(e) => say(&format!("[zone] {}: handing over the server's pidfd failed: {e}", self.name)),
+                        Err(e) => say(&format!(
+                            "[zone] {}: handing over the server's pidfd failed: {e}",
+                            self.name
+                        )),
                     }
                     // Safety: closing our copy.
                     unsafe { libc::close(me) };
@@ -467,7 +523,9 @@ const MAX_LINKS: usize = 4;
 
 fn handle_link(listener: &UnixListener, command: &[String]) {
     use std::sync::atomic::Ordering;
-    let Ok((mut conn, _)) = listener.accept() else { return };
+    let Ok((mut conn, _)) = listener.accept() else {
+        return;
+    };
     if LINKS.fetch_add(1, Ordering::SeqCst) >= MAX_LINKS {
         LINKS.fetch_sub(1, Ordering::SeqCst);
         let _ = conn.set_nonblocking(false);
@@ -511,7 +569,11 @@ enum Source {
 fn parse_args(args: &[std::ffi::OsString]) -> Result<(Source, RawFd, Option<RawFd>), String> {
     let (mut plan, mut zone, mut lock, mut notify) = (None, None, None, None);
     let mut it = args.iter();
-    let fd = |v: &std::ffi::OsString| v.to_str().and_then(|v| v.parse::<RawFd>().ok()).ok_or(USAGE);
+    let fd = |v: &std::ffi::OsString| {
+        v.to_str()
+            .and_then(|v| v.parse::<RawFd>().ok())
+            .ok_or(USAGE)
+    };
     while let Some(a) = it.next() {
         let v = it.next().ok_or(USAGE)?;
         match a.to_str() {
@@ -577,7 +639,11 @@ fn serve_from(source: Source, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
             let made = crate::plan::make_plan(&host, &name);
             if stop() != 0 {
                 say(&format!("[zone] {name}: stopped while starting"));
-                return if stop() == libc::SIGINT { 0 } else { (128 + stop()) as u8 };
+                return if stop() == libc::SIGINT {
+                    0
+                } else {
+                    (128 + stop()) as u8
+                };
             }
             match made.and_then(|p| crate::plan::write_plan(&p)) {
                 Ok(p) => p,
@@ -588,15 +654,24 @@ fn serve_from(source: Source, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
             }
         }
     };
-    let plan: Value = match std::fs::read(&plan_path).ok().and_then(|b| serde_json::from_slice(&b).ok()) {
+    let plan: Value = match std::fs::read(&plan_path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+    {
         Some(p) => p,
         None => {
-            say(&format!("[zone] cannot read the plan {}", plan_path.display()));
+            say(&format!(
+                "[zone] cannot read the plan {}",
+                plan_path.display()
+            ));
             return 1;
         }
     };
     if plan.get("version").and_then(Value::as_u64) != Some(PLAN_VERSION) {
-        say(&format!("[zone] {}: a plan of another version (appzones and its helper do not match)", plan_path.display()));
+        say(&format!(
+            "[zone] {}: a plan of another version (appzones and its helper do not match)",
+            plan_path.display()
+        ));
         return 1;
     }
     #[cfg(not(target_os = "linux"))]
@@ -614,25 +689,46 @@ fn serve_from(source: Source, lock_fd: RawFd, notify_fd: Option<RawFd>) -> u8 {
 
 /// The readiness: systemd's, the descriptor's (one newline, then closed), and the log's line.
 fn ready(plan: &Value, notify_fd: &mut Option<RawFd>) {
-    let s = |k: &str| plan.get(k).and_then(Value::as_str).unwrap_or("?").to_string();
+    let s = |k: &str| {
+        plan.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or("?")
+            .to_string()
+    };
     let name = s("name");
     sd_notify(&format!("READY=1\nSTATUS=zone {name} running"));
     if let Some(fd) = notify_fd.take() {
         // Safety: one newline to the readiness descriptor we were given, then closed.
         if unsafe { libc::write(fd, b"\n".as_ptr().cast(), 1) } != 1 {
-            say(&format!("[zone] {name}: could not write readiness to fd {fd}: {}", std::io::Error::last_os_error()));
+            say(&format!(
+                "[zone] {name}: could not write readiness to fd {fd}: {}",
+                std::io::Error::last_os_error()
+            ));
         }
         // Safety: closing it.
         unsafe { libc::close(fd) };
     }
     let devices: Vec<String> = plan.get("devices").and_then(str_list).unwrap_or_default();
-    say(&format!("[zone] {name} ready (network={}, dns={}, devices={})", s("network"), s("dns"),
-                 if devices.is_empty() { "-".into() } else { devices.join(",") }));
+    say(&format!(
+        "[zone] {name} ready (network={}, dns={}, devices={})",
+        s("network"),
+        s("dns"),
+        if devices.is_empty() {
+            "-".into()
+        } else {
+            devices.join(",")
+        }
+    ));
 }
 
 /// The zone's autostart apps, through zone-init (until a stop).
 fn autostart(plan: &Value, zrt: &Path) {
-    for a in plan.get("autostart").and_then(Value::as_array).cloned().unwrap_or_default() {
+    for a in plan
+        .get("autostart")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+    {
         if stop() != 0 {
             break; // a stop: no more apps, on to the shutdown
         }
@@ -640,11 +736,20 @@ fn autostart(plan: &Value, zrt: &Path) {
         let req = json!({"op": "run", "argv": a.get("argv"), "env": {}, "cwd": null, "bus": a.get("bus")});
         match agent(zrt, &req, Duration::from_secs(5)) {
             Some(v) if v.get("ok") == Some(&Value::Bool(true)) => {
-                say(&format!("[zone] autostart {app}: {}", v.get("pid").unwrap_or(&Value::Null)));
+                say(&format!(
+                    "[zone] autostart {app}: {}",
+                    v.get("pid").unwrap_or(&Value::Null)
+                ));
             }
-            Some(v) => say(&format!("[zone] autostart {app} failed: {}",
-                                    v.get("error").and_then(Value::as_str).unwrap_or("run failed"))),
-            None => say(&format!("[zone] autostart {app} failed: zone-init did not answer")),
+            Some(v) => say(&format!(
+                "[zone] autostart {app} failed: {}",
+                v.get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("run failed")
+            )),
+            None => say(&format!(
+                "[zone] autostart {app} failed: zone-init did not answer"
+            )),
         }
     }
 }
@@ -674,28 +779,61 @@ fn idle_for(zrt: &Path, linger: f64, idle: &mut Option<Instant>, next: &mut Inst
 #[cfg(not(target_os = "linux"))]
 fn run_seatbelt(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
     use std::os::fd::IntoRawFd;
-    let s = |k: &str| plan.get(k).and_then(Value::as_str).map(String::from).ok_or(format!("the plan has no {k}"));
-    let sb = |k: &str| plan.get("seatbelt").and_then(|b| b.get(k)).and_then(Value::as_str).map(PathBuf::from)
-        .ok_or(format!("the plan has no seatbelt.{k}"));
+    let s = |k: &str| {
+        plan.get(k)
+            .and_then(Value::as_str)
+            .map(String::from)
+            .ok_or(format!("the plan has no {k}"))
+    };
+    let sb = |k: &str| {
+        plan.get("seatbelt")
+            .and_then(|b| b.get(k))
+            .and_then(Value::as_str)
+            .map(PathBuf::from)
+            .ok_or(format!("the plan has no seatbelt.{k}"))
+    };
     let name = s("name")?;
     let zrt = PathBuf::from(s("zrt")?);
-    let timeout_s = plan.get("start_timeout").and_then(Value::as_f64).ok_or("the plan has no start_timeout")?;
+    let timeout_s = plan
+        .get("start_timeout")
+        .and_then(Value::as_f64)
+        .ok_or("the plan has no start_timeout")?;
     let timeout = Duration::from_secs_f64(timeout_s);
-    let argv = plan.get("argv").and_then(str_list).filter(|a| !a.is_empty()).ok_or("the plan has no argv")?;
+    let argv = plan
+        .get("argv")
+        .and_then(str_list)
+        .filter(|a| !a.is_empty())
+        .ok_or("the plan has no argv")?;
     let (profile, yes, no) = (sb("profile")?, sb("yes")?, sb("no")?);
-    let env: Vec<(String, String)> = plan.get("env").and_then(Value::as_array).ok_or("the plan has no env")?.iter()
-        .filter_map(|p| Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.as_str()?.to_string()))).collect();
+    let env: Vec<(String, String)> = plan
+        .get("env")
+        .and_then(Value::as_array)
+        .ok_or("the plan has no env")?
+        .iter()
+        .filter_map(|p| {
+            Some((
+                p.get(0)?.as_str()?.to_string(),
+                p.get(1)?.as_str()?.to_string(),
+            ))
+        })
+        .collect();
     let end_zone = || {
         let n = crate::sys::kill_zone(&yes, &no);
         if n > 0 {
-            say(&format!("[zone] {name}: ended {n} process(es) left in the zone"));
+            say(&format!(
+                "[zone] {name}: ended {n} process(es) left in the zone"
+            ));
         }
     };
     if stop() != 0 {
-        return Ok(if stop() == libc::SIGINT { 0 } else { (128 + stop()) as u8 });
+        return Ok(if stop() == libc::SIGINT {
+            0
+        } else {
+            (128 + stop()) as u8
+        });
     }
     end_zone(); // (any left from a run whose server and zone-init were both killed)
-    // zone-init's control socket, made here (0600 from the start) and handed over
+                // zone-init's control socket, made here (0600 from the start) and handed over
     let path = zrt.join("agent.sock");
     let _ = std::fs::remove_file(&path);
     // Safety: umask around the bind; restored at once.
@@ -715,21 +853,35 @@ fn run_seatbelt(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String
     cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
     if plan.get("network").and_then(Value::as_str) == Some("internet") {
         // appzones' proxy, in this server: the zone's only way out (crate::proxy)
-        let allow = plan.get("allow").and_then(str_list).filter(|a| !a.is_empty());
+        let allow = plan
+            .get("allow")
+            .and_then(str_list)
+            .filter(|a| !a.is_empty());
         let port = crate::proxy::start(std::sync::Arc::new(|l: &str| say(l)), allow)
             .map_err(|e| format!("the zone's proxy: {e}"))?;
         let http = format!("http://127.0.0.1:{port}");
         let socks = format!("socks5h://127.0.0.1:{port}");
-        for (k, v) in [("HTTP_PROXY", &http), ("HTTPS_PROXY", &http), ("ALL_PROXY", &socks), ("http_proxy", &http),
-                       ("https_proxy", &http), ("all_proxy", &socks)] {
+        for (k, v) in [
+            ("HTTP_PROXY", &http),
+            ("HTTPS_PROXY", &http),
+            ("ALL_PROXY", &socks),
+            ("http_proxy", &http),
+            ("https_proxy", &http),
+            ("all_proxy", &socks),
+        ] {
             cmd.env(k, v);
         }
         // (Node's fetch uses them only when asked)
-        cmd.env("NODE_USE_ENV_PROXY", "1").env("ZONE_SANDBOX_PROXY_PORT", port.to_string());
+        cmd.env("NODE_USE_ENV_PROXY", "1")
+            .env("ZONE_SANDBOX_PROXY_PORT", port.to_string());
     }
     cmd.env("ZONE_CTL_FD", ctl.to_string())
-        .env("ZONE_SERVER_FD", alive_r.to_string()).env("ZONE_SANDBOX", &profile).env("ZONE_SANDBOX_YES", &yes)
-        .env("ZONE_SANDBOX_NO", &no).env("ZONE_START_TIMEOUT", format!("{timeout_s:?}")).stdin(Stdio::null())
+        .env("ZONE_SERVER_FD", alive_r.to_string())
+        .env("ZONE_SANDBOX", &profile)
+        .env("ZONE_SANDBOX_YES", &yes)
+        .env("ZONE_SANDBOX_NO", &no)
+        .env("ZONE_START_TIMEOUT", format!("{timeout_s:?}"))
+        .stdin(Stdio::null())
         .current_dir("/");
     // Safety: between fork and exec only fcntl (async-signal-safe): the two descriptors
     // zone-init gets stay open across the exec, at their numbers.
@@ -775,16 +927,33 @@ fn run_seatbelt(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String
         unsafe { libc::close(alive_w) };
         if stop() != 0 {
             say(&format!("[zone] {name}: stopped while starting"));
-            return Ok(if stop() == libc::SIGINT { 0 } else { (128 + stop()) as u8 });
+            return Ok(if stop() == libc::SIGINT {
+                0
+            } else {
+                (128 + stop()) as u8
+            });
         }
-        say(&format!("[zone] {name}: {}; stopping", if alive { format!("zone-init did not answer within {timeout_s:.0} s") }
-                                                    else { "zone-init exited (its message is above)".into() }));
+        say(&format!(
+            "[zone] {name}: {}; stopping",
+            if alive {
+                format!("zone-init did not answer within {timeout_s:.0} s")
+            } else {
+                "zone-init exited (its message is above)".into()
+            }
+        ));
         return Ok(1);
     }
     ready(plan, &mut notify_fd);
     autostart(plan, &zrt);
-    let linger = plan.get("linger").and_then(Value::as_f64).filter(|l| *l > 0.0);
-    let linger_text = plan.get("linger_text").and_then(Value::as_str).unwrap_or("").to_string();
+    let linger = plan
+        .get("linger")
+        .and_then(Value::as_f64)
+        .filter(|l| *l > 0.0);
+    let linger_text = plan
+        .get("linger_text")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     let (mut idle, mut next) = (None, Instant::now());
     let rc: i32 = loop {
         if let Ok(Some(st)) = child.try_wait() {
@@ -796,7 +965,9 @@ fn run_seatbelt(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String
             break 0;
         }
         if linger.is_some_and(|l| idle_for(&zrt, l, &mut idle, &mut next)) {
-            say(&format!("[zone] {name}: no app for {linger_text} (linger); stopping"));
+            say(&format!(
+                "[zone] {name}: no app for {linger_text} (linger); stopping"
+            ));
             finish(&mut child);
             break 0; // ended as configured: not a failure, so no restart
         }
@@ -804,29 +975,65 @@ fn run_seatbelt(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String
     };
     // Safety: closing our end of the pipe (zone-init has ended by now).
     unsafe { libc::close(alive_w) };
-    Ok(if stop() != 0 { if stop() == libc::SIGINT { 0 } else { (128 + stop()) as u8 } } else { rc as u8 })
+    Ok(if stop() != 0 {
+        if stop() == libc::SIGINT {
+            0
+        } else {
+            (128 + stop()) as u8
+        }
+    } else {
+        rc as u8
+    })
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
-    let s = |k: &str| plan.get(k).and_then(Value::as_str).map(String::from).ok_or(format!("the plan has no {k}"));
+    let s = |k: &str| {
+        plan.get(k)
+            .and_then(Value::as_str)
+            .map(String::from)
+            .ok_or(format!("the plan has no {k}"))
+    };
     let name = s("name")?;
     let zrt = PathBuf::from(s("zrt")?);
     let fp = PathBuf::from(s("flatpak_dir")?);
-    let timeout_s = plan.get("start_timeout").and_then(Value::as_f64).ok_or("the plan has no start_timeout")?;
+    let timeout_s = plan
+        .get("start_timeout")
+        .and_then(Value::as_f64)
+        .ok_or("the plan has no start_timeout")?;
     let timeout = Duration::from_secs_f64(timeout_s);
-    let argv_marked = plan.get("argv").and_then(str_list).ok_or("the plan has no argv")?;
-    let mut r = Run { cleanup: plan.get("cleanup").and_then(str_list), name: name.clone(), zrt: zrt.clone(), fp, timeout, helpers: Vec::new(), child: None, relay_done: None };
+    let argv_marked = plan
+        .get("argv")
+        .and_then(str_list)
+        .ok_or("the plan has no argv")?;
+    let mut r = Run {
+        cleanup: plan.get("cleanup").and_then(str_list),
+        name: name.clone(),
+        zrt: zrt.clone(),
+        fp,
+        timeout,
+        helpers: Vec::new(),
+        child: None,
+        relay_done: None,
+    };
     if stop() != 0 {
         return Ok(r.abort(""));
     }
     let links = plan.get("links").filter(|l| !l.is_null());
     let links_srv = match links {
         Some(l) => {
-            let path = l.get("socket").and_then(Value::as_str).ok_or("the plan's links have no socket")?;
+            let path = l
+                .get("socket")
+                .and_then(Value::as_str)
+                .ok_or("the plan's links have no socket")?;
             let ls = UnixListener::bind(path).map_err(|e| format!("{path}: {e}"))?;
             ls.set_nonblocking(true).map_err(|e| e.to_string())?;
-            Some((ls, l.get("command").and_then(str_list).ok_or("the plan's links have no command")?))
+            Some((
+                ls,
+                l.get("command")
+                    .and_then(str_list)
+                    .ok_or("the plan's links have no command")?,
+            ))
         }
         None => None,
     };
@@ -835,11 +1042,18 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
     let wl = plan.get("wayland").ok_or("the plan has no wayland")?;
     let mode = wl.get("mode").and_then(Value::as_str).unwrap_or("zone");
     if let Some(helper) = wl.get("helper").and_then(str_list) {
-        let mut h = spawn(&helper).stdout(Stdio::piped()).env("ZONE_WAYLAND_PARENT", std::process::id().to_string())
-            .spawn().map_err(|e| format!("zone-wayland: {e}"))?;
+        let mut h = spawn(&helper)
+            .stdout(Stdio::piped())
+            .env("ZONE_WAYLAND_PARENT", std::process::id().to_string())
+            .spawn()
+            .map_err(|e| format!("zone-wayland: {e}"))?;
         let out = h.stdout.take();
         r.helpers.push(h);
-        let ready = out.as_ref().and_then(|o| read_line(o.as_raw_fd(), timeout)).as_deref() == Some(b"ready".as_slice());
+        let ready = out
+            .as_ref()
+            .and_then(|o| read_line(o.as_raw_fd(), timeout))
+            .as_deref()
+            == Some(b"ready".as_slice());
         if ready && zrt.join("wayland-0").exists() {
             have.insert("wayland-0");
         }
@@ -852,7 +1066,9 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
             let rc = exit_status(h, Duration::from_secs(2));
             if rc != Some(WAYLAND_NO_PROTOCOL) {
                 let msg = match rc {
-                    Some(rc) => format!("zone-wayland exited with status {rc} (its message is above)"),
+                    Some(rc) => {
+                        format!("zone-wayland exited with status {rc} (its message is above)")
+                    }
                     None => format!("zone-wayland did not become ready within {timeout_s:.0} s"),
                 };
                 return Ok(r.abort(&msg));
@@ -888,7 +1104,8 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
                 Ok(())
             });
         }
-        r.helpers.push(c.spawn().map_err(|e| format!("xdg-dbus-proxy: {e}"))?);
+        r.helpers
+            .push(c.spawn().map_err(|e| format!("xdg-dbus-proxy: {e}"))?);
         let end = Instant::now() + timeout;
         while !zrt.join("bus").exists() {
             let alive = r.helpers.last_mut().map(running).unwrap_or(false);
@@ -905,12 +1122,22 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
     // an allow list: the zone reaches only appzones' proxy (crate::proxy), on the host's
     // loopback through pasta's gateway address, and its nft rules let nothing else out
     if let Some(p) = plan.get("proxy").filter(|p| !p.is_null()) {
-        let allow = p.get("allow").and_then(str_list).ok_or("the plan's proxy has no allow")?;
-        let gw = p.get("gateway").and_then(Value::as_str).ok_or("the plan's proxy has no gateway")?;
-        let rules = p.get("rules").and_then(Value::as_str).ok_or("the plan's proxy has no rules")?;
+        let allow = p
+            .get("allow")
+            .and_then(str_list)
+            .ok_or("the plan's proxy has no allow")?;
+        let gw = p
+            .get("gateway")
+            .and_then(Value::as_str)
+            .ok_or("the plan's proxy has no gateway")?;
+        let rules = p
+            .get("rules")
+            .and_then(Value::as_str)
+            .ok_or("the plan's proxy has no rules")?;
         let port = crate::proxy::start(std::sync::Arc::new(|l: &str| say(l)), Some(allow))
             .map_err(|e| format!("the zone's proxy: {e}"))?;
-        std::fs::write(rules, crate::plan::nft_allow_rules(gw, port)).map_err(|e| format!("{rules}: {e}"))?;
+        std::fs::write(rules, crate::plan::nft_allow_rules(gw, port))
+            .map_err(|e| format!("{rules}: {e}"))?;
         for a in argv.iter_mut() {
             if a.contains(PLAN_PROXY_PORT) {
                 *a = a.replace(PLAN_PROXY_PORT, &port.to_string());
@@ -923,7 +1150,8 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
         let path = zrt.join("log.sock");
         let _ = std::fs::remove_file(&path);
         let ls = UnixListener::bind(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
         log_sock = Some(ls);
     }
     if stop() != 0 {
@@ -934,9 +1162,13 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
         // its own resolver; the zone itself sees only timeouts)
         let (zname, dns) = (name.clone(), s("dns")?);
         let tell: host_dns::Tell = std::sync::Arc::new(move |m: &host_dns::Miss| {
-            say(&format!("[zone] {zname}: names do not resolve: {}", host_dns::said(&dns, m)));
+            say(&format!(
+                "[zone] {zname}: names do not resolve: {}",
+                host_dns::said(&dns, m)
+            ));
         });
-        host_dns::serve(&zrt.join("ctl").join("dns.sock"), up, tell).map_err(|e| format!("the zone's DNS: {e}"))?;
+        host_dns::serve(&zrt.join("ctl").join("dns.sock"), up, tell)
+            .map_err(|e| format!("the zone's DNS: {e}"))?;
     }
     let mut cmd = spawn(&argv);
     cmd.env("ZONE_START_TIMEOUT", format!("{timeout_s:?}"));
@@ -990,8 +1222,15 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
         autostart(plan, &zrt);
     }
     // wait for the zone; a dead helper takes the zone down
-    let linger = plan.get("linger").and_then(Value::as_f64).filter(|l| *l > 0.0);
-    let linger_text = plan.get("linger_text").and_then(Value::as_str).unwrap_or("").to_string();
+    let linger = plan
+        .get("linger")
+        .and_then(Value::as_f64)
+        .filter(|l| *l > 0.0);
+    let linger_text = plan
+        .get("linger_text")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     let (mut idle_since, mut next_check) = (None, Instant::now());
     let rc: i32 = loop {
         let child = r.child.as_mut().expect("started");
@@ -1003,7 +1242,9 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
             break wait_or_kill(r.child.as_mut().expect("started"), Duration::from_secs(10));
         }
         if linger.is_some_and(|l| idle_for(&zrt, l, &mut idle_since, &mut next_check)) {
-            say(&format!("[zone] {name}: no app for {linger_text} (linger); stopping"));
+            say(&format!(
+                "[zone] {name}: no app for {linger_text} (linger); stopping"
+            ));
             let child = r.child.as_mut().expect("started");
             term(child);
             wait_or_kill(child, Duration::from_secs(10));
@@ -1017,7 +1258,11 @@ fn run(plan: &Value, mut notify_fd: Option<RawFd>) -> Result<u8, String> {
             break if rc == 0 { 1 } else { rc };
         }
         let ready = links_srv.as_ref().map(|(ls, _)| {
-            let mut pfd = libc::pollfd { fd: ls.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+            let mut pfd = libc::pollfd {
+                fd: ls.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
             // Safety: poll on our listening socket.
             unsafe { libc::poll(&mut pfd, 1, 500) > 0 }
         });
@@ -1049,19 +1294,62 @@ mod tests {
     #[test]
     fn plan_argv() {
         let i = |c: &str| format!("{PLAN_IF}{c}");
-        let argv: Vec<String> = vec!["bwrap".into(), i("wayland-0"), "--bind".into(), "/z/wl".into(), "/w0".into(),
-                                     PLAN_END.into(), i("wayland-host"), "--bind".into(), PLAN_HOST_WAYLAND.into(),
-                                     "/w0".into(), PLAN_END.into(), i("bus"), "--bind".into(), "/z/bus".into(),
-                                     "/b".into(), PLAN_END.into(), "--".into(), "zone-init".into()];
+        let argv: Vec<String> = vec![
+            "bwrap".into(),
+            i("wayland-0"),
+            "--bind".into(),
+            "/z/wl".into(),
+            "/w0".into(),
+            PLAN_END.into(),
+            i("wayland-host"),
+            "--bind".into(),
+            PLAN_HOST_WAYLAND.into(),
+            "/w0".into(),
+            PLAN_END.into(),
+            i("bus"),
+            "--bind".into(),
+            "/z/bus".into(),
+            "/b".into(),
+            PLAN_END.into(),
+            "--".into(),
+            "zone-init".into(),
+        ];
         let none = HashSet::new();
-        assert_eq!(resolve_plan_argv(&argv, &none, None).unwrap(), v(&["bwrap", "--", "zone-init"]));
+        assert_eq!(
+            resolve_plan_argv(&argv, &none, None).unwrap(),
+            v(&["bwrap", "--", "zone-init"])
+        );
         let both: HashSet<&str> = ["wayland-0", "bus"].into();
-        assert_eq!(resolve_plan_argv(&argv, &both, None).unwrap(),
-                   v(&["bwrap", "--bind", "/z/wl", "/w0", "--bind", "/z/bus", "/b", "--", "zone-init"]));
+        assert_eq!(
+            resolve_plan_argv(&argv, &both, None).unwrap(),
+            v(&[
+                "bwrap",
+                "--bind",
+                "/z/wl",
+                "/w0",
+                "--bind",
+                "/z/bus",
+                "/b",
+                "--",
+                "zone-init"
+            ])
+        );
         let host: HashSet<&str> = ["wayland-host"].into();
-        assert_eq!(resolve_plan_argv(&argv, &host, Some("/run/user/1000/wayland-1")).unwrap(),
-                   v(&["bwrap", "--bind", "/run/user/1000/wayland-1", "/w0", "--", "zone-init"]));
-        assert!(resolve_plan_argv(&argv, &host, None).is_err(), "the host's socket asked for, none given");
+        assert_eq!(
+            resolve_plan_argv(&argv, &host, Some("/run/user/1000/wayland-1")).unwrap(),
+            v(&[
+                "bwrap",
+                "--bind",
+                "/run/user/1000/wayland-1",
+                "/w0",
+                "--",
+                "zone-init"
+            ])
+        );
+        assert!(
+            resolve_plan_argv(&argv, &host, None).is_err(),
+            "the host's socket asked for, none given"
+        );
     }
 
     #[test]
@@ -1075,7 +1363,10 @@ mod tests {
         let d = |x: &str| Some(std::ffi::OsString::from(x));
         let want = Some(t.join("wayland-5").to_string_lossy().into_owned());
         assert_eq!(host_wayland_socket_for(d("wayland-5"), &t), want);
-        assert_eq!(host_wayland_socket_for(d(&t.join("wayland-5").to_string_lossy()), &t), want); // a path too
+        assert_eq!(
+            host_wayland_socket_for(d(&t.join("wayland-5").to_string_lossy()), &t),
+            want
+        ); // a path too
         assert_eq!(host_wayland_socket_for(d("wayland-404"), &t), None);
         assert_eq!(host_wayland_socket_for(d("plain"), &t), None); // not a socket
         assert_eq!(host_wayland_socket_for(None, &t), None);
@@ -1099,7 +1390,9 @@ mod tests {
             for r in replies {
                 let (mut c, _) = l.accept().unwrap();
                 let mut line = String::new();
-                BufReader::new(c.try_clone().unwrap()).read_line(&mut line).unwrap();
+                BufReader::new(c.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
                 assert!(line.contains("\"ps\""), "{line}");
                 if !r.is_empty() {
                     c.write_all(format!("{r}\n").as_bytes()).unwrap();
@@ -1108,15 +1401,25 @@ mod tests {
         });
         assert_eq!(apps_running(&t), Some(false));
         assert_eq!(apps_running(&t), Some(true));
-        assert_eq!(apps_running(&t), None, "end of file without a reply: not idle");
+        assert_eq!(
+            apps_running(&t),
+            None,
+            "end of file without a reply: not idle"
+        );
         server.join().unwrap();
         let _ = std::fs::remove_dir_all(&t);
     }
 
     #[test]
     fn links() {
-        for (url, ok) in [("https://example.com/a", true), ("http://x", true), ("file:///etc/passwd", false),
-                          ("https://x\nrm", false), ("https://x\0", false), ("javascript:alert(1)", false)] {
+        for (url, ok) in [
+            ("https://example.com/a", true),
+            ("http://x", true),
+            ("file:///etc/passwd", false),
+            ("https://x\nrm", false),
+            ("https://x\0", false),
+            ("javascript:alert(1)", false),
+        ] {
             assert_eq!(link_ok(url), ok, "{url}");
         }
         assert!(!link_ok(&format!("https://{}", "a".repeat(8000))));
@@ -1126,7 +1429,10 @@ mod tests {
     fn returncodes() {
         assert_eq!(returncode(ExitStatus::from_raw(0)), 0);
         assert_eq!(returncode(ExitStatus::from_raw(3 << 8)), 3);
-        assert_eq!(returncode(ExitStatus::from_raw(libc::SIGTERM)), -libc::SIGTERM);
+        assert_eq!(
+            returncode(ExitStatus::from_raw(libc::SIGTERM)),
+            -libc::SIGTERM
+        );
         // a zone killed by SIGTERM: Python's sys.exit(-15) is status 241, as here
         assert_eq!(-libc::SIGTERM as u8, 241);
     }
@@ -1137,15 +1443,32 @@ mod tests {
         let o = |a: &[&str]| a.iter().map(std::ffi::OsString::from).collect::<Vec<_>>();
         assert!(parse_args(&o(&["--plan", "/p", "--lock-fd", "4"])).is_ok());
         assert!(parse_args(&o(&["--zone", "z", "--lock-fd", "4"])).is_ok());
-        assert!(parse_args(&o(&["--zone", "z", "--plan", "/p", "--lock-fd", "4"])).is_err(), "both sources");
-        assert!(parse_args(&o(&["--zone", "z", "--python", "/py", "--lock-fd", "4"])).is_err(), "no Python any more");
-        assert_eq!(parse_args(&o(&["--plan", "/p", "--lock-fd", "4", "--notify-fd", "6"])).unwrap().2, Some(6));
+        assert!(
+            parse_args(&o(&["--zone", "z", "--plan", "/p", "--lock-fd", "4"])).is_err(),
+            "both sources"
+        );
+        assert!(
+            parse_args(&o(&["--zone", "z", "--python", "/py", "--lock-fd", "4"])).is_err(),
+            "no Python any more"
+        );
+        assert_eq!(
+            parse_args(&o(&["--plan", "/p", "--lock-fd", "4", "--notify-fd", "6"]))
+                .unwrap()
+                .2,
+            Some(6)
+        );
         assert!(parse_args(&o(&["--plan", "/p"])).is_err(), "no lock");
         assert!(parse_args(&o(&["--plan", "/p", "--lock-fd", "x"])).is_err());
         assert!(parse_args(&o(&["--other", "1"])).is_err());
         // a plan path that is not UTF-8 stays byte for byte
         let raw = std::ffi::OsString::from_vec(b"/run/caf\xe9/plan.json".to_vec());
-        let got = parse_args(&[std::ffi::OsString::from("--plan"), raw.clone(), "--lock-fd".into(), "4".into()]).unwrap();
+        let got = parse_args(&[
+            std::ffi::OsString::from("--plan"),
+            raw.clone(),
+            "--lock-fd".into(),
+            "4".into(),
+        ])
+        .unwrap();
         match got.0 {
             Source::File(p) => assert_eq!(p.as_os_str(), raw.as_os_str()),
             Source::Zone { .. } => panic!("not a plan file"),

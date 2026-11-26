@@ -40,12 +40,17 @@ impl Box_ {
     /// appzones-helper ARGS (not its cli) in the box's environment.
     fn raw(&self, args: &[&str]) -> Command {
         let mut c = Command::new(HELPER);
-        c.args(args).env_clear().stdin(Stdio::null())
-            .env("HOME", self.t.join("home")).env("XDG_RUNTIME_DIR", self.t.join("rt"))
-            .env("PATH", self.t.join("bin")).env("USER", "alice")
+        c.args(args)
+            .env_clear()
+            .stdin(Stdio::null())
+            .env("HOME", self.t.join("home"))
+            .env("XDG_RUNTIME_DIR", self.t.join("rt"))
+            .env("PATH", self.t.join("bin"))
+            .env("USER", "alice")
             .env("APPZONES_CONFIG", self.t.join("zones.toml"))
             .env("APPZONES_DENIED_PATHS", self.t.join("denied-paths"))
-            .env("APPZONES_DBUS_SERVICE_DIRS", "").env("APPZONES_SUPERVISOR", "spawn");
+            .env("APPZONES_DBUS_SERVICE_DIRS", "")
+            .env("APPZONES_SUPERVISOR", "spawn");
         c
     }
 
@@ -72,26 +77,51 @@ impl Drop for Box_ {
 }
 
 fn out(o: Output) -> (i32, String, String) {
-    (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned(),
-     String::from_utf8_lossy(&o.stderr).into_owned())
+    (
+        o.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&o.stdout).into_owned(),
+        String::from_utf8_lossy(&o.stderr).into_owned(),
+    )
 }
 
 #[test]
 fn unknown_command_suggests_the_nearest() {
     let b = Box_::new("unknown", Some(TWO));
-    assert_eq!(b.run(&["lsit"]), (2, String::new(),
-               "appzones: unknown command 'lsit' (did you mean 'list'?); see appzones --help\n".into()));
-    assert_eq!(b.run(&["zzzzzz"]), (2, String::new(), "appzones: unknown command 'zzzzzz'; see appzones --help\n".into()));
+    assert_eq!(
+        b.run(&["lsit"]),
+        (
+            2,
+            String::new(),
+            "appzones: unknown command 'lsit' (did you mean 'list'?); see appzones --help\n".into()
+        )
+    );
+    assert_eq!(
+        b.run(&["zzzzzz"]),
+        (
+            2,
+            String::new(),
+            "appzones: unknown command 'zzzzzz'; see appzones --help\n".into()
+        )
+    );
     let (rc, _, err) = b.run(&["netsetup"]);
     assert_eq!(rc, 2);
-    assert!(!err.contains("_netsetup"), "an internal command suggested: {err}");
+    assert!(
+        !err.contains("_netsetup"),
+        "an internal command suggested: {err}"
+    );
 }
 
 #[test]
 fn ps_on_a_stopped_zone_is_one_line() {
     let b = Box_::new("ps", Some(TWO));
-    assert_eq!(b.run(&["ps", "nosuchzone"]),
-               (1, String::new(), "appzones: zone nosuchzone is not running (start it: appzones up nosuchzone)\n".into()));
+    assert_eq!(
+        b.run(&["ps", "nosuchzone"]),
+        (
+            1,
+            String::new(),
+            "appzones: zone nosuchzone is not running (start it: appzones up nosuchzone)\n".into()
+        )
+    );
 }
 
 #[test]
@@ -100,7 +130,13 @@ fn version_and_help() {
     for flag in ["--version", "-V"] {
         let (rc, so, _) = b.run(&[flag]);
         assert_eq!(rc, 0);
-        assert!(so.starts_with(&format!("appzones {} (config release ", env!("CARGO_PKG_VERSION"))), "{so}");
+        assert!(
+            so.starts_with(&format!(
+                "appzones {} (config release ",
+                env!("CARGO_PKG_VERSION")
+            )),
+            "{so}"
+        );
     }
     let (rc, so, _) = b.run(&[]);
     assert_eq!(rc, 2);
@@ -116,9 +152,16 @@ fn serve_arguments() {
     let (rc, _, err) = b.run(&["serve", "aa", "--notify-fd", "9", "--lock-fd", "9"]);
     assert_eq!(rc, 1);
     assert!(err.contains("must be different"), "{err}");
-    for bad in [&["serve"][..], &["serve", "aa", "--notify-fd"], &["serve", "aa", "--notify-fd", "x"],
-                &["serve", "aa", "--notify-fd=\u{b2}"], &["serve", "aa", "--notify-fd", "99999999999999999999"],
-                &["serve", "aa", "--other"], &["serve", "aa", "--notify-fd", "1"], &["serve", "../x"]] {
+    for bad in [
+        &["serve"][..],
+        &["serve", "aa", "--notify-fd"],
+        &["serve", "aa", "--notify-fd", "x"],
+        &["serve", "aa", "--notify-fd=\u{b2}"],
+        &["serve", "aa", "--notify-fd", "99999999999999999999"],
+        &["serve", "aa", "--other"],
+        &["serve", "aa", "--notify-fd", "1"],
+        &["serve", "../x"],
+    ] {
         let (rc, _, err) = b.run(bad);
         assert_ne!(rc, 0, "{bad:?}");
         assert!(err.starts_with("appzones: "), "{bad:?}: {err}");
@@ -133,9 +176,23 @@ fn serve_arguments() {
 /// PATH locked (flock) here, as a server holds it, until the file is dropped: a lock is the
 /// open file's, so the command under test, which opens it again, finds it taken.
 fn hold_lock(path: &Path) -> fs::File {
-    let f = fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path).unwrap();
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .unwrap();
     // Safety: flock on our own file.
-    assert_eq!(unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&f), libc::LOCK_EX | libc::LOCK_NB) }, 0);
+    assert_eq!(
+        unsafe {
+            libc::flock(
+                std::os::fd::AsRawFd::as_raw_fd(&f),
+                libc::LOCK_EX | libc::LOCK_NB,
+            )
+        },
+        0
+    );
     f
 }
 
@@ -171,7 +228,9 @@ fn one_server_per_zone() {
         use std::io::{BufRead, Write};
         let (mut c, _) = l.accept().unwrap();
         let mut line = String::new();
-        std::io::BufReader::new(c.try_clone().unwrap()).read_line(&mut line).unwrap();
+        std::io::BufReader::new(c.try_clone().unwrap())
+            .read_line(&mut line)
+            .unwrap();
         c.write_all(b"{\"ok\": true}\n").unwrap();
     });
     let (rc, _, err) = b.run(&["serve", "aa"]);
@@ -181,14 +240,26 @@ fn one_server_per_zone() {
     // a lock the server makes itself: 0600 (this one fails later, with no `ip` on PATH)
     let (rc, _, err) = b.run(&["serve", "cc"]);
     assert_eq!(rc, 1, "{err}");
-    assert_eq!(fs::metadata(rt.join("cc.lock")).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(
+        fs::metadata(rt.join("cc.lock"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
 }
 
 #[test]
 #[cfg(target_os = "linux")] // (starts or serves a zone: Linux so far)
 fn supervisor_setting() {
     let b = Box_::new("supervisor", Some(TWO));
-    let (rc, _, err) = b.cmd(&["up", "aa"]).env("APPZONES_SUPERVISOR", "runit").output().map(out).unwrap();
+    let (rc, _, err) = b
+        .cmd(&["up", "aa"])
+        .env("APPZONES_SUPERVISOR", "runit")
+        .output()
+        .map(out)
+        .unwrap();
     assert_eq!(rc, 1);
     assert!(err.contains("use one of auto, systemd, spawn"), "{err}");
 }
@@ -200,17 +271,29 @@ fn a_failed_start_shows_its_log() {
     let b = Box_::new("failed", Some(TWO));
     let (rc, _, err) = b.run(&["up", "aa"]);
     assert_eq!(rc, 1, "{err}");
-    assert!(err.contains("zone aa did not start; the end of its log"), "{err}");
+    assert!(
+        err.contains("zone aa did not start; the end of its log"),
+        "{err}"
+    );
     assert!(err.contains("ip -j addr show"), "{err}");
     let log = b.logs().join("aa.log");
-    assert_eq!(fs::metadata(&log).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(
+        fs::metadata(&log).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
     // a log over its size is rotated first, and the tail is this attempt's alone
     let max = 2 * 1024 * 1024;
     fs::write(&log, "old\n".repeat(max / 4 + 1)).unwrap();
     let (rc, _, err) = b.run(&["up", "aa"]);
     assert_eq!(rc, 1);
-    assert!(err.contains("ip -j addr show") && !err.contains("old"), "{err}");
-    assert_eq!(fs::metadata(b.logs().join("aa.log.1")).unwrap().len() as usize, (max / 4 + 1) * 4);
+    assert!(
+        err.contains("ip -j addr show") && !err.contains("old"),
+        "{err}"
+    );
+    assert_eq!(
+        fs::metadata(b.logs().join("aa.log.1")).unwrap().len() as usize,
+        (max / 4 + 1) * 4
+    );
     // a log that cannot be opened: said so
     fs::create_dir_all(b.logs().join("bb.log")).unwrap();
     let (rc, _, err) = b.run(&["up", "bb"]);
@@ -225,7 +308,10 @@ fn each_zone() {
     // one zone that fails does not keep the others from being tried; the result says so
     let (rc, _, err) = b.run(&["up", "--all"]);
     assert_eq!(rc, 1, "{err}");
-    assert!(err.contains("zone aa did not start") && err.contains("zone bb did not start"), "{err}");
+    assert!(
+        err.contains("zone aa did not start") && err.contains("zone bb did not start"),
+        "{err}"
+    );
     // stop --all skips the zones that do not answer
     let (rc, so, err) = b.run(&["stop", "--all"]);
     assert_eq!((rc, so.as_str()), (0, ""), "{err}");
@@ -240,15 +326,29 @@ fn new_zone() {
     let cfg = b.t.join("zones.toml");
     let (rc, so, err) = b.run(&["new", "games"]);
     assert_eq!(rc, 0);
-    assert!(so.contains("[zones.games]") && err.contains("not written"), "{so}{err}");
+    assert!(
+        so.contains("[zones.games]") && err.contains("not written"),
+        "{so}{err}"
+    );
     assert!(!cfg.exists(), "a preview writes nothing");
     assert_eq!(b.run(&["new", "games", "-y"]).0, 0);
     let (rc, so, err) = b.run(&["which", "games"]);
     assert_eq!(rc, 0, "{err}");
-    assert!(so.contains("network") && so.contains("\"internet\""), "{so}");
+    assert!(
+        so.contains("network") && so.contains("\"internet\""),
+        "{so}"
+    );
     // three at once: every zone ends up in the file, each with its own colour
-    let kids: Vec<_> = ["one", "two", "three"].iter().map(|n| b.cmd(&["new", n, "-y"]).stdout(Stdio::null())
-        .stderr(Stdio::piped()).spawn().unwrap()).collect();
+    let kids: Vec<_> = ["one", "two", "three"]
+        .iter()
+        .map(|n| {
+            b.cmd(&["new", n, "-y"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap()
+        })
+        .collect();
     for k in kids {
         let o = k.wait_with_output().unwrap();
         assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
@@ -256,11 +356,21 @@ fn new_zone() {
     let (rc, so, err) = b.run(&["list", "--json"]);
     assert_eq!(rc, 0, "{err}");
     let zones: serde_json::Value = serde_json::from_str(&so).unwrap();
-    let mut names: Vec<&str> = zones.as_array().unwrap().iter().map(|z| z["name"].as_str().unwrap()).collect();
+    let mut names: Vec<&str> = zones
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|z| z["name"].as_str().unwrap())
+        .collect();
     assert_eq!(names[0], "games");
     names.sort();
     assert_eq!(names, ["games", "one", "three", "two"]);
-    let mut colours: Vec<&str> = zones.as_array().unwrap().iter().map(|z| z["colour"].as_str().unwrap()).collect();
+    let mut colours: Vec<&str> = zones
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|z| z["colour"].as_str().unwrap())
+        .collect();
     colours.sort();
     colours.dedup();
     assert_eq!(colours.len(), 4, "{colours:?}");
@@ -272,22 +382,33 @@ fn new_zone() {
 
 #[test]
 fn list_json() {
-    let b = Box_::new("list", Some("version = 1\n[zones.daily]\ncolour = \"#a6e3a1\"\nnetwork = \"internet\"\n\
-                                    [zones.work]\ncolour = \"#f38ba8\"\nnetwork = \"none\"\n"));
+    let b = Box_::new(
+        "list",
+        Some(
+            "version = 1\n[zones.daily]\ncolour = \"#a6e3a1\"\nnetwork = \"internet\"\n\
+                                    [zones.work]\ncolour = \"#f38ba8\"\nnetwork = \"none\"\n",
+        ),
+    );
     let (rc, so, err) = b.run(&["list", "--json"]);
     assert_eq!(rc, 0, "{err}");
     let data: serde_json::Value = serde_json::from_str(&so).unwrap();
-    assert_eq!(data, serde_json::json!([
+    assert_eq!(
+        data,
+        serde_json::json!([
         {"name": "daily", "state": "stopped", "network": "internet", "dns": "host", "devices": ["gpu", "audio"],
          "apps": null, "colour": "#a6e3a1"},
         {"name": "work", "state": "stopped", "network": "none", "dns": "host", "devices": ["gpu", "audio"],
-         "apps": null, "colour": "#f38ba8"}]));
+         "apps": null, "colour": "#f38ba8"}])
+    );
     // Python's JSON: ", " and ": " between items
     assert!(so.starts_with("[{\"name\": \"daily\", \"state\": "), "{so}");
     let (rc, table, _) = b.run(&["list"]);
     assert_eq!(rc, 0);
     let first = table.lines().next().unwrap();
-    assert!(first.starts_with("ZONE") && first.contains("STATE") && first.contains("COLOUR"), "{table}");
+    assert!(
+        first.starts_with("ZONE") && first.contains("STATE") && first.contains("COLOUR"),
+        "{table}"
+    );
     assert!(table.contains("stopped"), "{table}");
 }
 
@@ -296,17 +417,37 @@ fn which_json() {
     let b = Box_::new("which", Some("version = 1\n[defaults]\ndns = \"public\"\n[zones.work]\ncolour = \"#f38ba8\"\nnetwork = \"internet\"\n"));
     let (rc, so, err) = b.run(&["which", "work", "--json"]);
     assert_eq!(rc, 0, "{err}");
-    assert!(so.starts_with("{\"name\": \"work\", \"settings\": {"), "{so}");
+    assert!(
+        so.starts_with("{\"name\": \"work\", \"settings\": {"),
+        "{so}"
+    );
     let data: serde_json::Value = serde_json::from_str(&so).unwrap();
     assert_eq!(data["name"], "work");
-    assert_eq!(data["settings"]["network"], serde_json::json!({"value": "internet", "from": "zone"}));
-    assert_eq!(data["settings"]["dns"], serde_json::json!({"value": "public", "from": "defaults"}));
-    assert_eq!(data["settings"]["userns"], serde_json::json!({"value": true, "from": "builtin"}));
+    assert_eq!(
+        data["settings"]["network"],
+        serde_json::json!({"value": "internet", "from": "zone"})
+    );
+    assert_eq!(
+        data["settings"]["dns"],
+        serde_json::json!({"value": "public", "from": "defaults"})
+    );
+    assert_eq!(
+        data["settings"]["userns"],
+        serde_json::json!({"value": true, "from": "builtin"})
+    );
 
     let (rc2, plain, _) = b.run(&["which", "work"]);
     assert_eq!(rc2, 0);
-    let text_keys: Vec<&str> = plain.lines().map(|l| l.split_whitespace().next().unwrap()).collect();
-    let json_keys: Vec<&str> = data["settings"].as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    let text_keys: Vec<&str> = plain
+        .lines()
+        .map(|l| l.split_whitespace().next().unwrap())
+        .collect();
+    let json_keys: Vec<&str> = data["settings"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|k| k.as_str())
+        .collect();
     assert_eq!(text_keys, json_keys);
 
     let (rc3, so3, _) = b.run(&["which", "--json", "work"]);
@@ -323,20 +464,49 @@ fn what_is_left_from_before_0_6_is_named_never_read() {
     fs::create_dir_all(old_state.join("ta/home")).unwrap();
     fs::create_dir_all(b.t.join("home/.config/zones")).unwrap();
     fs::write(b.t.join("home/.config/zones/zones.toml"), "version = 1\n").unwrap();
-    let (rc, _, err) = b.cmd(&["list"]).env("ZONES_STATE", "/nonexistent").output().map(out).unwrap();
+    let (rc, _, err) = b
+        .cmd(&["list"])
+        .env("ZONES_STATE", "/nonexistent")
+        .output()
+        .map(out)
+        .unwrap();
     assert_eq!(rc, 0, "{err}");
-    assert!(err.contains("$ZONES_STATE is from before appzones 0.6 and is not read: set $APPZONES_STATE instead"), "{err}");
-    assert!(err.contains(&format!("{} (zone homes from before appzones 0.6) is not used: appzones stop --all && mv -T ",
-                                  old_state.display())), "{err}");
+    assert!(
+        err.contains(
+            "$ZONES_STATE is from before appzones 0.6 and is not read: set $APPZONES_STATE instead"
+        ),
+        "{err}"
+    );
+    assert!(
+        err.contains(&format!(
+            "{} (zone homes from before appzones 0.6) is not used: appzones stop --all && mv -T ",
+            old_state.display()
+        )),
+        "{err}"
+    );
     assert!(!err.contains(".config/zones"), "{err}"); // ($APPZONES_CONFIG is set: the old file is not looked at)
     assert!(old_state.join("ta/home").is_dir());
     // at the default config path: the old file is named, never read
-    let (_, _, err) = b.cmd(&["check"]).env_remove("APPZONES_CONFIG").output().map(out).unwrap();
-    assert!(err.contains("/home/.config/zones/zones.toml is from before appzones 0.6 and is not read: mkdir -p ") && err.contains(" && mv -n "), "{err}");
+    let (_, _, err) = b
+        .cmd(&["check"])
+        .env_remove("APPZONES_CONFIG")
+        .output()
+        .map(out)
+        .unwrap();
+    assert!(
+        err.contains(
+            "/home/.config/zones/zones.toml is from before appzones 0.6 and is not read: mkdir -p "
+        ) && err.contains(" && mv -n "),
+        "{err}"
+    );
     // the new folder there too: the old one is to be emptied by hand
     fs::create_dir_all(b.t.join("home/.local/share/appzones")).unwrap();
     let (_, _, err) = b.run(&["list"]);
-    assert!(err.contains("is not used (") && err.contains("move what you still need from it, then remove it"), "{err}");
+    assert!(
+        err.contains("is not used (")
+            && err.contains("move what you still need from it, then remove it"),
+        "{err}"
+    );
     // a typo warns about nothing
     let (_, _, err) = b.run(&["lsit"]);
     assert!(!err.contains("before appzones 0.6"), "{err}");
@@ -350,18 +520,38 @@ fn logs_follow_who_runs_the_zone() {
     fs::write(b.logs().join("aa.log"), "a line\n").unwrap();
     b.tool("tail", "echo tail \"$@\"");
     b.tool("journalctl", "echo journalctl \"$@\"");
-    for (systemctl, supervisor, want) in [("echo inactive", "spawn", "tail"), ("echo inactive", "systemd", "journalctl"),
-                                          ("echo active", "spawn", "journalctl"), ("exit 1", "spawn", "tail")] {
+    for (systemctl, supervisor, want) in [
+        ("echo inactive", "spawn", "tail"),
+        ("echo inactive", "systemd", "journalctl"),
+        ("echo active", "spawn", "journalctl"),
+        ("exit 1", "spawn", "tail"),
+    ] {
         b.tool("systemctl", systemctl);
-        let (rc, so, err) = b.cmd(&["logs", "aa"]).env("APPZONES_SUPERVISOR", supervisor).output().map(out).unwrap();
+        let (rc, so, err) = b
+            .cmd(&["logs", "aa"])
+            .env("APPZONES_SUPERVISOR", supervisor)
+            .output()
+            .map(out)
+            .unwrap();
         assert_eq!(rc, 0, "{err}");
         assert!(so.starts_with(want), "{systemctl} {supervisor}: {so}");
     }
     // the zone's own supervisor beats $APPZONES_SUPERVISOR (unless it is auto)
-    fs::write(b.t.join("zones.toml"), format!("{}supervisor = \"spawn\"\n", TWO.replace("version = 1\n", "version = 1\nrequires = 6\n")))
-        .unwrap();
+    fs::write(
+        b.t.join("zones.toml"),
+        format!(
+            "{}supervisor = \"spawn\"\n",
+            TWO.replace("version = 1\n", "version = 1\nrequires = 6\n")
+        ),
+    )
+    .unwrap();
     b.tool("systemctl", "echo inactive");
-    let (rc, so, err) = b.cmd(&["logs", "bb"]).env("APPZONES_SUPERVISOR", "systemd").output().map(out).unwrap();
+    let (rc, so, err) = b
+        .cmd(&["logs", "bb"])
+        .env("APPZONES_SUPERVISOR", "systemd")
+        .output()
+        .map(out)
+        .unwrap();
     assert_eq!(rc, 0, "{err}");
     assert!(so.starts_with("tail"), "{so}");
 }
@@ -369,7 +559,11 @@ fn logs_follow_who_runs_the_zone() {
 /// (text, class) of `appzones active` and `appzones active --json`, in B's environment plus ENV.
 fn active(b: &Box_, env: &[(&str, &str)]) -> (String, (String, String)) {
     let run = |json: bool| {
-        let mut c = b.cmd(if json { &["active", "--json"][..] } else { &["active"][..] });
+        let mut c = b.cmd(if json {
+            &["active", "--json"][..]
+        } else {
+            &["active"][..]
+        });
         for (k, v) in env {
             c.env(k, v);
         }
@@ -379,18 +573,32 @@ fn active(b: &Box_, env: &[(&str, &str)]) -> (String, (String, String)) {
     };
     let text = run(false).trim().to_string();
     let j: serde_json::Value = serde_json::from_str(&run(true)).unwrap();
-    (text, (j["text"].as_str().unwrap().into(), j["class"].as_str().unwrap().into()))
+    (
+        text,
+        (
+            j["text"].as_str().unwrap().into(),
+            j["class"].as_str().unwrap().into(),
+        ),
+    )
 }
 
 #[test]
 fn active_on_hyprland() {
     // the zone from the window's tag; zone:? is a sandbox it cannot name
     let b = Box_::new("active-hypr", Some(TWO));
-    for (tags, text, want) in [("[\"zone:ta\"]", "[ta]", ("[ta]", "zone-ta")), ("[\"zone:?\"]", "[?]", ("[?]", "zone-unidentified")),
-                               ("[]", "", ("", "host")), ("[\"other\", \"zone:tb*\"]", "[tb]", ("[tb]", "zone-tb"))] {
+    for (tags, text, want) in [
+        ("[\"zone:ta\"]", "[ta]", ("[ta]", "zone-ta")),
+        ("[\"zone:?\"]", "[?]", ("[?]", "zone-unidentified")),
+        ("[]", "", ("", "host")),
+        ("[\"other\", \"zone:tb*\"]", "[tb]", ("[tb]", "zone-tb")),
+    ] {
         b.tool("hyprctl", &format!("echo '{{\"tags\": {tags}}}'"));
         let got = active(&b, &[("HYPRLAND_INSTANCE_SIGNATURE", "x")]);
-        assert_eq!(got, (text.to_string(), (want.0.to_string(), want.1.to_string())), "{tags}");
+        assert_eq!(
+            got,
+            (text.to_string(), (want.0.to_string(), want.1.to_string())),
+            "{tags}"
+        );
     }
 }
 
@@ -426,15 +634,29 @@ fn active_on_sway() {
     });
     let sock = path.to_str().unwrap().to_string();
     let q = ("[?]", ("[?]", "zone-unidentified"));
-    for (m, (text, want)) in [(&["zone:work:5"][..], ("[work]", ("[work]", "zone-work"))), (&["zone:?:5"][..], q),
-                              (&[][..], ("", ("", "host"))), (&["mine"][..], ("", ("", "host"))),
-                              (&["zone:Bad_Name:5"][..], q), (&["zone:work"][..], q), (&["zone:work:x"][..], q),
-                              (&["zone:work:5:6"][..], q), (&["zone:work:7"][..], q), // another window's
-                              (&["zone:work:5", "zone:home:5"][..], q),
-                              (&["zone:work:5", "mine"][..], ("[work]", ("[work]", "zone-work")))] {
+    for (m, (text, want)) in [
+        (&["zone:work:5"][..], ("[work]", ("[work]", "zone-work"))),
+        (&["zone:?:5"][..], q),
+        (&[][..], ("", ("", "host"))),
+        (&["mine"][..], ("", ("", "host"))),
+        (&["zone:Bad_Name:5"][..], q),
+        (&["zone:work"][..], q),
+        (&["zone:work:x"][..], q),
+        (&["zone:work:5:6"][..], q),
+        (&["zone:work:7"][..], q), // another window's
+        (&["zone:work:5", "zone:home:5"][..], q),
+        (
+            &["zone:work:5", "mine"][..],
+            ("[work]", ("[work]", "zone-work")),
+        ),
+    ] {
         *marks.lock().unwrap() = m.iter().map(|s| s.to_string()).collect();
         let got = active(&b, &[("SWAYSOCK", &sock)]);
-        assert_eq!(got, (text.to_string(), (want.0.to_string(), want.1.to_string())), "{m:?}");
+        assert_eq!(
+            got,
+            (text.to_string(), (want.0.to_string(), want.1.to_string())),
+            "{m:?}"
+        );
     }
     // sway gone: no label, no failure
     let gone = b.t.join("gone.sock");
@@ -459,7 +681,12 @@ fn plan_never_for_a_running_zone() {
 fn empty_denied_paths_override() {
     // APPZONES_DENIED_PATHS="" is no override (the host's file, as Python reads it), never an error
     let b = Box_::new("denied-empty", Some(TWO));
-    let (rc, so, err) = b.cmd(&["check"]).env("APPZONES_DENIED_PATHS", "").output().map(out).unwrap();
+    let (rc, so, err) = b
+        .cmd(&["check"])
+        .env("APPZONES_DENIED_PATHS", "")
+        .output()
+        .map(out)
+        .unwrap();
     assert_eq!(rc, 0, "{so}{err}");
 }
 
@@ -467,12 +694,24 @@ fn empty_denied_paths_override() {
 #[cfg(target_os = "linux")]
 fn nix_ld_refuses_its_zone_alone() {
     // a host without nix-ld: check names the zone, the rest of the file still works
-    let b = Box_::new("nix-ld", Some(&format!("{}[zones.dd]\ncolour = \"#444444\"\nnetwork = \"none\"\nnix_ld = true\n",
-        TWO.replace("version = 1\n", "version = 1\nrequires = 3\n"))));
-    let env = [("APPZONES_LAYOUT", "nixos"), ("APPZONES_NIX_LD_SHIM", "/nonexistent/ld-linux-x86-64.so.2")];
+    let b = Box_::new(
+        "nix-ld",
+        Some(&format!(
+            "{}[zones.dd]\ncolour = \"#444444\"\nnetwork = \"none\"\nnix_ld = true\n",
+            TWO.replace("version = 1\n", "version = 1\nrequires = 3\n")
+        )),
+    );
+    let env = [
+        ("APPZONES_LAYOUT", "nixos"),
+        ("APPZONES_NIX_LD_SHIM", "/nonexistent/ld-linux-x86-64.so.2"),
+    ];
     let (rc, so, err) = b.cmd(&["check"]).envs(env).output().map(out).unwrap();
     assert_eq!(rc, 1);
-    assert!(err.contains("error: [zones.dd] nix_ld = true, but this host has no nix-ld") && !so.contains("ok:"), "{so}{err}");
+    assert!(
+        err.contains("error: [zones.dd] nix_ld = true, but this host has no nix-ld")
+            && !so.contains("ok:"),
+        "{so}{err}"
+    );
     let (rc, so, err) = b.cmd(&["list"]).envs(env).output().map(out).unwrap();
     assert_eq!(rc, 0, "{err}");
     assert!(so.contains("aa ") && so.contains("dd "), "{so}");
@@ -483,7 +722,10 @@ fn nix_ld_refuses_its_zone_alone() {
 fn what_macos_has_not() {
     // what macOS cannot do (design/macos.md) says so; the rest works
     let b = Box_::new("macos-not", Some(TWO));
-    for (cmd, says) in [(&["mount", "aa", "/tmp"][..], "not at run time on macOS"), (&["apps"], "apps: not on macOS yet")] {
+    for (cmd, says) in [
+        (&["mount", "aa", "/tmp"][..], "not at run time on macOS"),
+        (&["apps"], "apps: not on macOS yet"),
+    ] {
         let (rc, _, err) = b.run(cmd);
         assert_eq!(rc, 1, "{cmd:?}");
         assert!(err.contains(says), "{cmd:?}: {err}");
@@ -492,20 +734,36 @@ fn what_macos_has_not() {
     assert_eq!(rc, 0, "{so}{err}");
     assert!(so.starts_with("ok: "), "{so}");
     // a zone that asks for what macOS cannot give: an error for it in check, and it does not start
-    fs::write(b.t.join("zones.toml"), format!("{TWO}[zones.cc]\ncolour = \"#333333\"\ndns = \"public\"\n")).unwrap();
+    fs::write(
+        b.t.join("zones.toml"),
+        format!("{TWO}[zones.cc]\ncolour = \"#333333\"\ndns = \"public\"\n"),
+    )
+    .unwrap();
     let (rc, so, err) = b.run(&["check"]);
     assert_eq!(rc, 1);
-    assert!(err.contains("zone cc: dns = \"public\": not on macOS yet"), "{err}");
+    assert!(
+        err.contains("zone cc: dns = \"public\": not on macOS yet"),
+        "{err}"
+    );
     assert!(!so.contains("ok:"), "no ok before a refusal: {so}");
     let (rc, _, err) = b.run(&["up", "cc"]);
     assert_eq!(rc, 1);
     assert!(err.contains("cannot run on macOS as configured"), "{err}");
     // nix_ld: refused for its zone alone (never the whole file: other zones still start)
-    fs::write(b.t.join("zones.toml"), format!("{}[zones.dd]\ncolour = \"#444444\"\nnetwork = \"none\"\nnix_ld = true\n",
-        TWO.replace("version = 1\n", "version = 1\nrequires = 3\n"))).unwrap();
+    fs::write(
+        b.t.join("zones.toml"),
+        format!(
+            "{}[zones.dd]\ncolour = \"#444444\"\nnetwork = \"none\"\nnix_ld = true\n",
+            TWO.replace("version = 1\n", "version = 1\nrequires = 3\n")
+        ),
+    )
+    .unwrap();
     let (rc, _, err) = b.run(&["check"]);
     assert_eq!(rc, 1);
-    assert!(err.contains("zone dd: nix_ld = true: not on macOS") && !err.contains("[zones.dd] nix_ld"), "{err}");
+    assert!(
+        err.contains("zone dd: nix_ld = true: not on macOS") && !err.contains("[zones.dd] nix_ld"),
+        "{err}"
+    );
 }
 
 /// ARGS run in CWD on a terminal of their own, whose keyboard types ANSWER: (status, what
@@ -515,10 +773,17 @@ fn at_terminal(b: &Box_, cwd: &Path, args: &[&str], answer: Option<&str>) -> (i3
     use std::os::fd::FromRawFd;
     use std::os::unix::process::CommandExt;
     let mut c = b.cmd(args);
-    c.current_dir(cwd).stdout(Stdio::piped()).stderr(Stdio::piped());
+    c.current_dir(cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let Some(answer) = answer else {
         // Safety: setsid in the child: no controlling terminal, so /dev/tty cannot open.
-        unsafe { c.pre_exec(|| { libc::setsid(); Ok(()) }) };
+        unsafe {
+            c.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            })
+        };
         let (rc, so, se) = out(c.output().unwrap());
         return (rc, se, so);
     };
@@ -526,7 +791,16 @@ fn at_terminal(b: &Box_, cwd: &Path, args: &[&str], answer: Option<&str>) -> (i3
     // Safety: openpty into two locals; the master is close-on-exec, the slave is the child's
     // controlling terminal (setsid, TIOCSCTTY) and closed here after the spawn.
     unsafe {
-        assert_eq!(libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()), 0);
+        assert_eq!(
+            libc::openpty(
+                &mut m,
+                &mut s,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut()
+            ),
+            0
+        );
         libc::fcntl(m, libc::F_SETFD, libc::FD_CLOEXEC);
         c.pre_exec(move || {
             libc::setsid();
@@ -582,19 +856,40 @@ fn project_zones_are_trusted_at_the_terminal() {
     assert!(!store.exists() || fs::read_dir(&store).unwrap().next().is_none());
     let (rc, shown, so) = at_terminal(&b, &app.join("deep"), &["trust"], Some("y\n"));
     assert_eq!(rc, 0, "{shown}{so}");
-    assert!(shown.contains("It asks for:") && shown.contains("! @agent (the default): the internet, only github.com")
-            && shown.contains("! @dev: the project folder") && shown.contains("READ-WRITE")
-            && shown.contains("@agent (the default): the project folder") && shown.contains(".git/hooks"), "{shown}");
-    assert!(so.contains("trusted:") && so.contains("@agent, @dev"), "{so}");
+    assert!(
+        shown.contains("It asks for:")
+            && shown.contains("! @agent (the default): the internet, only github.com")
+            && shown.contains("! @dev: the project folder")
+            && shown.contains("READ-WRITE")
+            && shown.contains("@agent (the default): the project folder")
+            && shown.contains(".git/hooks"),
+        "{shown}"
+    );
+    assert!(
+        so.contains("trusted:") && so.contains("@agent, @dev"),
+        "{so}"
+    );
     // the copy is in the store (0700), and the zones are the host's now, shown by project
     let rec: Vec<_> = fs::read_dir(&store).unwrap().flatten().collect();
     assert_eq!(rec.len(), 1);
-    assert_eq!(fs::read_to_string(rec[0].path().join("appzones.toml")).unwrap(), file);
-    assert_eq!(fs::metadata(rec[0].path()).unwrap().permissions().mode() & 0o777, 0o700);
+    assert_eq!(
+        fs::read_to_string(rec[0].path().join("appzones.toml")).unwrap(),
+        file
+    );
+    assert_eq!(
+        fs::metadata(rec[0].path()).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
     let (rc, so, err) = b.run(&["list"]);
-    assert!(rc == 0 && so.contains("app/agent") && so.contains("app/dev"), "{so}{err}");
+    assert!(
+        rc == 0 && so.contains("app/agent") && so.contains("app/dev"),
+        "{so}{err}"
+    );
     let (rc, so, err) = b.run(&["check"]);
-    assert!(rc == 0 && so.contains("; 2 project zones (app/agent, app/dev)"), "{so}{err}");
+    assert!(
+        rc == 0 && so.contains("; 2 project zones (app/agent, app/dev)"),
+        "{so}{err}"
+    );
     // the user's own additions in their zones.toml: binds added, env merged, the rest replaced
     let host = fs::read_to_string(b.t.join("zones.toml")).unwrap();
     fs::create_dir_all(b.t.join("home/data")).unwrap();
@@ -603,43 +898,98 @@ fn project_zones_are_trusted_at_the_terminal() {
                                               host.replace("version = 1\n", "version = 1\nrequires = 9\n"))).unwrap();
     let (rc, _, so) = at_terminal(&b, &app, &["which", "@dev"], None);
     assert_eq!(rc, 0, "{so}");
-    let line = |k: &str| so.lines().find(|l| l.starts_with(&format!("{k} "))).unwrap_or("").to_string();
-    assert!(line("binds").contains("src/app") && line("binds").contains("/data") && line("binds").ends_with("(yours)"), "{so}");
-    assert!(line("env").contains("API") && line("env").ends_with("(yours)"), "{so}");
-    assert!(line("allow").contains("example.com") && line("network").contains("internet"), "{so}");
+    let line = |k: &str| {
+        so.lines()
+            .find(|l| l.starts_with(&format!("{k} ")))
+            .unwrap_or("")
+            .to_string()
+    };
+    assert!(
+        line("binds").contains("src/app")
+            && line("binds").contains("/data")
+            && line("binds").ends_with("(yours)"),
+        "{so}"
+    );
+    assert!(
+        line("env").contains("API") && line("env").ends_with("(yours)"),
+        "{so}"
+    );
+    assert!(
+        line("allow").contains("example.com") && line("network").contains("internet"),
+        "{so}"
+    );
     assert!(line("devices").ends_with("(builtin)"), "{so}");
     let (rc, _, so) = at_terminal(&b, &app, &["which", "@agent"], None);
-    assert!(rc == 0 && !so.contains("(yours)"), "only @dev has additions: {so}");
+    assert!(
+        rc == 0 && !so.contains("(yours)"),
+        "only @dev has additions: {so}"
+    );
     // an addition that does not fit the rest of the zone (agent has an allow list): not used, said why
-    fs::write(b.t.join("zones.toml"), format!("{}[projects.\"~/src/app\".zones.agent]\nnetwork = \"none\"\n",
-                                              host.replace("version = 1\n", "version = 1\nrequires = 9\n"))).unwrap();
+    fs::write(
+        b.t.join("zones.toml"),
+        format!(
+            "{}[projects.\"~/src/app\".zones.agent]\nnetwork = \"none\"\n",
+            host.replace("version = 1\n", "version = 1\nrequires = 9\n")
+        ),
+    )
+    .unwrap();
     let (rc, _, err) = b.run(&["check"]);
     assert!(rc == 0 && err.contains("zone agent: allow needs network = \"internet\" (with your additions in zones.toml); not used"),
             "{err}");
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@agent", "--", "true"], None);
     assert!(rc == 1 && se.contains("cannot be used now"), "{se}");
     // the cross-key checks see your additions too: camera without the device
-    fs::write(b.t.join("zones.toml"), format!("{}[projects.\"~/src/app\".zones.dev]\ncamera = \"device\"\n",
-                                              host.replace("version = 1\n", "version = 1\nrequires = 9\n"))).unwrap();
+    fs::write(
+        b.t.join("zones.toml"),
+        format!(
+            "{}[projects.\"~/src/app\".zones.dev]\ncamera = \"device\"\n",
+            host.replace("version = 1\n", "version = 1\nrequires = 9\n")
+        ),
+    )
+    .unwrap();
     let (_, _, err) = b.run(&["check"]);
-    assert!(err.contains("zone dev: camera is set but \"camera\" is not in devices"), "{err}");
+    assert!(
+        err.contains("zone dev: camera is set but \"camera\" is not in devices"),
+        "{err}"
+    );
     fs::write(b.t.join("zones.toml"), host).unwrap();
     // trusted again unchanged: nothing asked
     let (rc, _, so) = at_terminal(&b, &app, &["trust"], None);
     assert!(rc == 0 && so.contains("trusted already, unchanged"), "{so}");
     // changed: @ refuses to start it; trust shows what changed
-    fs::write(app.join("appzones.toml"), file.replace("github.com", "evil.example")).unwrap();
+    fs::write(
+        app.join("appzones.toml"),
+        file.replace("github.com", "evil.example"),
+    )
+    .unwrap();
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
-    assert!(rc == 1 && se.contains("changed since you trusted it"), "{se}");
+    assert!(
+        rc == 1 && se.contains("changed since you trusted it"),
+        "{se}"
+    );
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@nope", "--", "true"], None);
-    assert!(rc == 1 && se.contains("changed since you trusted it"), "{se}");
+    assert!(
+        rc == 1 && se.contains("changed since you trusted it"),
+        "{se}"
+    );
     let (_, shown, _) = at_terminal(&b, &app, &["trust"], Some("n\n"));
-    assert!(shown.contains("Changed since you trusted it:") && shown.contains("+ allow = [\"evil.example\"]")
-            && shown.contains("- allow = [\"github.com\"]"), "{shown}");
+    assert!(
+        shown.contains("Changed since you trusted it:")
+            && shown.contains("+ allow = [\"evil.example\"]")
+            && shown.contains("- allow = [\"github.com\"]"),
+        "{shown}"
+    );
     // a key a project file may never have: refused before anything is asked
-    fs::write(app.join("appzones.toml"), format!("{file}devices = [\"gpu\"]\n")).unwrap();
+    fs::write(
+        app.join("appzones.toml"),
+        format!("{file}devices = [\"gpu\"]\n"),
+    )
+    .unwrap();
     let (rc, se, _) = at_terminal(&b, &app, &["trust"], None);
-    assert!(rc == 1 && se.contains("devices: never in a project file"), "{se}");
+    assert!(
+        rc == 1 && se.contains("devices: never in a project file"),
+        "{se}"
+    );
     // the file gone: managing commands still find the trusted project (starting needs the file)
     fs::remove_file(app.join("appzones.toml")).unwrap();
     let (rc, se, _) = at_terminal(&b, &app.join("deep"), &["ps", "@"], None);
@@ -647,32 +997,62 @@ fn project_zones_are_trusted_at_the_terminal() {
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
     assert!(rc == 1 && se.contains("no appzones.toml"), "{se}");
     // a zone that binds the project's file cannot be built without it: its log is still there
-    fs::write(app.join("appzones.toml"), "version = 1\nrequires = 8\n[zones.agent]\nbinds = [{ path = \"appzones.toml\" }]\n").unwrap();
+    fs::write(
+        app.join("appzones.toml"),
+        "version = 1\nrequires = 8\n[zones.agent]\nbinds = [{ path = \"appzones.toml\" }]\n",
+    )
+    .unwrap();
     let (rc, shown, so) = at_terminal(&b, &app, &["trust"], Some("y\n"));
     assert_eq!(rc, 0, "{shown}{so}");
     fs::remove_file(app.join("appzones.toml")).unwrap();
     b.tool("tail", "echo tail \"$@\"");
     let (rc, _, so) = at_terminal(&b, &app, &["logs", "@"], None);
-    assert!(rc == 0 && so.starts_with("tail -n 200 ") && so.contains("/p"), "{so}");
+    assert!(
+        rc == 0 && so.starts_with("tail -n 200 ") && so.contains("/p"),
+        "{so}"
+    );
     // untrust: forgotten, its zones stopped (a systemd unit still starting too), and @ says so again
     fs::write(app.join("appzones.toml"), file).unwrap();
     let (rc, shown, so) = at_terminal(&b, &app, &["trust"], Some("y\n"));
     assert_eq!(rc, 0, "{shown}{so}");
     let calls = b.t.join("systemctl-calls");
-    b.tool("systemctl", &format!("echo \"$*\" >> {}; case \"$*\" in *is-active*) echo activating;; esac", calls.display()));
+    b.tool(
+        "systemctl",
+        &format!(
+            "echo \"$*\" >> {}; case \"$*\" in *is-active*) echo activating;; esac",
+            calls.display()
+        ),
+    );
     let (rc, _, so) = at_terminal(&b, &app, &["untrust"], None);
     assert!(rc == 0 && so.contains("not trusted any more"), "{so}");
     let called = fs::read_to_string(&calls).unwrap_or_default();
-    assert_eq!(called.lines().filter(|l| l.starts_with("--user stop appzones@p")).count(), 2, "{called}");
+    assert_eq!(
+        called
+            .lines()
+            .filter(|l| l.starts_with("--user stop appzones@p"))
+            .count(),
+        2,
+        "{called}"
+    );
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
     assert!(rc == 1 && se.contains("is not trusted"), "{se}");
     // the host can turn project zones off
-    fs::write(b.t.join("zones.toml"), format!("{}[projects]\nenabled = false\n", TWO.replace("version = 1\n", "version = 1\nrequires = 8\n")))
-        .unwrap();
+    fs::write(
+        b.t.join("zones.toml"),
+        format!(
+            "{}[projects]\nenabled = false\n",
+            TWO.replace("version = 1\n", "version = 1\nrequires = 8\n")
+        ),
+    )
+    .unwrap();
     let (rc, se, _) = at_terminal(&b, &app, &["run", "@", "--", "true"], None);
     assert!(rc == 1 && se.contains("project zones are off"), "{se}");
     // a host zone may not take a project zone's name
-    fs::write(b.t.join("zones.toml"), "version = 1\n[zones.p0123456789]\ncolour = \"#111111\"\n").unwrap();
+    fs::write(
+        b.t.join("zones.toml"),
+        "version = 1\n[zones.p0123456789]\ncolour = \"#111111\"\n",
+    )
+    .unwrap();
     let (rc, _, err) = b.run(&["check"]);
     assert!(rc == 1 && err.contains("name project zones"), "{err}");
 }
@@ -697,5 +1077,8 @@ fn the_example_project_file_is_valid() {
     let (rc, shown, so) = at_terminal(&b, &app, &["trust"], Some("y\n"));
     assert_eq!(rc, 0, "{shown}{so}");
     let (rc, so, err) = b.run(&["check"]);
-    assert!(rc == 0 && so.contains("; 2 project zones (app/agent, app/dev)") && err.is_empty(), "{so}{err}");
+    assert!(
+        rc == 0 && so.contains("; 2 project zones (app/agent, app/dev)") && err.is_empty(),
+        "{so}{err}"
+    );
 }

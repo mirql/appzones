@@ -10,7 +10,9 @@
 //! program that ignores the proxy variables gets no network at all: it fails closed.
 
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{
+    IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs,
+};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,18 +25,36 @@ const HEAD_MAX: usize = 16 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Fixed ranges a zone never reaches (the nft rules' list), as (network, prefix).
-const REFUSED4: &[([u8; 4], u8)] = &[([0, 0, 0, 0], 8), ([10, 0, 0, 0], 8), ([100, 64, 0, 0], 10), ([127, 0, 0, 0], 8),
-    ([169, 254, 0, 0], 16), ([172, 16, 0, 0], 12), ([192, 0, 0, 0], 24), ([192, 168, 0, 0], 16), ([198, 18, 0, 0], 15),
-    ([224, 0, 0, 0], 4), ([240, 0, 0, 0], 4)];
+const REFUSED4: &[([u8; 4], u8)] = &[
+    ([0, 0, 0, 0], 8),
+    ([10, 0, 0, 0], 8),
+    ([100, 64, 0, 0], 10),
+    ([127, 0, 0, 0], 8),
+    ([169, 254, 0, 0], 16),
+    ([172, 16, 0, 0], 12),
+    ([192, 0, 0, 0], 24),
+    ([192, 168, 0, 0], 16),
+    ([198, 18, 0, 0], 15),
+    ([224, 0, 0, 0], 4),
+    ([240, 0, 0, 0], 4),
+];
 const NAT64: u128 = 0x0064_ff9b_u128 << 96;
 
 fn in4(ip: Ipv4Addr, net: Ipv4Addr, prefix: u8) -> bool {
-    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
     u32::from(ip) & mask == u32::from(net) & mask
 }
 
 fn in6(ip: Ipv6Addr, net: Ipv6Addr, prefix: u8) -> bool {
-    let mask = if prefix == 0 { 0 } else { u128::MAX << (128 - prefix) };
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u128::MAX << (128 - prefix)
+    };
     u128::from(ip) & mask == u128::from(net) & mask
 }
 
@@ -54,15 +74,25 @@ pub fn host_nets() -> Option<Vec<(IpAddr, u8)>> {
             if !a.is_null() {
                 let ip_mask = match (*a).sa_family as libc::c_int {
                     libc::AF_INET => {
-                        let ip = Ipv4Addr::from(u32::from_be((*a.cast::<libc::sockaddr_in>()).sin_addr.s_addr));
-                        let mask = if m.is_null() { u32::MAX }
-                                   else { u32::from_be((*m.cast::<libc::sockaddr_in>()).sin_addr.s_addr) };
+                        let ip = Ipv4Addr::from(u32::from_be(
+                            (*a.cast::<libc::sockaddr_in>()).sin_addr.s_addr,
+                        ));
+                        let mask = if m.is_null() {
+                            u32::MAX
+                        } else {
+                            u32::from_be((*m.cast::<libc::sockaddr_in>()).sin_addr.s_addr)
+                        };
                         Some((IpAddr::V4(ip), mask.count_ones() as u8))
                     }
                     libc::AF_INET6 => {
-                        let ip = Ipv6Addr::from((*a.cast::<libc::sockaddr_in6>()).sin6_addr.s6_addr);
-                        let mask = if m.is_null() { 128 }
-                                   else { u128::from_be_bytes((*m.cast::<libc::sockaddr_in6>()).sin6_addr.s6_addr).count_ones() };
+                        let ip =
+                            Ipv6Addr::from((*a.cast::<libc::sockaddr_in6>()).sin6_addr.s6_addr);
+                        let mask = if m.is_null() {
+                            128
+                        } else {
+                            u128::from_be_bytes((*m.cast::<libc::sockaddr_in6>()).sin6_addr.s6_addr)
+                                .count_ones()
+                        };
                         Some((IpAddr::V6(ip), mask as u8))
                     }
                     _ => None,
@@ -93,7 +123,10 @@ pub fn refused(ip: IpAddr, host: &[(IpAddr, u8)]) -> Option<&'static str> {
             if host.iter().any(|(h, p)| matches!(h, IpAddr::V4(n) if !n.is_loopback() && !n.is_link_local() && in4(a, *n, *p))) {
                 return Some("a network the host is on");
             }
-            REFUSED4.iter().any(|(n, p)| in4(a, Ipv4Addr::from(*n), *p)).then_some("a private or special range")
+            REFUSED4
+                .iter()
+                .any(|(n, p)| in4(a, Ipv4Addr::from(*n), *p))
+                .then_some("a private or special range")
         }
         IpAddr::V6(a) => {
             let v = u128::from(a);
@@ -104,14 +137,16 @@ pub fn refused(ip: IpAddr, host: &[(IpAddr, u8)]) -> Option<&'static str> {
             if host.iter().any(|(h, _)| *h == IpAddr::V6(a)) {
                 return Some("the host");
             }
-            if host.iter().any(|(h, p)| matches!(h, IpAddr::V6(n) if !n.is_loopback() && !n.is_unicast_link_local()
-                                                                   && in6(a, *n, *p))) {
+            if host.iter().any(|(h, p)| {
+                matches!(h, IpAddr::V6(n) if !n.is_loopback() && !n.is_unicast_link_local()
+                                                                   && in6(a, *n, *p))
+            }) {
                 return Some("a network the host is on");
             }
             let special = a.is_unspecified() || a.is_loopback() || a.is_multicast() || a.is_unicast_link_local()
                 || in6(a, Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0), 7)       // unique local
                 || in6(a, Ipv6Addr::new(0x64, 0xff9b, 1, 0, 0, 0, 0, 0), 48)   // local-use NAT64
-                || in6(a, Ipv6Addr::new(0xfec0, 0, 0, 0, 0, 0, 0, 0), 10);    // site-local (old)
+                || in6(a, Ipv6Addr::new(0xfec0, 0, 0, 0, 0, 0, 0, 0), 10); // site-local (old)
             special.then_some("a private or special range")
         }
     }
@@ -128,7 +163,13 @@ pub struct Target {
 fn parse_authority(s: &str, default: Option<u16>) -> Option<Target> {
     let (host, port) = if let Some(rest) = s.strip_prefix('[') {
         let (h, after) = rest.split_once(']')?;
-        (h, after.strip_prefix(':').map(|p| p.parse().ok()).unwrap_or(default)?)
+        (
+            h,
+            after
+                .strip_prefix(':')
+                .map(|p| p.parse().ok())
+                .unwrap_or(default)?,
+        )
     } else {
         match s.rsplit_once(':') {
             Some((h, p)) if !h.contains(':') => (h, p.parse().ok()?),
@@ -136,9 +177,15 @@ fn parse_authority(s: &str, default: Option<u16>) -> Option<Target> {
             _ => return None,
         }
     };
-    let ok = !host.is_empty() && host.len() <= 253
-        && host.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._:".contains(&b));
-    (ok && port != 0).then(|| Target { host: host.to_ascii_lowercase(), port })
+    let ok = !host.is_empty()
+        && host.len() <= 253
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-._:".contains(&b));
+    (ok && port != 0).then(|| Target {
+        host: host.to_ascii_lowercase(),
+        port,
+    })
 }
 
 /// The proxy's view of one connection's first request.
@@ -159,14 +206,21 @@ pub fn parse_head(head: &[u8]) -> Result<Request, &'static str> {
     let mut lines = text.split("\r\n");
     let first = lines.next().unwrap_or("");
     let mut parts = first.split(' ');
-    let (Some(method), Some(target), Some(version), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+    let (Some(method), Some(target), Some(version), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
         return Err("400 Bad Request");
     };
-    if !version.starts_with("HTTP/1.") || method.is_empty() || !method.bytes().all(|b| b.is_ascii_uppercase()) {
+    if !version.starts_with("HTTP/1.")
+        || method.is_empty()
+        || !method.bytes().all(|b| b.is_ascii_uppercase())
+    {
         return Err("400 Bad Request");
     }
     if method == "CONNECT" {
-        return parse_authority(target, None).map(Request::Connect).ok_or("400 Bad Request");
+        return parse_authority(target, None)
+            .map(Request::Connect)
+            .ok_or("400 Bad Request");
     }
     let Some(rest) = target.strip_prefix("http://") else {
         return Err("400 Bad Request"); // (https:// goes through CONNECT)
@@ -177,14 +231,28 @@ pub fn parse_head(head: &[u8]) -> Result<Request, &'static str> {
         None => (rest, ""),
     };
     let path = path.split('#').next().unwrap_or("");
-    let path = if path.starts_with('/') { path.to_string() } else { format!("/{path}") };
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
     let t = parse_authority(authority, Some(80)).ok_or("400 Bad Request")?;
     // Host: the target's authority, never the one the client sent (it would choose another
     // site on the server connected to; RFC 9112, 3.2.2)
     let mut out = format!("{method} {path} {version}\r\nHost: {authority}\r\n");
     for l in lines {
-        let name = l.split(':').next().unwrap_or("").trim().to_ascii_lowercase();
-        if name.starts_with("proxy-") || name == "connection" || name == "keep-alive" || name == "host" || l.is_empty() {
+        let name = l
+            .split(':')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        if name.starts_with("proxy-")
+            || name == "connection"
+            || name == "keep-alive"
+            || name == "host"
+            || l.is_empty()
+        {
             continue;
         }
         out += l;
@@ -211,8 +279,11 @@ pub fn allowed(host: &str, allow: &[String]) -> bool {
         return false;
     }
     allow.iter().any(|a| match a.strip_prefix("*.") {
-        Some(domain) => host.len() > domain.len() + 1 && host.ends_with(domain)
-            && host.as_bytes()[host.len() - domain.len() - 1] == b'.',
+        Some(domain) => {
+            host.len() > domain.len() + 1
+                && host.ends_with(domain)
+                && host.as_bytes()[host.len() - domain.len() - 1] == b'.'
+        }
         None => host == a,
     })
 }
@@ -222,19 +293,27 @@ pub fn allowed(host: &str, allow: &[String]) -> bool {
 fn open(t: &Target, log: &Log, cx: &Ctx) -> Result<TcpStream, (&'static str, String)> {
     // the allow list first: a name off it is never looked up
     if cx.allow.as_deref().is_some_and(|a| !allowed(&t.host, a)) {
-        let msg = format!("refused {}:{} (not on the zone's allow list)", t.host, t.port);
+        let msg = format!(
+            "refused {}:{} (not on the zone's allow list)",
+            t.host, t.port
+        );
         if cx.budget.take_at(Instant::now()) {
             log(&format!("[proxy] {msg}"));
         }
         return Err(("403 Forbidden", msg));
     }
-    let addrs: Vec<SocketAddr> = (t.host.as_str(), t.port).to_socket_addrs()
-        .map_err(|_| ("502 Bad Gateway", format!("{}: no such name", t.host)))?.collect();
+    let addrs: Vec<SocketAddr> = (t.host.as_str(), t.port)
+        .to_socket_addrs()
+        .map_err(|_| ("502 Bad Gateway", format!("{}: no such name", t.host)))?
+        .collect();
     let Some(host) = host_nets() else {
         if cx.budget.take_at(Instant::now()) {
             log("[proxy] the host's networks cannot be read: nothing is let through");
         }
-        return Err(("502 Bad Gateway", "the host's networks cannot be read".into()));
+        return Err((
+            "502 Bad Gateway",
+            "the host's networks cannot be read".into(),
+        ));
     };
     let mut why = None;
     for a in &addrs {
@@ -254,13 +333,18 @@ fn open(t: &Target, log: &Log, cx: &Ctx) -> Result<TcpStream, (&'static str, Str
             }
             Err(("403 Forbidden", msg))
         }
-        _ => Err(("502 Bad Gateway", format!("{}:{}: could not connect", t.host, t.port))),
+        _ => Err((
+            "502 Bad Gateway",
+            format!("{}:{}: could not connect", t.host, t.port),
+        )),
     }
 }
 
 /// Bytes both ways until either side ends.
 fn splice(a: TcpStream, b: TcpStream) {
-    let (Ok(a2), Ok(b2)) = (a.try_clone(), b.try_clone()) else { return };
+    let (Ok(a2), Ok(b2)) = (a.try_clone(), b.try_clone()) else {
+        return;
+    };
     let one = std::thread::spawn(move || {
         let (mut from, mut to) = (a2, b2);
         let _ = std::io::copy(&mut from, &mut to);
@@ -293,13 +377,25 @@ fn http(mut c: TcpStream, first: u8, log: &Log, cx: &Ctx) {
     let rest = buf[head_end + 4..].to_vec();
     let answer = |c: &mut TcpStream, status: &str, msg: &str| {
         let body = format!("appzones: {msg}\n");
-        let _ = c.write_all(format!("HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\
-                                     Connection: close\r\n\r\n{body}", body.len()).as_bytes());
+        let _ = c.write_all(
+            format!(
+                "HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\
+                                     Connection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        );
     };
     let (target, send) = match parse_head(&buf[..head_end]) {
         Ok(Request::Connect(t)) => (t, None),
         Ok(Request::Http(t, head)) => (t, Some(head)),
-        Err(status) => return answer(&mut c, status, "the zone's proxy takes CONNECT and http:// URLs"),
+        Err(status) => {
+            return answer(
+                &mut c,
+                status,
+                "the zone's proxy takes CONNECT and http:// URLs",
+            )
+        }
     };
     match open(&target, log, cx) {
         Err((status, msg)) => answer(&mut c, status, &msg),
@@ -428,7 +524,10 @@ fn listeners() -> std::io::Result<Vec<TcpListener>> {
 /// Whether binding ::1 failed because this host has no IPv6 (never for any other reason).
 fn no_ipv6(e: &std::io::Error) -> bool {
     e.kind() == std::io::ErrorKind::AddrNotAvailable
-        || matches!(e.raw_os_error(), Some(libc::EADDRNOTAVAIL | libc::EAFNOSUPPORT | libc::EPROTONOSUPPORT))
+        || matches!(
+            e.raw_os_error(),
+            Some(libc::EADDRNOTAVAIL | libc::EAFNOSUPPORT | libc::EPROTONOSUPPORT)
+        )
 }
 
 /// The proxy on a new port of loopback (listeners), in threads of its own for as long as
@@ -437,7 +536,10 @@ pub fn start(log: Log, allow: Option<Vec<String>>) -> std::io::Result<u16> {
     let ls = listeners()?;
     let port = ls[0].local_addr()?.port();
     let open = Arc::new(AtomicUsize::new(0));
-    let budget = Arc::new(Ctx { budget: crate::host_dns::Budget::new(2.0, 20.0), allow });
+    let budget = Arc::new(Ctx {
+        budget: crate::host_dns::Budget::new(2.0, 20.0),
+        allow,
+    });
     /// One connection's place in the count, given back when it ends (or its thread could
     /// not be started: the closure holding it is dropped then).
     struct Slot(Arc<AtomicUsize>);
@@ -448,19 +550,21 @@ pub fn start(log: Log, allow: Option<Vec<String>>) -> std::io::Result<u16> {
     }
     for l in ls {
         let (open, log, budget) = (open.clone(), log.clone(), budget.clone());
-        std::thread::Builder::new().name("proxy".into()).spawn(move || {
-            for c in l.incoming().flatten() {
-                let slot = Slot(open.clone());
-                if open.fetch_add(1, Ordering::SeqCst) >= MAX_CONNS {
-                    continue; // (dropped: closed at once, its slot given back)
+        std::thread::Builder::new()
+            .name("proxy".into())
+            .spawn(move || {
+                for c in l.incoming().flatten() {
+                    let slot = Slot(open.clone());
+                    if open.fetch_add(1, Ordering::SeqCst) >= MAX_CONNS {
+                        continue; // (dropped: closed at once, its slot given back)
+                    }
+                    let (log, budget) = (log.clone(), budget.clone());
+                    let _ = std::thread::Builder::new().spawn(move || {
+                        let _slot = slot;
+                        handle(c, &log, &budget);
+                    });
                 }
-                let (log, budget) = (log.clone(), budget.clone());
-                let _ = std::thread::Builder::new().spawn(move || {
-                    let _slot = slot;
-                    handle(c, &log, &budget);
-                });
-            }
-        })?;
+            })?;
     }
     Ok(port)
 }
@@ -475,76 +579,161 @@ mod tests {
 
     #[test]
     fn refusals() {
-        let host = vec![(ip("127.0.0.1"), 8), (ip("203.0.113.7"), 24), (ip("2001:db8:5::7"), 64), (ip("fe80::1"), 64)];
-        for (a, want) in [("1.1.1.1", None), ("8.8.8.8", None), ("2606:4700::1111", None),
-                          ("203.0.113.7", Some("the host")), ("203.0.113.99", Some("a network the host is on")),
-                          ("2001:db8:5::99", Some("a network the host is on")), ("2001:db8:6::1", None),
-                          ("192.168.1.1", Some("a private or special range")), ("10.1.2.3", Some("a private or special range")),
-                          ("100.91.0.5", Some("a private or special range")), ("127.0.0.1", Some("the host")),
-                          ("127.0.0.2", Some("a private or special range")), ("169.254.1.1", Some("a private or special range")),
-                          ("::1", Some("a private or special range")), ("fd00::1", Some("a private or special range")),
-                          ("fe80::2", Some("a private or special range")), ("::ffff:192.168.1.1", Some("a private or special range")),
-                          ("::ffff:1.1.1.1", None), ("64:ff9b::c0a8:101", Some("a private or special range")),
-                          ("64:ff9b::cb00:7163", Some("a network the host is on")), ("64:ff9b::101:101", None),
-                          ("64:ff9b:1::1", Some("a private or special range")), ("224.0.0.251", Some("a private or special range")),
-                          ("0.0.0.0", Some("a private or special range")), ("::", Some("a private or special range"))] {
+        let host = vec![
+            (ip("127.0.0.1"), 8),
+            (ip("203.0.113.7"), 24),
+            (ip("2001:db8:5::7"), 64),
+            (ip("fe80::1"), 64),
+        ];
+        for (a, want) in [
+            ("1.1.1.1", None),
+            ("8.8.8.8", None),
+            ("2606:4700::1111", None),
+            ("203.0.113.7", Some("the host")),
+            ("203.0.113.99", Some("a network the host is on")),
+            ("2001:db8:5::99", Some("a network the host is on")),
+            ("2001:db8:6::1", None),
+            ("192.168.1.1", Some("a private or special range")),
+            ("10.1.2.3", Some("a private or special range")),
+            ("100.91.0.5", Some("a private or special range")),
+            ("127.0.0.1", Some("the host")),
+            ("127.0.0.2", Some("a private or special range")),
+            ("169.254.1.1", Some("a private or special range")),
+            ("::1", Some("a private or special range")),
+            ("fd00::1", Some("a private or special range")),
+            ("fe80::2", Some("a private or special range")),
+            ("::ffff:192.168.1.1", Some("a private or special range")),
+            ("::ffff:1.1.1.1", None),
+            ("64:ff9b::c0a8:101", Some("a private or special range")),
+            ("64:ff9b::cb00:7163", Some("a network the host is on")),
+            ("64:ff9b::101:101", None),
+            ("64:ff9b:1::1", Some("a private or special range")),
+            ("224.0.0.251", Some("a private or special range")),
+            ("0.0.0.0", Some("a private or special range")),
+            ("::", Some("a private or special range")),
+        ] {
             assert_eq!(refused(ip(a), &host), want, "{a}");
         }
     }
 
     #[test]
     fn heads() {
-        assert_eq!(parse_head(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443"),
-                   Ok(Request::Connect(Target { host: "example.com".into(), port: 443 })));
-        assert_eq!(parse_head(b"CONNECT [2606:4700::1111]:443 HTTP/1.1"),
-                   Ok(Request::Connect(Target { host: "2606:4700::1111".into(), port: 443 })));
+        assert_eq!(
+            parse_head(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443"),
+            Ok(Request::Connect(Target {
+                host: "example.com".into(),
+                port: 443
+            }))
+        );
+        assert_eq!(
+            parse_head(b"CONNECT [2606:4700::1111]:443 HTTP/1.1"),
+            Ok(Request::Connect(Target {
+                host: "2606:4700::1111".into(),
+                port: 443
+            }))
+        );
         let Ok(Request::Http(t, head)) = parse_head(b"GET http://Example.com/a?b HTTP/1.1\r\nHost: other.example\r\n\
                                                      Proxy-Connection: keep-alive\r\nConnection: keep-alive\r\nAccept: */*")
         else { panic!() };
-        assert_eq!(t, Target { host: "example.com".into(), port: 80 });
+        assert_eq!(
+            t,
+            Target {
+                host: "example.com".into(),
+                port: 80
+            }
+        );
         // (the Host the client sent is replaced by the target's)
-        assert_eq!(String::from_utf8(head).unwrap(),
-                   "GET /a?b HTTP/1.1\r\nHost: Example.com\r\nAccept: */*\r\nConnection: close\r\n\r\n");
+        assert_eq!(
+            String::from_utf8(head).unwrap(),
+            "GET /a?b HTTP/1.1\r\nHost: Example.com\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+        );
         // a query without a path, a fragment: never part of the authority
-        let Ok(Request::Http(t, head)) = parse_head(b"GET http://example.com?x=1#f HTTP/1.1") else { panic!() };
+        let Ok(Request::Http(t, head)) = parse_head(b"GET http://example.com?x=1#f HTTP/1.1")
+        else {
+            panic!()
+        };
         assert_eq!(t.host, "example.com");
-        assert!(String::from_utf8(head).unwrap().starts_with("GET /?x=1 HTTP/1.1\r\nHost: example.com\r\n"));
-        let Ok(Request::Http(t, head)) = parse_head(b"GET http://example.com:8080 HTTP/1.0") else { panic!() };
+        assert!(String::from_utf8(head)
+            .unwrap()
+            .starts_with("GET /?x=1 HTTP/1.1\r\nHost: example.com\r\n"));
+        let Ok(Request::Http(t, head)) = parse_head(b"GET http://example.com:8080 HTTP/1.0") else {
+            panic!()
+        };
         assert_eq!(t.port, 8080);
-        assert!(String::from_utf8(head).unwrap().starts_with("GET / HTTP/1.0\r\nHost: example.com:8080\r\n"));
-        for bad in [&b"GET https://example.com/ HTTP/1.1"[..], b"CONNECT example.com HTTP/1.1", b"GET /x HTTP/1.1",
-                    b"CONNECT a b:1 HTTP/1.1", b"CONNECT ex\x01.com:1 HTTP/1.1", b"get http://a/ HTTP/1.1",
-                    b"CONNECT example.com:0 HTTP/1.1", b"CONNECT example.com:443 SPDY/3"] {
-            assert_eq!(parse_head(bad), Err("400 Bad Request"), "{}", String::from_utf8_lossy(bad));
+        assert!(String::from_utf8(head)
+            .unwrap()
+            .starts_with("GET / HTTP/1.0\r\nHost: example.com:8080\r\n"));
+        for bad in [
+            &b"GET https://example.com/ HTTP/1.1"[..],
+            b"CONNECT example.com HTTP/1.1",
+            b"GET /x HTTP/1.1",
+            b"CONNECT a b:1 HTTP/1.1",
+            b"CONNECT ex\x01.com:1 HTTP/1.1",
+            b"get http://a/ HTTP/1.1",
+            b"CONNECT example.com:0 HTTP/1.1",
+            b"CONNECT example.com:443 SPDY/3",
+        ] {
+            assert_eq!(
+                parse_head(bad),
+                Err("400 Bad Request"),
+                "{}",
+                String::from_utf8_lossy(bad)
+            );
         }
     }
 
     #[test]
     fn ipv6_absent_or_not() {
         use std::io::Error;
-        for e in [libc::EADDRNOTAVAIL, libc::EAFNOSUPPORT, libc::EPROTONOSUPPORT] {
+        for e in [
+            libc::EADDRNOTAVAIL,
+            libc::EAFNOSUPPORT,
+            libc::EPROTONOSUPPORT,
+        ] {
             assert!(no_ipv6(&Error::from_raw_os_error(e)), "{e}");
         }
         // errors that say nothing about IPv6: the proxy does not start without ::1
-        for e in [libc::EMFILE, libc::ENFILE, libc::EACCES, libc::ENOBUFS, libc::EADDRINUSE] {
+        for e in [
+            libc::EMFILE,
+            libc::ENFILE,
+            libc::EACCES,
+            libc::ENOBUFS,
+            libc::EADDRINUSE,
+        ] {
             assert!(!no_ipv6(&Error::from_raw_os_error(e)), "{e}");
         }
     }
 
     #[test]
     fn allow_lists() {
-        let a: Vec<String> = ["api.anthropic.com", "*.githubusercontent.com", "github.com"].iter().map(|x| x.to_string()).collect();
-        for (h, want) in [("api.anthropic.com", true), ("api.anthropic.com.", true), ("anthropic.com", false),
-                          ("x.api.anthropic.com", false), ("raw.githubusercontent.com", true),
-                          ("a.b.githubusercontent.com", true), ("githubusercontent.com", false),
-                          ("evilgithubusercontent.com", false), ("github.com", true), ("github.com.evil.org", false),
-                          ("140.82.112.3", false), ("::1", false)] {
+        let a: Vec<String> = ["api.anthropic.com", "*.githubusercontent.com", "github.com"]
+            .iter()
+            .map(|x| x.to_string())
+            .collect();
+        for (h, want) in [
+            ("api.anthropic.com", true),
+            ("api.anthropic.com.", true),
+            ("anthropic.com", false),
+            ("x.api.anthropic.com", false),
+            ("raw.githubusercontent.com", true),
+            ("a.b.githubusercontent.com", true),
+            ("githubusercontent.com", false),
+            ("evilgithubusercontent.com", false),
+            ("github.com", true),
+            ("github.com.evil.org", false),
+            ("140.82.112.3", false),
+            ("::1", false),
+        ] {
             assert_eq!(allowed(h, &a), want, "{h}");
         }
         // the proxy: a name off the list is refused before it is looked up, by every way in
         let lines = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let l2 = lines.clone();
-        let port = start(Arc::new(move |s: &str| l2.lock().unwrap().push(s.to_string())), Some(a)).unwrap();
+        let port = start(
+            Arc::new(move |s: &str| l2.lock().unwrap().push(s.to_string())),
+            Some(a),
+        )
+        .unwrap();
         let talk = |send: &[u8], want: usize| {
             let mut c = TcpStream::connect(("127.0.0.1", port)).unwrap();
             c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
@@ -553,12 +742,23 @@ mod tests {
             c.read_exact(&mut got).unwrap();
             got
         };
-        assert!(talk(b"CONNECT not-allowed.appzones.invalid:443 HTTP/1.1\r\n\r\n", 12).starts_with(b"HTTP/1.1 403"));
+        assert!(talk(
+            b"CONNECT not-allowed.appzones.invalid:443 HTTP/1.1\r\n\r\n",
+            12
+        )
+        .starts_with(b"HTTP/1.1 403"));
         assert!(talk(b"GET http://example.com/ HTTP/1.1\r\n\r\n", 12).starts_with(b"HTTP/1.1 403"));
         // SOCKS5 to an address (1.1.1.1): never on a list of names
-        assert_eq!(&talk(&[5, 1, 0, 5, 1, 0, 1, 1, 1, 1, 1, 1, 187], 4)[..4], &[5, 0, 5, 2]);
+        assert_eq!(
+            &talk(&[5, 1, 0, 5, 1, 0, 1, 1, 1, 1, 1, 1, 187], 4)[..4],
+            &[5, 0, 5, 2]
+        );
         let l = lines.lock().unwrap();
-        assert!(l.iter().any(|x| x.contains("refused example.com:80 (not on the zone's allow list)")), "{l:?}");
+        assert!(
+            l.iter()
+                .any(|x| x.contains("refused example.com:80 (not on the zone's allow list)")),
+            "{l:?}"
+        );
     }
 
     #[test]
@@ -566,7 +766,11 @@ mod tests {
         // the proxy itself: loopback and the host refused by CONNECT, plain HTTP and SOCKS5
         let lines = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let l2 = lines.clone();
-        let port = start(Arc::new(move |s: &str| l2.lock().unwrap().push(s.to_string())), None).unwrap();
+        let port = start(
+            Arc::new(move |s: &str| l2.lock().unwrap().push(s.to_string())),
+            None,
+        )
+        .unwrap();
         let talk = |send: &[u8], want: usize| {
             let mut c = TcpStream::connect(("127.0.0.1", port)).unwrap();
             c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
@@ -591,6 +795,14 @@ mod tests {
         // SOCKS5: greeting, then CONNECT 10.0.0.1:80: "not allowed by the rules"
         let got = talk(&[5, 1, 0, 5, 1, 0, 1, 10, 0, 0, 1, 0, 80], 4);
         assert_eq!(&got[..4], &[5, 0, 5, 2]);
-        assert!(lines.lock().unwrap().iter().any(|l| l.contains("refused 127.0.0.1:22 (the host)")), "{:?}", lines.lock().unwrap());
+        assert!(
+            lines
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|l| l.contains("refused 127.0.0.1:22 (the host)")),
+            "{:?}",
+            lines.lock().unwrap()
+        );
     }
 }

@@ -85,9 +85,17 @@ fn connect(path: &str, timeout: Duration) -> Option<UnixStream> {
             return None;
         }
         let s = UnixStream::from_raw_fd(fd); // closes fd on every return below
-        let tv = libc::timeval { tv_sec: timeout.as_secs() as _, tv_usec: 0 };
-        libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_SNDTIMEO, (&tv as *const libc::timeval).cast(),
-                         std::mem::size_of::<libc::timeval>() as libc::socklen_t);
+        let tv = libc::timeval {
+            tv_sec: timeout.as_secs() as _,
+            tv_usec: 0,
+        };
+        libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_SNDTIMEO,
+            (&tv as *const libc::timeval).cast(),
+            std::mem::size_of::<libc::timeval>() as libc::socklen_t,
+        );
         let mut addr: libc::sockaddr_un = std::mem::zeroed();
         addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
         if bytes.len() >= addr.sun_path.len() {
@@ -148,7 +156,10 @@ pub fn udp_limit(query: &[u8]) -> usize {
 
 /// ANSWER cut to its header and question, with TC set: the client asks again over TCP.
 pub fn truncate(answer: &[u8]) -> Vec<u8> {
-    let flags = [answer.get(2).copied().unwrap_or(0) | 0x02, answer.get(3).copied().unwrap_or(0)];
+    let flags = [
+        answer.get(2).copied().unwrap_or(0) | 0x02,
+        answer.get(3).copied().unwrap_or(0),
+    ];
     let head = |qd: u16| {
         let mut out = answer.get(..2).unwrap_or(&[0, 0]).to_vec();
         out.extend_from_slice(&flags);
@@ -177,7 +188,11 @@ pub fn truncate(answer: &[u8]) -> Vec<u8> {
 
 fn udp_one(sock: UdpSocket, query: Vec<u8>, from: SocketAddr) {
     if let Some(ans) = forward(&query) {
-        let ans = if ans.len() <= udp_limit(&query) { ans } else { truncate(&ans) };
+        let ans = if ans.len() <= udp_limit(&query) {
+            ans
+        } else {
+            truncate(&ans)
+        };
         let _ = sock.send_to(&ans, from);
     }
     give_slot();
@@ -186,7 +201,9 @@ fn udp_one(sock: UdpSocket, query: Vec<u8>, from: SocketAddr) {
 fn udp_loop(sock: UdpSocket) {
     let mut buf = vec![0u8; DNS_MAX];
     loop {
-        let Ok((n, from)) = sock.recv_from(&mut buf) else { continue };
+        let Ok((n, from)) = sock.recv_from(&mut buf) else {
+            continue;
+        };
         if n < 12 || !take_slot() {
             continue; // too many at once: the client asks again
         }
@@ -194,7 +211,10 @@ fn udp_loop(sock: UdpSocket) {
             give_slot();
             continue;
         };
-        if thread::Builder::new().spawn(move || udp_one(s, query, from)).is_err() {
+        if thread::Builder::new()
+            .spawn(move || udp_one(s, query, from))
+            .is_err()
+        {
             give_slot();
         }
     }
@@ -217,8 +237,14 @@ fn tcp_conn(mut conn: TcpStream) {
             break;
         }
         let Some(ans) = forward(&query) else { break };
-        let Ok(len) = u16::try_from(ans.len()) else { break };
-        if conn.write_all(&len.to_be_bytes()).and_then(|_| conn.write_all(&ans)).is_err() {
+        let Ok(len) = u16::try_from(ans.len()) else {
+            break;
+        };
+        if conn
+            .write_all(&len.to_be_bytes())
+            .and_then(|_| conn.write_all(&ans))
+            .is_err()
+        {
             break;
         }
     }
@@ -227,11 +253,16 @@ fn tcp_conn(mut conn: TcpStream) {
 
 fn tcp_loop(listener: TcpListener) {
     loop {
-        let Ok((conn, _)) = listener.accept() else { continue };
+        let Ok((conn, _)) = listener.accept() else {
+            continue;
+        };
         if !take(&TCP, MAX_TCP) {
             continue; // dropped: the client asks again, or over UDP
         }
-        if thread::Builder::new().spawn(move || tcp_conn(conn)).is_err() {
+        if thread::Builder::new()
+            .spawn(move || tcp_conn(conn))
+            .is_err()
+        {
             TCP.fetch_sub(1, Ordering::AcqRel);
         }
     }
@@ -245,12 +276,18 @@ pub fn start(addr: &str, log: fn(&str)) {
     let (udp, tcp) = match bound {
         Ok(b) => b,
         Err(e) => {
-            log(&format!("DNS at {addr}:53 not started: {e}; names do not resolve in this zone"));
+            log(&format!(
+                "DNS at {addr}:53 not started: {e}; names do not resolve in this zone"
+            ));
             return;
         }
     };
-    let _ = thread::Builder::new().name("dns-udp".into()).spawn(move || udp_loop(udp));
-    let _ = thread::Builder::new().name("dns-tcp".into()).spawn(move || tcp_loop(tcp));
+    let _ = thread::Builder::new()
+        .name("dns-udp".into())
+        .spawn(move || udp_loop(udp));
+    let _ = thread::Builder::new()
+        .name("dns-tcp".into())
+        .spawn(move || tcp_loop(tcp));
 }
 
 #[cfg(test)]

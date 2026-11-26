@@ -8,7 +8,11 @@ pub fn unix_stream_nonblock() -> RawFd {
     #[cfg(target_os = "linux")]
     // Safety: socket(2), no pointers.
     unsafe {
-        libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC, 0)
+        libc::socket(
+            libc::AF_UNIX,
+            libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
+            0,
+        )
     }
     #[cfg(not(target_os = "linux"))]
     // Safety: socket(2) and fcntl(2) on the new descriptor, closed again on failure.
@@ -28,7 +32,12 @@ unsafe fn set_cloexec_nonblock(fd: RawFd, nonblock: bool) -> bool {
     // Safety: fcntl on a descriptor the caller owns.
     unsafe {
         libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) == 0
-            && (!nonblock || libc::fcntl(fd, libc::F_SETFL, libc::fcntl(fd, libc::F_GETFL) | libc::O_NONBLOCK) == 0)
+            && (!nonblock
+                || libc::fcntl(
+                    fd,
+                    libc::F_SETFL,
+                    libc::fcntl(fd, libc::F_GETFL) | libc::O_NONBLOCK,
+                ) == 0)
     }
 }
 
@@ -39,7 +48,10 @@ pub fn pipe(fds: &mut [RawFd; 2], nonblock: bool) -> bool {
     #[cfg(target_os = "linux")]
     // Safety: pipe2 into the caller's array.
     unsafe {
-        libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | if nonblock { libc::O_NONBLOCK } else { 0 }) == 0
+        libc::pipe2(
+            fds.as_mut_ptr(),
+            libc::O_CLOEXEC | if nonblock { libc::O_NONBLOCK } else { 0 },
+        ) == 0
     }
     #[cfg(not(target_os = "linux"))]
     // Safety: pipe into the caller's array, then fcntl on the two new descriptors.
@@ -87,8 +99,20 @@ pub fn pidfd_open(pid: libc::pid_t) -> Option<RawFd> {
 #[cfg(target_os = "linux")]
 pub fn pidfd_signal(pfd: RawFd, sig: libc::c_int) -> std::io::Result<()> {
     // Safety: a signal through the caller's pidfd.
-    let rc = unsafe { libc::syscall(libc::SYS_pidfd_send_signal, pfd, sig, std::ptr::null::<u8>(), 0) };
-    if rc == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_pidfd_send_signal,
+            pfd,
+            sig,
+            std::ptr::null::<u8>(),
+            0,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
 }
 
 /// The path of the open descriptor FD, byte for byte; None when it has no path any more
@@ -112,7 +136,11 @@ pub fn fd_path(fd: RawFd) -> Option<Vec<u8>> {
         let (rc, held) = unsafe {
             let rc = libc::fcntl(fd, libc::F_GETPATH, buf.as_mut_ptr());
             let mut st: libc::stat = std::mem::zeroed();
-            let held = (libc::fstat(fd, &mut st) == 0).then_some((st.st_dev as u64, st.st_ino as u64, st.st_nlink as u64));
+            let held = (libc::fstat(fd, &mut st) == 0).then_some((
+                st.st_dev as u64,
+                st.st_ino as u64,
+                st.st_nlink as u64,
+            ));
             (rc, held)
         };
         let (dev, ino, links) = held.filter(|_| rc != -1)?;
@@ -142,7 +170,12 @@ pub fn accept_cloexec(fd: RawFd) -> RawFd {
     #[cfg(target_os = "linux")]
     // Safety: accept4 returns a new descriptor (or -1); no addresses asked for.
     unsafe {
-        libc::accept4(fd, std::ptr::null_mut(), std::ptr::null_mut(), libc::SOCK_CLOEXEC)
+        libc::accept4(
+            fd,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            libc::SOCK_CLOEXEC,
+        )
     }
     #[cfg(not(target_os = "linux"))]
     // Safety: accept, then fcntl on the new descriptor (closed again on failure).
@@ -163,14 +196,23 @@ pub fn my_pids() -> Vec<libc::pid_t> {
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::fs::MetadataExt;
-        std::fs::read_dir("/proc").map(|it| it.filter_map(|e| e.ok()).filter_map(|e| {
-            let n: libc::pid_t = e.file_name().to_str()?.parse().ok()?;
-            (n != me && std::fs::metadata(e.path()).ok()?.uid() == uid).then_some(n)
-        }).collect()).unwrap_or_default()
+        std::fs::read_dir("/proc")
+            .map(|it| {
+                it.filter_map(|e| e.ok())
+                    .filter_map(|e| {
+                        let n: libc::pid_t = e.file_name().to_str()?.parse().ok()?;
+                        (n != me && std::fs::metadata(e.path()).ok()?.uid() == uid).then_some(n)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
     #[cfg(not(target_os = "linux"))]
     {
-        all_pids().into_iter().filter(|p| *p != me && proc_uid(*p) == Some(uid)).collect()
+        all_pids()
+            .into_iter()
+            .filter(|p| *p != me && proc_uid(*p) == Some(uid))
+            .collect()
     }
 }
 
@@ -200,8 +242,14 @@ fn short_info(pid: libc::pid_t) -> Option<libc::proc_bsdshortinfo> {
     unsafe {
         let mut si: libc::proc_bsdshortinfo = std::mem::zeroed();
         let size = std::mem::size_of::<libc::proc_bsdshortinfo>() as libc::c_int;
-        (libc::proc_pidinfo(pid, libc::PROC_PIDT_SHORTBSDINFO, 0, (&mut si as *mut libc::proc_bsdshortinfo).cast(), size)
-            == size).then_some(si)
+        (libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDT_SHORTBSDINFO,
+            0,
+            (&mut si as *mut libc::proc_bsdshortinfo).cast(),
+            size,
+        ) == size)
+            .then_some(si)
     }
 }
 
@@ -218,7 +266,11 @@ pub fn proc_argv(pid: libc::pid_t) -> Option<Vec<String>> {
     {
         let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
         let raw = raw.strip_suffix(b"\0").unwrap_or(&raw);
-        Some(raw.split(|b| *b == 0).map(|a| String::from_utf8_lossy(a).into_owned()).collect())
+        Some(
+            raw.split(|b| *b == 0)
+                .map(|a| String::from_utf8_lossy(a).into_owned())
+                .collect(),
+        )
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -226,11 +278,27 @@ pub fn proc_argv(pid: libc::pid_t) -> Option<Vec<String>> {
         let mut size: libc::size_t = 0;
         // Safety: sysctl asked for the size first, then into a buffer of that size.
         let buf = unsafe {
-            if libc::sysctl(mib.as_mut_ptr(), 3, std::ptr::null_mut(), &mut size, std::ptr::null_mut(), 0) != 0 {
+            if libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                std::ptr::null_mut(),
+                &mut size,
+                std::ptr::null_mut(),
+                0,
+            ) != 0
+            {
                 return None;
             }
             let mut buf = vec![0u8; size];
-            if libc::sysctl(mib.as_mut_ptr(), 3, buf.as_mut_ptr().cast(), &mut size, std::ptr::null_mut(), 0) != 0 {
+            if libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                buf.as_mut_ptr().cast(),
+                &mut size,
+                std::ptr::null_mut(),
+                0,
+            ) != 0
+            {
                 return None;
             }
             buf.truncate(size);
@@ -265,8 +333,11 @@ pub fn has_open(pid: libc::pid_t, file: (u64, u64)) -> bool {
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::fs::MetadataExt;
-        let Ok(it) = std::fs::read_dir(format!("/proc/{pid}/fd")) else { return false };
-        it.filter_map(|e| e.ok()).any(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == file))
+        let Ok(it) = std::fs::read_dir(format!("/proc/{pid}/fd")) else {
+            return false;
+        };
+        it.filter_map(|e| e.ok())
+            .any(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == file))
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -294,18 +365,34 @@ pub fn has_open(pid: libc::pid_t, file: (u64, u64)) -> bool {
                 return false;
             }
             let mut fds: Vec<libc::proc_fdinfo> = Vec::with_capacity(size as usize / one + 16);
-            let got = libc::proc_pidinfo(pid, libc::PROC_PIDLISTFDS, 0, fds.as_mut_ptr().cast(),
-                                         (fds.capacity() * one) as libc::c_int);
+            let got = libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDLISTFDS,
+                0,
+                fds.as_mut_ptr().cast(),
+                (fds.capacity() * one) as libc::c_int,
+            );
             if got <= 0 {
                 return false;
             }
             fds.set_len(got as usize / one);
-            fds.iter().filter(|f| f.proc_fdtype == libc::PROX_FDTYPE_VNODE as u32).any(|f| {
-                let mut v: VnodeFdinfoWithPath = std::mem::zeroed();
-                let n = std::mem::size_of::<VnodeFdinfoWithPath>() as libc::c_int;
-                libc::proc_pidfdinfo(pid, f.proc_fd, PROC_PIDFDVNODEPATHINFO, (&mut v as *mut VnodeFdinfoWithPath).cast(), n) == n
-                    && (v.pvip.vip_vi.vi_stat.vst_dev as u64, v.pvip.vip_vi.vi_stat.vst_ino) == file
-            })
+            fds.iter()
+                .filter(|f| f.proc_fdtype == libc::PROX_FDTYPE_VNODE as u32)
+                .any(|f| {
+                    let mut v: VnodeFdinfoWithPath = std::mem::zeroed();
+                    let n = std::mem::size_of::<VnodeFdinfoWithPath>() as libc::c_int;
+                    libc::proc_pidfdinfo(
+                        pid,
+                        f.proc_fd,
+                        PROC_PIDFDVNODEPATHINFO,
+                        (&mut v as *mut VnodeFdinfoWithPath).cast(),
+                        n,
+                    ) == n
+                        && (
+                            v.pvip.vip_vi.vi_stat.vst_dev as u64,
+                            v.pvip.vip_vi.vi_stat.vst_ino,
+                        ) == file
+                })
         }
     }
 }
@@ -315,7 +402,12 @@ mod seatbelt_ffi {
     // libsystem_sandbox (part of libSystem): not in Apple's public headers, but stable and
     // what Apple's own tools and others (Chromium, Codex) use to ask about a process
     unsafe extern "C" {
-        pub fn sandbox_check(pid: libc::pid_t, operation: *const libc::c_char, filter: libc::c_int, ...) -> libc::c_int;
+        pub fn sandbox_check(
+            pid: libc::pid_t,
+            operation: *const libc::c_char,
+            filter: libc::c_int,
+            ...
+        ) -> libc::c_int;
     }
     pub const FILTER_NONE: libc::c_int = 0;
     pub const FILTER_PATH: libc::c_int = 1;
@@ -345,8 +437,12 @@ pub fn sandbox_may_read(pid: libc::pid_t, path: &std::path::Path) -> Option<bool
     let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
     // Safety: sandbox_check with NUL-terminated strings we own; a path filter takes one.
     let r = unsafe {
-        seatbelt_ffi::sandbox_check(pid, c"file-read-data".as_ptr(),
-                                    seatbelt_ffi::FILTER_PATH | seatbelt_ffi::CHECK_NO_REPORT, c.as_ptr())
+        seatbelt_ffi::sandbox_check(
+            pid,
+            c"file-read-data".as_ptr(),
+            seatbelt_ffi::FILTER_PATH | seatbelt_ffi::CHECK_NO_REPORT,
+            c.as_ptr(),
+        )
     };
     match r {
         0 => Some(true),
@@ -371,22 +467,34 @@ pub fn zone_pids(yes: &std::path::Path, no: &std::path::Path) -> Vec<libc::pid_t
     for m in [yes, no] {
         if std::fs::symlink_metadata(m).is_err() {
             use std::os::unix::fs::OpenOptionsExt;
-            let _ = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
-                .custom_flags(libc::O_NOFOLLOW).open(m);
+            let _ = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(m);
         }
     }
     if !(yes.is_file() && no.is_file()) {
         return vec![]; // (not files, and not to be made: nothing can be told, never a guess)
     }
-    my_pids().into_iter().filter(|p| {
-        sandboxed(*p) && sandbox_may_read(*p, yes) == Some(true) && sandbox_may_read(*p, no) == Some(false)
-    }).collect()
+    my_pids()
+        .into_iter()
+        .filter(|p| {
+            sandboxed(*p)
+                && sandbox_may_read(*p, yes) == Some(true)
+                && sandbox_may_read(*p, no) == Some(false)
+        })
+        .collect()
 }
 
 /// The children of PID (macOS).
 #[cfg(not(target_os = "linux"))]
 pub fn children(pid: libc::pid_t) -> Vec<libc::pid_t> {
-    my_pids().into_iter().filter(|p| short_info(*p).is_some_and(|si| si.pbsi_ppid as libc::pid_t == pid)).collect()
+    my_pids()
+        .into_iter()
+        .filter(|p| short_info(*p).is_some_and(|si| si.pbsi_ppid as libc::pid_t == pid))
+        .collect()
 }
 
 /// SIGKILL to every process of the zone (zone_pids), until none is left or two seconds
@@ -419,7 +527,8 @@ mod tests {
     #[test]
     fn pipes_and_sockets_close_on_exec() {
         let cloexec = |fd: RawFd| unsafe { libc::fcntl(fd, libc::F_GETFD) } & libc::FD_CLOEXEC != 0;
-        let nonblock = |fd: RawFd| unsafe { libc::fcntl(fd, libc::F_GETFL) } & libc::O_NONBLOCK != 0;
+        let nonblock =
+            |fd: RawFd| unsafe { libc::fcntl(fd, libc::F_GETFL) } & libc::O_NONBLOCK != 0;
         let mut p = [-1; 2];
         assert!(pipe(&mut p, true));
         assert!(cloexec(p[0]) && cloexec(p[1]) && nonblock(p[0]) && nonblock(p[1]));
@@ -435,14 +544,20 @@ mod tests {
     fn procargs2() {
         let mut b = 3i32.to_ne_bytes().to_vec();
         b.extend_from_slice(b"/bin/sh\0\0\0\0sh\0-c\0echo a\0HOME=/x\0");
-        assert_eq!(procargs2_argv(&b), Some(vec!["sh".into(), "-c".into(), "echo a".into()]));
+        assert_eq!(
+            procargs2_argv(&b),
+            Some(vec!["sh".into(), "-c".into(), "echo a".into()])
+        );
         assert_eq!(procargs2_argv(&[1, 0]), None);
     }
 
     #[test]
     fn my_processes() {
         // a child of ours is listed, this process is not; and its command line is read
-        let mut c = std::process::Command::new("sleep").arg("5").spawn().unwrap();
+        let mut c = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .unwrap();
         let pid = c.id() as libc::pid_t;
         let pids = my_pids();
         assert!(pids.contains(&pid) && !pids.contains(&(std::process::id() as libc::pid_t)));
@@ -450,7 +565,10 @@ mod tests {
         while proc_argv(pid).is_none_or(|a| a.len() != 2) && std::time::Instant::now() < end {
             std::thread::sleep(std::time::Duration::from_millis(10)); // (until it has exec'd)
         }
-        assert_eq!(proc_argv(pid).map(|a| a[1..].to_vec()), Some(vec!["5".to_string()]));
+        assert_eq!(
+            proc_argv(pid).map(|a| a[1..].to_vec()),
+            Some(vec!["5".to_string()])
+        );
         // (as sandboxed as this test: Nix's builds on macOS run under a profile of their own)
         assert_eq!(sandboxed(pid), sandboxed(std::process::id() as libc::pid_t));
         // a file this process holds open is seen, one it does not is not
@@ -459,7 +577,11 @@ mod tests {
         let f = std::fs::File::create(dir.join("held")).unwrap();
         std::fs::write(dir.join("other"), "").unwrap();
         use std::os::unix::fs::MetadataExt;
-        let id = |p: &str| std::fs::metadata(dir.join(p)).map(|m| (m.dev(), m.ino())).unwrap();
+        let id = |p: &str| {
+            std::fs::metadata(dir.join(p))
+                .map(|m| (m.dev(), m.ino()))
+                .unwrap()
+        };
         let me = std::process::id() as libc::pid_t;
         assert!(has_open(me, id("held")) && !has_open(me, id("other")));
         drop(f);
@@ -470,17 +592,24 @@ mod tests {
 
     #[test]
     fn descriptor_paths() {
-        let dir = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("az-sys-{}", std::process::id()));
+        let dir = std::fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!("az-sys-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("f");
         std::fs::write(&f, "x").unwrap();
         let file = std::fs::File::open(&f).unwrap();
         use std::os::unix::ffi::OsStrExt;
-        assert_eq!(fd_path(file.as_raw_fd()).as_deref(), Some(f.as_os_str().as_bytes()));
+        assert_eq!(
+            fd_path(file.as_raw_fd()).as_deref(),
+            Some(f.as_os_str().as_bytes())
+        );
         std::fs::remove_file(&f).unwrap(); // unlinked: no path any more
         assert_eq!(fd_path(file.as_raw_fd()), None);
         let _ = std::fs::remove_dir_all(&dir);
         use std::os::unix::fs::MetadataExt;
-        assert!(is_dev_null(std::fs::metadata("/dev/null").unwrap().rdev() as libc::dev_t));
+        assert!(is_dev_null(
+            std::fs::metadata("/dev/null").unwrap().rdev() as libc::dev_t
+        ));
     }
 }

@@ -28,7 +28,7 @@ joins in.
 ```bash
 nix develop          # cargo, rustc, clippy, rustfmt, just, nixfmt, gitleaks
 just check           # before a PR: just test, the example configs, the secret scan (gitleaks)
-just test            # cargo test and clippy (no Nix: any Rust 1.85 or newer; the first build takes minutes)
+just test            # cargo fmt --check, cargo test and clippy (no Nix: any Rust 1.85 or newer; the first build takes minutes)
 just validate FILE   # validate a zones.toml
 just build           # the package; its build runs every Rust test, the golden files' too
 just test-vm         # NixOS VM test with Hyprland (~6 min, needs /dev/kvm)
@@ -95,7 +95,7 @@ about system paths were recorded there, and your machine's `/etc` or `/boot` dif
   answered. Change an answer only on purpose, in the same PR, and say why.
 - **Docs.** If behaviour changes, update its page in `docs/` in the same PR.
   Add a line under "Unreleased" in [CHANGELOG.md](CHANGELOG.md).
-- **Style.** Rust: `cargo clippy -- -D warnings` clean, every dependency pinned
+- **Style.** Rust: `cargo fmt` (its default settings; `just test` checks it), `cargo clippy -- -D warnings` clean, every dependency pinned
   (`=x.y.z`) with a comment saying why, `unsafe` only with a `// Safety:` line. Nix: `just fmt`.
 
 ## Pull requests

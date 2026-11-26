@@ -39,7 +39,11 @@ fn recv(s: &mut UnixStream) -> std::io::Result<Value> {
 
 fn sway() -> Option<String> {
     let s = std::env::var("SWAYSOCK").ok().filter(|s| !s.is_empty())?;
-    std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok().filter(|h| !h.is_empty()).is_none().then_some(s)
+    std::env::var("HYPRLAND_INSTANCE_SIGNATURE")
+        .ok()
+        .filter(|h| !h.is_empty())
+        .is_none()
+        .then_some(s)
 }
 
 fn sway_focused(path: &str) -> std::io::Result<(Option<Value>, Vec<String>)> {
@@ -49,10 +53,19 @@ fn sway_focused(path: &str) -> std::io::Result<(Option<Value>, Vec<String>)> {
     let tree = recv(&mut s)?;
     let mut stack = vec![tree];
     while let Some(n) = stack.pop() {
-        let truthy = |v: Option<&Value>| v.is_some_and(|v| !matches!(v, Value::Null | Value::Bool(false)) && *v != json!(0));
+        let truthy = |v: Option<&Value>| {
+            v.is_some_and(|v| !matches!(v, Value::Null | Value::Bool(false)) && *v != json!(0))
+        };
         if truthy(n.get("focused")) && truthy(n.get("pid")) {
-            let marks = n.get("marks").and_then(Value::as_array).map(|m| m.iter().filter_map(|x| x.as_str().map(String::from))
-                .collect()).unwrap_or_default();
+            let marks = n
+                .get("marks")
+                .and_then(Value::as_array)
+                .map(|m| {
+                    m.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
             return Ok((n.get("id").cloned(), marks));
         }
         for k in ["nodes", "floating_nodes"] {
@@ -66,13 +79,25 @@ fn sway_focused(path: &str) -> std::io::Result<(Option<Value>, Vec<String>)> {
 
 fn focused_zone() -> String {
     if let Some(path) = sway() {
-        let Ok((con, marks)) = sway_focused(&path) else { return String::new() };
+        let Ok((con, marks)) = sway_focused(&path) else {
+            return String::new();
+        };
         let con = con.map(|c| c.to_string()).unwrap_or_else(|| "None".into());
-        let zones: Vec<String> = marks.iter().filter(|m| m.starts_with("zone:")).map(|m| {
-            let parts: Vec<&str> = m.split(':').collect();
-            let ok = parts.len() == 3 && parts[2] == con && (parts[1] == "?" || zone_name_ok(parts[1]));
-            if ok { parts[1].to_string() } else { "?".to_string() }
-        }).collect();
+        let zones: Vec<String> = marks
+            .iter()
+            .filter(|m| m.starts_with("zone:"))
+            .map(|m| {
+                let parts: Vec<&str> = m.split(':').collect();
+                let ok = parts.len() == 3
+                    && parts[2] == con
+                    && (parts[1] == "?" || zone_name_ok(parts[1]));
+                if ok {
+                    parts[1].to_string()
+                } else {
+                    "?".to_string()
+                }
+            })
+            .collect();
         let mut uniq = zones.clone();
         uniq.dedup();
         uniq.sort();
@@ -83,24 +108,55 @@ fn focused_zone() -> String {
             (None, _) => String::new(),
         };
     }
-    let tags: Vec<String> = std::process::Command::new("hyprctl").args(["-j", "activewindow"]).output().ok()
-        .and_then(|o| serde_json::from_slice::<Value>(if o.stdout.is_empty() { b"{}" } else { &o.stdout }).ok())
+    let tags: Vec<String> = std::process::Command::new("hyprctl")
+        .args(["-j", "activewindow"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            serde_json::from_slice::<Value>(if o.stdout.is_empty() {
+                b"{}"
+            } else {
+                &o.stdout
+            })
+            .ok()
+        })
         .and_then(|v| v.get("tags").and_then(Value::as_array).cloned())
-        .map(|t| t.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
-    tags.iter().find_map(|t| t.strip_prefix("zone:").map(|z| z.trim_end_matches('*').to_string())).unwrap_or_default()
+        .map(|t| {
+            t.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    tags.iter()
+        .find_map(|t| {
+            t.strip_prefix("zone:")
+                .map(|z| z.trim_end_matches('*').to_string())
+        })
+        .unwrap_or_default()
 }
 
 fn current(as_json: bool) -> String {
     let z = focused_zone();
     if !as_json {
-        return if z.is_empty() { String::new() } else { format!("[{z}]") };
+        return if z.is_empty() {
+            String::new()
+        } else {
+            format!("[{z}]")
+        };
     }
     if z == "?" {
         return py_json(&json!({"text": "[?]", "class": "zone-unidentified",
                                "tooltip": "active window runs in a sandbox appzones cannot name"}));
     }
-    let (text, class, tip) = if z.is_empty() { (String::new(), "host".to_string(), String::new()) }
-        else { (format!("[{z}]"), format!("zone-{z}"), format!("active window runs in app zone {z}")) };
+    let (text, class, tip) = if z.is_empty() {
+        (String::new(), "host".to_string(), String::new())
+    } else {
+        (
+            format!("[{z}]"),
+            format!("zone-{z}"),
+            format!("active window runs in app zone {z}"),
+        )
+    };
     py_json(&json!({"text": text, "class": class, "tooltip": tip}))
 }
 
@@ -117,8 +173,11 @@ pub fn main(follow: bool, as_json: bool, host_rt: &Path) -> i32 {
     }
     // subscribed first, then the first label: no change in between is missed
     if let Some(path) = sway() {
-        let Ok(mut s) = UnixStream::connect(&path) else { return 1 };
-        if send(&mut s, SUBSCRIBE, "[\"window\", \"workspace\"]").is_err() || recv(&mut s).is_err() {
+        let Ok(mut s) = UnixStream::connect(&path) else {
+            return 1;
+        };
+        if send(&mut s, SUBSCRIBE, "[\"window\", \"workspace\"]").is_err() || recv(&mut s).is_err()
+        {
             return 1;
         }
         let mut last = current(as_json);
@@ -132,12 +191,18 @@ pub fn main(follow: bool, as_json: bool, host_rt: &Path) -> i32 {
         }
         return 0;
     }
-    let Some(sig) = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok().filter(|s| !s.is_empty()) else {
+    let Some(sig) = std::env::var("HYPRLAND_INSTANCE_SIGNATURE")
+        .ok()
+        .filter(|s| !s.is_empty())
+    else {
         say(&current(as_json));
         eprintln!("appzones: no HYPRLAND_INSTANCE_SIGNATURE or SWAYSOCK");
         return 1;
     };
-    let Ok(mut s) = UnixStream::connect(host_rt.join("hypr").join(sig).join(".socket2.sock")) else { return 1 };
+    let Ok(mut s) = UnixStream::connect(host_rt.join("hypr").join(sig).join(".socket2.sock"))
+    else {
+        return 1;
+    };
     let mut last = current(as_json);
     say(&last);
     let mut buf: Vec<u8> = Vec::new();
@@ -148,11 +213,19 @@ pub fn main(follow: bool, as_json: bool, host_rt: &Path) -> i32 {
             Ok(n) => n,
         };
         buf.extend_from_slice(&chunk[..n]);
-        let Some(cut) = buf.iter().rposition(|b| *b == b'\n') else { continue };
-        let lines: Vec<Vec<u8>> = buf[..cut].split(|b| *b == b'\n').map(<[u8]>::to_vec).collect();
+        let Some(cut) = buf.iter().rposition(|b| *b == b'\n') else {
+            continue;
+        };
+        let lines: Vec<Vec<u8>> = buf[..cut]
+            .split(|b| *b == b'\n')
+            .map(<[u8]>::to_vec)
+            .collect();
         buf.drain(..=cut);
-        if lines.iter().any(|l| l.starts_with(b"activewindowv2>>") || l.starts_with(b"windowtitlev2>>")
-            || l.starts_with(b"closewindow>>")) {
+        if lines.iter().any(|l| {
+            l.starts_with(b"activewindowv2>>")
+                || l.starts_with(b"windowtitlev2>>")
+                || l.starts_with(b"closewindow>>")
+        }) {
             let cur = current(as_json);
             if cur != last {
                 say(&cur);
@@ -175,9 +248,15 @@ const APP_PREFIX: &str = "dev.mirql.zone.";
 /// process under appzones.slice not a zone's unit, a nested pid namespace, an unreadable pid.
 pub fn zone_of(pid: Option<i64>, window: &Value, proc: &Path) -> Option<String> {
     let mut by_ctx = None;
-    let engine = window.get("sandbox_engine").and_then(Value::as_str).unwrap_or("");
+    let engine = window
+        .get("sandbox_engine")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if !engine.is_empty() {
-        let app = window.get("sandbox_app_id").and_then(Value::as_str).unwrap_or("");
+        let app = window
+            .get("sandbox_app_id")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let name = app.strip_prefix(APP_PREFIX).unwrap_or("");
         if engine != ENGINE || !zone_name_ok(name) {
             return Some("?".into());
@@ -188,7 +267,11 @@ pub fn zone_of(pid: Option<i64>, window: &Value, proc: &Path) -> Option<String> 
         Some(p) if p > 0 => p,
         _ => return by_ctx,
     };
-    let read = |f: &str| std::fs::read(proc.join(pid.to_string()).join(f)).ok().map(|b| String::from_utf8_lossy(&b).into_owned());
+    let read = |f: &str| {
+        std::fs::read(proc.join(pid.to_string()).join(f))
+            .ok()
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+    };
     let (Some(cgroup), Some(status)) = (read("cgroup"), read("status")) else {
         return Some("?".into()); // gone already, or unreadable
     };
@@ -215,7 +298,10 @@ pub fn zone_of(pid: Option<i64>, window: &Value, proc: &Path) -> Option<String> 
     if by_ctx.is_some() || by_cgroup.is_some() {
         return by_ctx.or(by_cgroup);
     }
-    let nested = status.lines().find_map(|l| l.strip_prefix("NSpid:")).is_some_and(|v| v.split_whitespace().count() > 1);
+    let nested = status
+        .lines()
+        .find_map(|l| l.strip_prefix("NSpid:"))
+        .is_some_and(|v| v.split_whitespace().count() > 1);
     nested.then(|| "?".into())
 }
 
@@ -308,11 +394,16 @@ mod tests {
             std::fs::write(d.join("status"), format!("Name:\tfoot\nNSpid:\t{nspid}\n")).unwrap();
             Some(n)
         };
-        let unit = "0::/user.slice/user-1000.slice/user@1000.service/appzones.slice/appzones@work.service";
+        let unit =
+            "0::/user.slice/user-1000.slice/user@1000.service/appzones.slice/appzones@work.service";
         let host = pid(10, "0::/user.slice/user-1000.slice/session-2.scope", "7");
         let zone = pid(11, unit, "7");
         let below = pid(12, &format!("{unit}/app.scope"), "7");
-        let odd = pid(13, "0::/user.slice/user@1000.service/appzones.slice/other.service", "7");
+        let odd = pid(
+            13,
+            "0::/user.slice/user@1000.service/appzones.slice/other.service",
+            "7",
+        );
         let nested = pid(14, "0::/user.slice/session-2.scope", "900 3");
         let ctx = |e: &str, a: &str| json!({"sandbox_engine": e, "sandbox_app_id": a});
         let work = ctx("dev.mirql.zones", "dev.mirql.zone.work");
@@ -324,15 +415,35 @@ mod tests {
             (z(host, &none), None, "a host window"),
             (z(zone, &none), w.clone(), "the cgroup of a zone's unit"),
             (z(below, &none), w.clone(), "a cgroup below it"),
-            (z(odd, &none), q.clone(), "under appzones.slice but not a zone's unit"),
+            (
+                z(odd, &none),
+                q.clone(),
+                "under appzones.slice but not a zone's unit",
+            ),
             (z(nested, &none), q.clone(), "a nested pid namespace"),
             (z(Some(99), &none), q.clone(), "a pid that is gone"),
             (z(nested, &work), w.clone(), "the security context names it"),
-            (z(None, &work), w.clone(), "the security context without a pid"),
+            (
+                z(None, &work),
+                w.clone(),
+                "the security context without a pid",
+            ),
             (z(zone, &work), w.clone(), "both agree"),
-            (z(zone, &ctx("dev.mirql.zones", "dev.mirql.zone.home")), q.clone(), "the two disagree"),
-            (z(host, &ctx("org.flatpak", "org.mozilla.firefox")), q.clone(), "another sandbox"),
-            (z(host, &ctx("dev.mirql.zones", "dev.mirql.zone.Bad_Name")), q.clone(), "not a zone name"),
+            (
+                z(zone, &ctx("dev.mirql.zones", "dev.mirql.zone.home")),
+                q.clone(),
+                "the two disagree",
+            ),
+            (
+                z(host, &ctx("org.flatpak", "org.mozilla.firefox")),
+                q.clone(),
+                "another sandbox",
+            ),
+            (
+                z(host, &ctx("dev.mirql.zones", "dev.mirql.zone.Bad_Name")),
+                q.clone(),
+                "not a zone name",
+            ),
             (z(None, &none), None, "no pid, no context"),
         ] {
             assert_eq!(got, want, "{why}");
