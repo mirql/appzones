@@ -27,7 +27,7 @@ joins in.
 
 ```bash
 nix develop          # cargo, rustc, clippy, rustfmt, just, nixfmt
-just test            # cargo test and clippy (seconds, no Nix: any Rust 1.85 or newer)
+just test            # cargo test and clippy (no Nix: any Rust 1.85 or newer; the first build takes minutes)
 just check FILE      # validate a zones.toml
 just build           # the package; its build runs every Rust test, the golden files' too
 just test-vm         # NixOS VM test with Hyprland (~6 min, needs /dev/kvm)
@@ -44,8 +44,8 @@ screenshots there while developing. A broken zone, a stale mount or a bad
 nft rule should break a VM, not your session. Use the unit tests and the
 VM test.
 
-`just test` runs the golden tests only in the Nix build (`just build`): Python's answers
-about system paths were captured there, and your machine's `/etc` or `/boot` differ.
+`just test` runs the golden tests only in the Nix build (`just build`): their answers
+about system paths were recorded there, and your machine's `/etc` or `/boot` differ.
 
 ## Layout
 
@@ -53,15 +53,20 @@ about system paths were captured there, and your machine's `/etc` or `/boot` dif
 |---|---|
 | `helper/src/main.rs` | the binary's subcommands: `cli` (what `appzones` runs), `zone-init`, `zone-wayland`, `open-link`, `serve`, `plan` |
 | `helper/src/cli.rs` | the commands (`appzones run`, `up`, `list`, ...), starting and stopping servers, `--help` (`help.txt`) |
+| `helper/src/project.rs` | project zones: a repository's `appzones.toml`, `appzones trust` |
 | `helper/src/serve.rs`, `plan.rs` | the server (`appzones serve`, the unit's ExecStart): the zone's plan (theme, devices, nft rules, the bwrap command line), then running it |
 | `helper/src/netsetup.rs`, `host_dns.rs` | the zone's network namespace step (`_netsetup`) and its DNS on the host side |
 | `helper/src/zone_init.rs`, `zone_dns.rs`, `open_link.rs` | inside a zone: the agent (PID 2 under bwrap), its DNS, the link opener |
 | `helper/src/zone_wayland.rs` | the `wp_security_context_v1` helper |
 | `helper/src/config.rs`, `policy.rs` | the `zones.toml` schema, the validator and the never-lists |
-| `helper/src/mount_helper.rs` | the root step of `appzones mount`, its own binary, run through sudo |
-| `helper/src/agent.rs`, `active.rs`, `pyfmt.rs` | talking to zone-init; `appzones active` and the sway hook; Python's formats (repr, JSON) that outputs keep |
-| `helper/tests/` | `cli.rs` (the commands from outside), `agent.rs` (the agent protocol), `golden.rs` with `golden/` (what the Python implementation answered) |
+| `helper/src/mount_helper.rs`, `mount_helper_linux.rs` | the root step of `appzones mount`, its own binary, run through sudo (the code is in `mount_helper_linux.rs`) |
+| `helper/src/agent.rs`, `active.rs`, `pyfmt.rs` | talking to zone-init; `appzones active` and the sway hook; the formats (repr, JSON) that outputs keep from the Python implementation |
+| `helper/src/sys.rs` | the system calls Linux and macOS spell differently |
+| `helper/src/seatbelt.rs`, `proxy.rs` | macOS: a zone's Seatbelt profile; the proxy for `network = "internet"` |
+| `helper/tests/` | `cli.rs` (the commands from outside), `agent.rs` (the agent protocol), `golden.rs` with `golden/` (what the Python implementation answered, kept as recorded answers) |
+| `tests/macos.sh` | zones on a Mac (`just test-macos-zones`) |
 | `nix/package.nix`, `nix/module.nix` | the package and the NixOS module |
+| `nix/package-darwin.nix`, `nix/darwin-module.nix` | the macOS package and the nix-darwin module |
 | `nix/helper.nix`, `nix/portable.nix`, `nix/deb.nix` | the binary (tests in its build); the binaries for other distributions; the .deb |
 | `tests/vm.nix` | the NixOS VM test |
 | `tests/demo.nix`, `tests/demo-record.py` | the README's terminal demos, recorded in a VM (`just demo`) |
@@ -83,8 +88,8 @@ about system paths were captured there, and your machine's `/etc` or `/boot` dif
   `examples/zones.toml`.
 - **Never-lists** (paths, D-Bus names, environment) only grow by default.
   Removing an entry needs an explicit reason in the PR.
-- **`mount_helper.rs` runs as root.** Keep it small, reading no environment, with
-  `unsafe` only in its `mod sys`, and explain in the PR why a caller still cannot abuse it.
+- **The mount helper (`mount_helper_linux.rs`) runs as root.** Keep it small, reading no
+  environment but `SUDO_UID`, with `unsafe` only in its `mod sys`, and explain in the PR why a caller still cannot abuse it.
 - **Golden files** (`helper/tests/golden/`) hold what the Python implementation
   answered. Change an answer only on purpose, in the same PR, and say why.
 - **Docs.** If behaviour changes, update its page in `docs/` in the same PR.
