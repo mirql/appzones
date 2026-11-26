@@ -14,6 +14,9 @@ The config schema has its own release number (`requires = N` in
   later. `appzones check --probe ZONE` asks them too: `PASS  names resolve`, a `FAIL` with the
   same reason when refused on the host, a `SKIP` when nothing answers (offline?).
 
+- **`appzones which ZONE --json`** (#75): the zone's settings as one JSON object, each with its value and where it
+  came from (`zone`, `defaults`, `builtin`), in the order `which` prints them.
+
 ## 0.14.0
 
 Two features for zones that run AI agents and dev tools. **Allow lists**: `allow = ["api.anthropic.com", "github.com"]` lets a zone reach only those host names, through appzones' own proxy, on Linux and macOS. **Project zones**: a repository can carry its own zones in an `appzones.toml`, shared by a team; each person trusts it once at the terminal (`appzones trust`), then runs `appzones run @ -- CMD` in the repository. The config release is 8: a `zones.toml` that uses `allow` needs `requires = 7`, one with `[projects]` `requires = 8`. Existing zones work as before; one fix: `appzones run` from a folder inside a bind reached through a symlink now starts the command in that folder, not in the zone's home.

@@ -2,7 +2,8 @@ appzones: app zones on this host (appzones, https://github.com/mirql/appzones).
 
     appzones list [--json]                 zones: state, network, dns, devices, apps running, colour
                                            (--json: one object per zone, for scripts and bars)
-    appzones which ZONE                    every setting in effect and where it came from
+    appzones which ZONE [--json]           every setting in effect and where it came from
+                                           (--json: one object, for scripts)
     appzones run [--restart] [--bus B] ZONE APP [ARGS...]
     appzones run [--restart] [--bus B] [--wait] ZONE -- CMD [ARGS...]
                                            start the zone if needed, launch inside it.

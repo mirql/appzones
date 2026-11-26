@@ -296,6 +296,29 @@ fn list_json() {
 }
 
 #[test]
+fn which_json() {
+    let b = Box_::new("which", Some("version = 1\n[defaults]\ndns = \"public\"\n[zones.work]\ncolour = \"#f38ba8\"\nnetwork = \"internet\"\n"));
+    let (rc, so, err) = b.run(&["which", "work", "--json"]);
+    assert_eq!(rc, 0, "{err}");
+    assert!(so.starts_with("{\"name\": \"work\", \"settings\": {"), "{so}");
+    let data: serde_json::Value = serde_json::from_str(&so).unwrap();
+    assert_eq!(data["name"], "work");
+    assert_eq!(data["settings"]["network"], serde_json::json!({"value": "internet", "from": "zone"}));
+    assert_eq!(data["settings"]["dns"], serde_json::json!({"value": "public", "from": "defaults"}));
+    assert_eq!(data["settings"]["userns"], serde_json::json!({"value": true, "from": "builtin"}));
+
+    let (rc2, plain, _) = b.run(&["which", "work"]);
+    assert_eq!(rc2, 0);
+    let text_keys: Vec<&str> = plain.lines().map(|l| l.split_whitespace().next().unwrap()).collect();
+    let json_keys: Vec<&str> = data["settings"].as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    assert_eq!(text_keys, json_keys);
+
+    let (rc3, so3, _) = b.run(&["which", "--json", "work"]);
+    assert_eq!(rc3, 0);
+    assert_eq!(so, so3);
+}
+
+#[test]
 fn state_moves_once_nothing_runs() {
     // the pre-0.6 ~/.local/share/zones moves to ~/.local/share/appzones when no zone runs
     let b = Box_::new("migrate", Some(TWO));
