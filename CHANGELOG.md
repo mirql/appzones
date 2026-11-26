@@ -5,6 +5,12 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **Your own additions to a project's zones** (config release 9): in your `zones.toml`,
+  `[projects."~/src/my-app".zones.dev]` with any zone key but `colour`, `autostart` and
+  `autostart_apps`: binds are added to the
+  project's, `env` is merged, any other key replaces the project's value. It is your file, so
+  it needs no trust; `appzones which @dev` (now with `@`) marks those keys `(yours)`.
+
 - **Removed: what kept appzones from before 0.6 working** (`~/.config/zones/zones.toml`,
   `~/.local/share/zones`, `/etc/zones/denied-paths`, `$ZONES_*`, `contrib/hyprland/zones.lua`).
   None of these is read or moved any more. appzones warns about each one it finds and

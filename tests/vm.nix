@@ -188,7 +188,7 @@ let
 
   zonesToml = pkgs.writeText "zones.toml" ''
     version = 1
-    requires = 8
+    requires = 9
     [defaults]
     devices = []
     [zones.tw]
@@ -257,6 +257,9 @@ let
     [apps.firefox]
     command = ["firefox"]
     zones = ["ta", "tc"]
+    [projects."~/src/app".zones.dev]
+    binds = [ { path = "~/Shared", mode = "ro" } ]
+    env = { FROM_HOST = "yes" }
   '';
 
   # Bus names a zone must never own on the host bus.
@@ -698,6 +701,11 @@ pkgs.testers.runNixOSTest {
         rc, out = at("@dev", f"touch {P}/x && echo written")
         assert rc == 0 and "written" in out, out
         print("PASS  project: the checkout read-only in @, read-write in @dev (checkout = rw)")
+        rc, out = at("@dev", "ls -d /home/alice/Shared && echo from=$FROM_HOST && ! touch /home/alice/Shared/w 2>/dev/null")
+        assert rc == 0 and "from=yes" in out, out
+        rc, out = at("@", "ls -d /home/alice/Shared 2>&1; echo from=$FROM_HOST")
+        assert "No such file" in out and "from=\n" in out + "\n", out
+        print("PASS  project: your own additions (zones.toml [projects.PATH.zones.dev]) for @dev alone")
         rc, out = at("@", "ls /home/alice/Shared /home/alice/.ssh 2>&1; ls -A /run/user/1000; echo wl=$WAYLAND_DISPLAY bus=$DBUS_SESSION_BUS_ADDRESS")
         assert "No such file" in out and "wl= bus=" in out and "bus\n" not in out and "wayland-0" not in out, out
         print("PASS  project: nothing else of the home, no Wayland, no D-Bus")

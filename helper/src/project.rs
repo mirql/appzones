@@ -385,9 +385,10 @@ pub fn check_binds(root: &Path, f: &ProjectFile) -> Result<(), String> {
     Ok(())
 }
 
-/// The zones of the trusted projects, for a host whose zones are HOST: (zones, how to show
-/// them, warnings for projects that cannot be used now).
-pub fn zones(home: &Path, host: &[Zone]) -> (Vec<Zone>, Vec<ProjectZone>, Vec<String>) {
+/// The zones of the trusted projects, for a host whose zones are HOST and whose own additions
+/// to project zones are OVERRIDES (zones.toml's [projects."PATH".zones.NAME]): (zones, how to
+/// show them, warnings for projects that cannot be used now).
+pub fn zones(home: &Path, host: &[Zone], overrides: &[(Vec<u8>, String, Table)]) -> (Vec<Zone>, Vec<ProjectZone>, Vec<String>) {
     let (mut zones, mut shown_as, mut warnings) = (Vec::new(), Vec::new(), Vec::new());
     let mut colours: Vec<String> = host.iter().filter_map(|z| z.get("colour").as_str().map(str::to_lowercase)).collect();
     // the host zones' own homes, resolved (a home whose path does not resolve: "/", which
@@ -439,13 +440,41 @@ pub fn zones(home: &Path, host: &[Zone]) -> (Vec<Zone>, Vec<ProjectZone>, Vec<St
                 .unwrap_or_else(|| format!("#{}", &name[1..7]));
             colours.push(colour.clone());
             settings.insert("colour".into(), Value::String(colour));
-            let origin = config::keys().into_iter()
-                .map(|(k, _)| (k, if zt.contains_key(k) { "zone" } else { "builtin" })).collect();
-            zones.push(Zone { name: name.clone(), settings, origin, project: true });
+            let mut origin: Vec<(&'static str, &'static str)> = config::keys().into_iter()
+                .map(|(k, _)| (k, if zt.contains_key(k) || k == "binds" { "zone" } else { "builtin" })).collect();
+            // the user's own additions (their zones.toml): binds added, env merged, the rest replaced
+            for (_, _, ot) in overrides.iter().filter(|(p, z, _)| z == zname && same_root(p, &t.root)) {
+                for (k, v) in ot {
+                    match (k.as_str(), v, settings.get_mut(k.as_str())) {
+                        ("binds", Value::Array(add), Some(Value::Array(b))) => b.extend(add.iter().cloned()),
+                        ("env", Value::Table(add), Some(Value::Table(e))) => e.extend(add.clone()),
+                        _ => {
+                            settings.insert(k.clone(), v.clone());
+                        }
+                    }
+                    if let Some(o) = origin.iter_mut().find(|(n, _)| *n == k) {
+                        o.1 = "yours";
+                    }
+                }
+            }
+            let zone = Zone { name: name.clone(), settings, origin, project: true };
+            // the whole zone checked as the host's are (the user's additions may not fit the rest)
+            let errs = config::check_zone(&zone, host);
+            if !errs.is_empty() {
+                warnings.push(format!("project {} zone {zname}: {} (with your additions in zones.toml); not used",
+                                      shown(&t.root.to_string_lossy()), errs.join("; ")));
+                continue;
+            }
+            zones.push(zone);
             shown_as.push(ProjectZone { name, shown: format!("{label}/{zname}"), root: t.root.clone() });
         }
     }
     (zones, shown_as, warnings)
+}
+
+/// Whether PATH (from the user's zones.toml, expanded) is the project at ROOT (resolved).
+fn same_root(path: &[u8], root: &Path) -> bool {
+    std::fs::canonicalize(std::ffi::OsStr::from_bytes(path)).is_ok_and(|p| p == root)
 }
 
 /// What a project file asks for, to show before it is trusted: the widenings (against a

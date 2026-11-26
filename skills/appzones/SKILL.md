@@ -25,6 +25,9 @@ allow, checkout, binds inside the repo, env, packages) gives it zones named `@` 
 and `@NAME`: `appzones run @ -- CMD` in that folder. Never run `appzones trust` for the user:
 it asks at their terminal and they must read what the project asks for (rule 2). When `@`
 says "not trusted" or "changed since you trusted it", tell the user to run `appzones trust`.
+What differs on one machine goes in the user's own zones.toml, not the repo:
+`[projects."~/src/app".zones.dev]` with any zone key but colour, autostart and autostart_apps (binds added, env merged, the rest replaced;
+`requires = 9`); `appzones which @dev` shows them as `(yours)`.
 
 `allow = ["api.example.com", "*.example.org"]` (with `network = "internet"`, both systems):
 the zone reaches only those names, through appzones' proxy (`HTTPS_PROXY`/`ALL_PROXY`); a

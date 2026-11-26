@@ -1052,7 +1052,7 @@ impl Cli {
                          crate::pyfmt::repr_strs(&r)));
         }
         let empty = || Config { zones: vec![], apps: toml::Table::new(), errors: vec![], warnings: vec![], projects: vec![],
-                                projects_enabled: true };
+                                projects_enabled: true, overrides: vec![] };
         if !write {
             let cfg = if self.host.config.symlink_metadata().is_ok() { self.load_cfg(true) } else { empty() };
             if cfg.zone(name).is_some() {
@@ -2127,7 +2127,7 @@ pub fn main(args: &[OsString]) -> i32 {
             let as_json = rest.iter().any(|a| a == "--json");
             let rest2: Vec<&String> = rest.iter().filter(|a| *a != "--json").collect();
             let name = rest2.first().cloned().unwrap_or_else(|| die("usage: appzones which ZONE"));
-            cli.which(name, as_json)
+            cli.which(&cli.zone_arg(name, false), as_json)
         }
         "up" | "stop" | "restart" => cli.each_zone(cmd, rest),
         "ping" => {

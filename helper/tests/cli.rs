@@ -595,6 +595,35 @@ fn project_zones_are_trusted_at_the_terminal() {
     assert!(rc == 0 && so.contains("app/agent") && so.contains("app/dev"), "{so}{err}");
     let (rc, so, err) = b.run(&["check"]);
     assert!(rc == 0 && so.contains("; 2 project zones (app/agent, app/dev)"), "{so}{err}");
+    // the user's own additions in their zones.toml: binds added, env merged, the rest replaced
+    let host = fs::read_to_string(b.t.join("zones.toml")).unwrap();
+    fs::create_dir_all(b.t.join("home/data")).unwrap();
+    fs::write(b.t.join("zones.toml"), format!("{}[projects.\"~/src/app\".zones.dev]\nbinds = [{{ path = \"~/data\", mode = \"ro\" }}]\n\
+                                               env = {{ API = \"x\" }}\nnetwork = \"internet\"\nallow = [\"example.com\"]\n",
+                                              host.replace("version = 1\n", "version = 1\nrequires = 9\n"))).unwrap();
+    let (rc, _, so) = at_terminal(&b, &app, &["which", "@dev"], None);
+    assert_eq!(rc, 0, "{so}");
+    let line = |k: &str| so.lines().find(|l| l.starts_with(&format!("{k} "))).unwrap_or("").to_string();
+    assert!(line("binds").contains("src/app") && line("binds").contains("/data") && line("binds").ends_with("(yours)"), "{so}");
+    assert!(line("env").contains("API") && line("env").ends_with("(yours)"), "{so}");
+    assert!(line("allow").contains("example.com") && line("network").contains("internet"), "{so}");
+    assert!(line("devices").ends_with("(builtin)"), "{so}");
+    let (rc, _, so) = at_terminal(&b, &app, &["which", "@agent"], None);
+    assert!(rc == 0 && !so.contains("(yours)"), "only @dev has additions: {so}");
+    // an addition that does not fit the rest of the zone (agent has an allow list): not used, said why
+    fs::write(b.t.join("zones.toml"), format!("{}[projects.\"~/src/app\".zones.agent]\nnetwork = \"none\"\n",
+                                              host.replace("version = 1\n", "version = 1\nrequires = 9\n"))).unwrap();
+    let (rc, _, err) = b.run(&["check"]);
+    assert!(rc == 0 && err.contains("zone agent: allow needs network = \"internet\" (with your additions in zones.toml); not used"),
+            "{err}");
+    let (rc, se, _) = at_terminal(&b, &app, &["run", "@agent", "--", "true"], None);
+    assert!(rc == 1 && se.contains("cannot be used now"), "{se}");
+    // the cross-key checks see your additions too: camera without the device
+    fs::write(b.t.join("zones.toml"), format!("{}[projects.\"~/src/app\".zones.dev]\ncamera = \"device\"\n",
+                                              host.replace("version = 1\n", "version = 1\nrequires = 9\n"))).unwrap();
+    let (_, _, err) = b.run(&["check"]);
+    assert!(err.contains("zone dev: camera is set but \"camera\" is not in devices"), "{err}");
+    fs::write(b.t.join("zones.toml"), host).unwrap();
     // trusted again unchanged: nothing asked
     let (rc, _, so) = at_terminal(&b, &app, &["trust"], None);
     assert!(rc == 0 && so.contains("trusted already, unchanged"), "{so}");
