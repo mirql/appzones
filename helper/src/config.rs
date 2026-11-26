@@ -745,6 +745,10 @@ fn uses(raw: &Table, what: &str) -> bool {
 /// zonecfg.validate.
 fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
     let mut errs = Vec::new();
+    // the host's never-list where its paths would be left out: refused for every zone
+    if ctx.policy.denied_file.is_none() {
+        errs.extend(crate::policy::host_file_error(crate::policy::HOST_DENIED_FILE, crate::policy::LEGACY_HOST_DENIED_FILE));
+    }
     let mut seen_colour: Vec<(String, String)> = Vec::new();
     let zone_named = |n: &str| zones.iter().find(|z| z.name == n);
     for z in zones {

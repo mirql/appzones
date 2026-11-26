@@ -32,13 +32,15 @@ What needs more than that:
 
 0.6 renamed everything to appzones. Since 0.15 the old names are not read any more:
 appzones warns about each one it finds, with the command that moves it, and moves
-nothing itself.
+nothing itself. The commands below are for when the new place does not exist yet; when
+it does, appzones says so instead: keep the new one, take what you still need from the
+old one, then remove it.
 
 | before 0.6 | since 0.6 | what to do |
 |---|---|---|
 | `~/.config/zones/zones.toml` | `~/.config/appzones/zones.toml` | `mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/` |
 | `~/.local/share/zones/` (zone homes) | `~/.local/share/appzones/` | `appzones stop --all && mv ~/.local/share/zones ~/.local/share/appzones` |
-| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` | NixOS: the module writes the new one. Elsewhere: `sudo mv` it. Until then no zone starts, as its paths would enter zones |
+| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` | NixOS: the module writes the new one. Elsewhere: `sudo mv` it. Until then `appzones check` fails and no zone starts, as its paths would enter zones (the same for a new one that is a symlink to nothing) |
 | `$ZONES_*` | `$APPZONES_*` | rename the variables |
 | `contrib/hyprland/zones.lua` | `contrib/hyprland/appzones.lua` | load `appzones.lua` in your Hyprland config |
 

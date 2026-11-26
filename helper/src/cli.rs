@@ -1993,15 +1993,10 @@ impl Cli {
                                  sh(&old), shell_quote(&sh(&old)), shell_quote(&sh(&new))));
             }
         }
-        if config::env("DENIED_PATHS").is_none() {
-            let (new, old) = (crate::policy::HOST_DENIED_FILE, crate::policy::LEGACY_HOST_DENIED_FILE);
-            match crate::policy::old_host_file(new, old) {
-                Err(e) => out.push(e),
-                Ok(()) if lexists(Path::new(old)) => {
-                    out.push(format!("{old} is from before appzones 0.6 and is not read ({new} is): remove it"))
-                }
-                Ok(()) => {}
-            }
+        // (alone there, it is an error of the configuration: config::validate)
+        let (new, old) = (crate::policy::HOST_DENIED_FILE, crate::policy::LEGACY_HOST_DENIED_FILE);
+        if config::env("DENIED_PATHS").is_none() && lexists(Path::new(old)) && lexists(Path::new(new)) {
+            out.push(format!("{old} is from before appzones 0.6 and is not read ({new} is): remove it"));
         }
         out
     }

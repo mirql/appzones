@@ -18,17 +18,22 @@ use std::os::unix::fs::FileTypeExt;
 use std::path::{Component, Path};
 
 pub const HOST_DENIED_FILE: &str = "/etc/appzones/denied-paths";
-/// Where the host's file was before 0.6: no longer read. While it is there and the new one
-/// is not, nothing starts (its paths would enter zones).
+/// Where the host's file was before 0.6: no longer read.
 pub const LEGACY_HOST_DENIED_FILE: &str = "/etc/zones/denied-paths";
 
-/// An error while the host's never-list is only at its pre-0.6 place LEGACY (fails closed).
-pub fn old_host_file(new: &str, legacy: &str) -> Result<(), String> {
-    if fs::symlink_metadata(new).is_err() && fs::symlink_metadata(legacy).is_ok() {
-        return Err(format!("{legacy} is from before appzones 0.6 and is not read any more: move it to {new} \
-                            (until then nothing starts, as its paths would enter zones)"));
+/// What is wrong with the host's file at its default place NEW, when its paths would be
+/// left out of the never-list: only the pre-0.6 LEGACY is there, or NEW is a symlink to
+/// nothing. Either refuses (`check` fails, no zone starts); an absent NEW is no file.
+pub fn host_file_error(new: &str, legacy: &str) -> Option<String> {
+    match (fs::symlink_metadata(new), fs::metadata(new)) {
+        (Ok(_), Err(e)) => Some(format!("{new} is a symlink that cannot be followed ({}): fix or remove it \
+                                         (until then nothing starts, as its paths would enter zones)", py_oserror(&e, new))),
+        (Err(_), _) if fs::symlink_metadata(legacy).is_ok() => {
+            Some(format!("{legacy} is from before appzones 0.6 and is not read any more: move it to {new} \
+                          (until then nothing starts, as its paths would enter zones)"))
+        }
+        _ => None,
     }
-    Ok(())
 }
 
 /// The caller's own files that never enter a zone (zonecfg.denied_paths, in its order).
@@ -271,10 +276,10 @@ impl Policy {
     pub fn host_denied_paths(&self) -> Result<Vec<Vec<u8>>, String> {
         let path: OsString = match &self.denied_file {
             Some(p) => p.clone(),
-            None => {
-                old_host_file(HOST_DENIED_FILE, LEGACY_HOST_DENIED_FILE)?;
-                HOST_DENIED_FILE.into()
-            }
+            None => match host_file_error(HOST_DENIED_FILE, LEGACY_HOST_DENIED_FILE) {
+                Some(e) => return Err(e),
+                None => HOST_DENIED_FILE.into(),
+            },
         };
         let shown = path.to_string_lossy().into_owned();
         let text = match fs::read(&path) {
@@ -631,16 +636,23 @@ mod tests {
     }
 
     #[test]
-    fn the_host_file_at_its_old_place_fails_closed() {
+    fn a_host_file_that_would_be_left_out_fails_closed() {
         let t = TempDir::new("old-host-file");
         let (new, old) = (t.0.join("new"), t.0.join("old"));
         let (n, o) = (new.to_str().unwrap(), old.to_str().unwrap());
-        assert_eq!(old_host_file(n, o), Ok(()));
+        assert_eq!(host_file_error(n, o), None); // no file at all: none
         fs::write(&old, "/srv/private\n").unwrap();
-        let e = old_host_file(n, o).unwrap_err();
+        let e = host_file_error(n, o).unwrap();
         assert!(e.starts_with(&format!("{o} is from before appzones 0.6")) && e.contains(&format!("move it to {n}")), "{e}");
+        // the new one a symlink to nothing (the old one there or not): refused too
+        std::os::unix::fs::symlink(t.0.join("gone"), &new).unwrap();
+        let e = host_file_error(n, o).unwrap();
+        assert!(e.starts_with(&format!("{n} is a symlink that cannot be followed")), "{e}");
+        fs::remove_file(&old).unwrap();
+        assert!(host_file_error(n, o).is_some());
+        fs::remove_file(&new).unwrap();
         fs::write(&new, "").unwrap();
-        assert_eq!(old_host_file(n, o), Ok(()));
+        assert_eq!(host_file_error(n, o), None);
     }
 
     #[test]
