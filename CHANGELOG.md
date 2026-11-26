@@ -5,6 +5,14 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **Removed: what kept appzones from before 0.6 working** (`~/.config/zones/zones.toml`,
+  `~/.local/share/zones`, `/etc/zones/denied-paths`, `$ZONES_*`, `contrib/hyprland/zones.lua`).
+  None of these is read or moved any more. appzones warns about each one it finds and
+  prints the command that moves it. While the host's never-list exists only at
+  `/etc/zones/denied-paths`, `appzones check` fails and no zone starts, because its paths
+  would otherwise enter zones. `appzones stop` no longer finds servers of the Python
+  appzones (before 0.12). See [Upgrading](https://mirql.github.io/appzones/getting-started/upgrading.html).
+
 - **`dns = "public"` behind a VPN's DNS leak protection** (#171): when the host lets DNS go
   only to the VPN's resolver (Mullvad's firewall), names did not resolve in the zone and
   nothing said why. The zone's server now asks its resolvers once at the zone's start and

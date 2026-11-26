@@ -212,6 +212,7 @@ fn proc_uid(pid: libc::pid_t) -> Option<libc::uid_t> {
 
 /// The command line of PID, None when it cannot be read (gone, another user's, or one
 /// the sandbox hides). Linux: /proc/PID/cmdline; macOS: sysctl KERN_PROCARGS2.
+#[cfg_attr(target_os = "linux", allow(dead_code))] // (macOS: a lock's holder, a zone's ps; Linux: its test)
 pub fn proc_argv(pid: libc::pid_t) -> Option<Vec<String>> {
     #[cfg(target_os = "linux")]
     {

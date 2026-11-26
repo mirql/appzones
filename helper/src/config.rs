@@ -44,15 +44,13 @@ const ENV_NEVER: &[&str] = &["SSH_AUTH_SOCK", "GPG_*", "HYPRLAND_INSTANCE_SIGNAT
     // the loader (all of it), glibc's own hooks, appzones' own and the nix-ld settings
     "LD_*", "GLIBC_TUNABLES", "GCONV_PATH", "ZONE_*", "NIX_LD*", "HYPRLAND_*"];
 
-/// $APPZONES_<name>, or the pre-0.6 $ZONES_<name> (zonecfg.env).
+/// $APPZONES_<name>.
 pub fn env(name: &str) -> Option<String> {
-    std::env::var_os(format!("APPZONES_{name}"))
-        .or_else(|| std::env::var_os(format!("ZONES_{name}")))
-        .map(|v| v.to_string_lossy().into_owned())
+    std::env::var_os(format!("APPZONES_{name}")).map(|v| v.to_string_lossy().into_owned())
 }
 
 fn has_env(name: &str) -> bool {
-    std::env::var_os(format!("APPZONES_{name}")).is_some() || std::env::var_os(format!("ZONES_{name}")).is_some()
+    std::env::var_os(format!("APPZONES_{name}")).is_some()
 }
 
 /// The user's home as zonecfg.HOME: $APPZONES_HOME_FOR_TESTS, else $HOME, else passwd.

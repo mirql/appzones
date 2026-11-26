@@ -30,25 +30,17 @@ What needs more than that:
 
 ## From 0.5
 
-0.6 keeps everything under the name appzones:
+0.6 renamed everything to appzones. Since 0.15 the old names are not read any more:
+appzones warns about each one it finds, with the command that moves it, and moves
+nothing itself.
 
-| before 0.6 | since 0.6 |
-|---|---|
-| `~/.config/zones/zones.toml` | `~/.config/appzones/zones.toml` |
-| `~/.local/share/zones/` (zone homes) | `~/.local/share/appzones/` |
-| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` (the module writes it) |
-| `$ZONES_*` | `$APPZONES_*` |
-| `contrib/hyprland/zones.lua` | `contrib/hyprland/appzones.lua` |
+| before 0.6 | since 0.6 | what to do |
+|---|---|---|
+| `~/.config/zones/zones.toml` | `~/.config/appzones/zones.toml` | `mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/` |
+| `~/.local/share/zones/` (zone homes) | `~/.local/share/appzones/` | `appzones stop --all && mv ~/.local/share/zones ~/.local/share/appzones` |
+| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` | NixOS: the module writes the new one. Elsewhere: `sudo mv` it. Until then no zone starts, as its paths would enter zones |
+| `$ZONES_*` | `$APPZONES_*` | rename the variables |
+| `contrib/hyprland/zones.lua` | `contrib/hyprland/appzones.lua` | load `appzones.lua` in your Hyprland config |
 
-- **Zone homes move by themselves**: the first `appzones` command that runs
-  while no zone runs renames `~/.local/share/zones` to
-  `~/.local/share/appzones` and says so. Until then the old directory stays
-  in use. If backups or an impermanence setup list the old path, update them.
-- **The config does not move by itself** (it is often a link your dotfiles
-  manage): `appzones` reads the old file and says to move it:
-  `mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/`.
-- **After the switch**: `appzones stop --all`, then start your zones again
-  (`appzones up NAME`, or log out and in). The first command after the stop
-  moves the zone homes.
-- The old variable names and `zones.lua` still work in 0.6 and will be
-  removed later. The window tag (`zone:NAME`) and `zones.toml` keep their names.
+If backups or an impermanence setup list the old paths, update them. The window
+tag (`zone:NAME`) and `zones.toml` keep their names.

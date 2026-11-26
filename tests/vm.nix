@@ -21,7 +21,7 @@
 #     (systemd1 refused, the portal answers with the zone's app id);
 #   - Wayland: the zone's client sees no screencopy or data-control, its
 #     window gets the tag zone:NAME and the zone colour
-#     (contrib/hyprland/appzones.lua, as its pre-0.6 copy zones.lua,
+#     (contrib/hyprland/appzones.lua, copied into the store on its own,
 #     next to another window.open_early handler), a
 #     host window gets none; an app launched from its launcher entry too;
 #   - single-instance GTK apps on the zone's own bus (bus = "zone"): Thunar
@@ -66,9 +66,8 @@
 }:
 let
   inherit (pkgs) hyprland;
-  # the pre-0.6 name, copied into the store on its own as a config might do it
-  # (a copy of appzones.lua's code: test_zonecfg checks they match)
-  zonesLua = ../contrib/hyprland/zones.lua;
+  # copied into the store on its own, as a config might do it
+  zonesLua = ../contrib/hyprland/appzones.lua;
 
   # a desktop config usually has its own window.open_early handlers; keep
   # one here so the test shows both run.
@@ -102,9 +101,6 @@ let
     chmod +w $out/bin/generic-hello
     patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath $out/bin/generic-hello
   '';
-
-  # looks like another appzones installation's zone server (upgrade test)
-  oldServer = pkgs.writeTextDir "libexec/appzones/zone.py" "import time; time.sleep(600)\n";
 
   # a "browser" for tz's links (links = "zone"): the server picks a declared app whose
   # command names firefox; this one writes the link it gets into the zone's home
@@ -508,7 +504,7 @@ pkgs.testers.runNixOSTest {
 
     # ── setup: alice's files, zones.toml, host secrets that must stay out.
     # The home is laid out as appzones 0.5 left it (~/.config/zones,
-    # ~/.local/share/zones): the first subtest upgrades it.
+    # ~/.local/share/zones): the first subtest moves it by hand, as appzones says.
     machine.succeed("install -d -o alice -g users /home/alice/.config/zones /home/alice/.ssh /home/alice/Shared")
     # a bind written through a symlink (~/linked -> ~/realproj): `run` from inside it
     machine.succeed("install -d -o alice -g users /home/alice/realproj/sub && ln -s realproj /home/alice/linked && chown -h alice:users /home/alice/linked")
@@ -535,30 +531,30 @@ pkgs.testers.runNixOSTest {
     def server_pids(z):
         return machine.succeed(f"fuser /run/user/1000/appzones/{z}.lock 2>/dev/null || true").split()
 
-    with subtest("upgrade from 0.5: the state moves once no zone runs; the old config is read, with a warning"):
+    with subtest("left from 0.5: named with what to do, never read or moved; the host's old never-list fails closed"):
         machine.succeed("test -f /etc/appzones/denied-paths && test ! -e /etc/zones")
-        # a supervisor (of any version) running: nothing moves yet
-        # (a stand-in for an older appzones' server: an installed .../libexec/appzones/zone.py)
-        u("systemd-run --user --collect --unit=old-supervisor ${pkgs.python3}/bin/python3 "
-          "${oldServer}/libexec/appzones/zone.py _supervise old")
-        machine.wait_until_succeeds("pgrep -u alice -f '_supervise old'", timeout=10)
-        out = u("appzones list 2>&1")
+        rc, out = u("appzones list 2>&1", check=False)
         print(out)
-        assert "moves to /home/alice/.local/share/appzones once no zone runs" in out, out
-        assert "reading /home/alice/.config/zones/zones.toml" in out, out
+        assert "/home/alice/.config/zones/zones.toml is from before appzones 0.6 and is not read: mkdir -p" in out, out
+        assert "/home/alice/.local/share/zones (zone homes from before appzones 0.6) is not used: appzones stop --all && mv" in out, out
         u("test -f ~/.local/share/zones/ta/home/from-0.5 && test ! -e ~/.local/share/appzones")
-        print("PASS  nothing moved while a zone supervisor runs")
-        u("systemctl --user stop old-supervisor")
-        machine.wait_until_fails("pgrep -u alice -f '_supervise old'", timeout=10)
-        out = u("appzones list 2>&1")
-        print(out)
-        assert "moved /home/alice/.local/share/zones to /home/alice/.local/share/appzones" in out, out
-        u("grep -qx kept ~/.local/share/appzones/ta/home/from-0.5 && test ! -e ~/.local/share/zones")
-        print("PASS  the state moved, the zone home's files with it")
+        print("PASS  the old config and state are named, nothing read or moved")
         u("mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/ && rmdir ~/.config/zones")
+        u("appzones stop --all && mv ~/.local/share/zones ~/.local/share/appzones")
         out = u("appzones list 2>&1")
-        assert "reading" not in out and "moved" not in out and "moves" not in out, out
-        print("PASS  after moving the config by hand: no more warnings")
+        assert "before appzones 0.6" not in out, out
+        u("grep -qx kept ~/.local/share/appzones/ta/home/from-0.5")
+        print("PASS  moved by hand as the warnings say: no more warnings, the zone home's files kept")
+        # the host's never-list only at its pre-0.6 place: nothing starts (its paths would enter zones)
+        machine.succeed("mv /etc/appzones/denied-paths /etc/appzones/denied-paths.moved && mkdir -p /etc/zones "
+                        "&& cp /etc/appzones/denied-paths.moved /etc/zones/denied-paths")
+        rc, out = u("appzones check 2>&1", check=False)
+        print(out)
+        assert rc != 0 and "/etc/zones/denied-paths is from before appzones 0.6 and is not read any more" in out, (rc, out)
+        rc, out = u("appzones up ta 2>&1", check=False)
+        assert rc != 0, out
+        machine.succeed("rm -r /etc/zones && mv /etc/appzones/denied-paths.moved /etc/appzones/denied-paths")
+        print("PASS  /etc/zones/denied-paths alone: check fails and no zone starts")
 
     with subtest("appzones check and which"):
         print(u("appzones check"))
@@ -831,8 +827,7 @@ pkgs.testers.runNixOSTest {
         assert rc != 0 and ("required file not found" in out or "No such file" in out), (rc, out)
         print("PASS  without nix_ld the same binary fails: required file not found")
         refused("tb", "test -e /lib64 || [ -n \"$NIX_LD\" ]", "tb (no nix_ld): no /lib64, no NIX_LD")
-        # the pre-0.6 variable name: still read
-        rc, out = u("ZONES_NIX_LD_SHIM=/nonexistent/ld-linux-x86-64.so.2 appzones check 2>&1", check=False)
+        rc, out = u("APPZONES_NIX_LD_SHIM=/nonexistent/ld-linux-x86-64.so.2 appzones check 2>&1", check=False)
         print(out)
         assert rc != 0 and "programs.nix-ld.enable" in out, out
         print("PASS  the validator refuses nix_ld = true on a host without nix-ld")

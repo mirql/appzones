@@ -119,11 +119,9 @@ in
     # Launcher entries "App (zone)" live in
     # ~/.local/share/appzones/launcher/share/applications (`appzones apps`), not in
     # ~/.local/share/applications (often managed by dotfiles). A profile adds
-    # its share/ to XDG_DATA_DIRS (as flatpak's exports do). The pre-0.6
-    # ~/.local/share/zones is listed too: it stays in use until appzones moves it.
+    # its share/ to XDG_DATA_DIRS (as flatpak's exports do).
     environment.profiles = [
       "$HOME/.local/share/appzones/launcher"
-      "$HOME/.local/share/zones/launcher"
     ];
 
     systemd.user.slices.appzones = {
@@ -168,11 +166,7 @@ in
       after = [ "graphical-session.target" ];
       partOf = [ "graphical-session.target" ];
       unitConfig = onlyUser // {
-        # "|": either (the second is the pre-0.6 place, still read)
-        ConditionPathExists = [
-          "|%h/.config/appzones/zones.toml"
-          "|%h/.config/zones/zones.toml"
-        ];
+        ConditionPathExists = "%h/.config/appzones/zones.toml";
       };
       serviceConfig = {
         Type = "oneshot";

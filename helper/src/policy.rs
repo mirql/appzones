@@ -18,7 +18,18 @@ use std::os::unix::fs::FileTypeExt;
 use std::path::{Component, Path};
 
 pub const HOST_DENIED_FILE: &str = "/etc/appzones/denied-paths";
+/// Where the host's file was before 0.6: no longer read. While it is there and the new one
+/// is not, nothing starts (its paths would enter zones).
 pub const LEGACY_HOST_DENIED_FILE: &str = "/etc/zones/denied-paths";
+
+/// An error while the host's never-list is only at its pre-0.6 place LEGACY (fails closed).
+pub fn old_host_file(new: &str, legacy: &str) -> Result<(), String> {
+    if fs::symlink_metadata(new).is_err() && fs::symlink_metadata(legacy).is_ok() {
+        return Err(format!("{legacy} is from before appzones 0.6 and is not read any more: move it to {new} \
+                            (until then nothing starts, as its paths would enter zones)"));
+    }
+    Ok(())
+}
 
 /// The caller's own files that never enter a zone (zonecfg.denied_paths, in its order).
 const DENIED_IN_HOME: &[&str] = &[
@@ -72,7 +83,7 @@ const MAX_LINKS: usize = 256;
 pub struct Policy {
     pub home: OsString,
     pub code_dir: OsString,
-    /// None: the host's file (HOST_DENIED_FILE, or the legacy one when it is absent)
+    /// None: the host's file (HOST_DENIED_FILE)
     pub denied_file: Option<OsString>,
     /// A custom state directory ($XDG_STATE_HOME, absolute): its appzones/ (the logs) is on
     /// the never-list too. None for the mount helper, which reads no environment.
@@ -260,9 +271,10 @@ impl Policy {
     pub fn host_denied_paths(&self) -> Result<Vec<Vec<u8>>, String> {
         let path: OsString = match &self.denied_file {
             Some(p) => p.clone(),
-            None if fs::symlink_metadata(HOST_DENIED_FILE).is_err()
-                && fs::symlink_metadata(LEGACY_HOST_DENIED_FILE).is_ok() => LEGACY_HOST_DENIED_FILE.into(),
-            None => HOST_DENIED_FILE.into(),
+            None => {
+                old_host_file(HOST_DENIED_FILE, LEGACY_HOST_DENIED_FILE)?;
+                HOST_DENIED_FILE.into()
+            }
         };
         let shown = path.to_string_lossy().into_owned();
         let text = match fs::read(&path) {
@@ -616,6 +628,19 @@ mod tests {
             let b = p.as_os_str().as_bytes();
             assert_eq!(policy.mount_source_error_resolved(b, &meta), policy.mount_source_error(b), "{}", p.display());
         }
+    }
+
+    #[test]
+    fn the_host_file_at_its_old_place_fails_closed() {
+        let t = TempDir::new("old-host-file");
+        let (new, old) = (t.0.join("new"), t.0.join("old"));
+        let (n, o) = (new.to_str().unwrap(), old.to_str().unwrap());
+        assert_eq!(old_host_file(n, o), Ok(()));
+        fs::write(&old, "/srv/private\n").unwrap();
+        let e = old_host_file(n, o).unwrap_err();
+        assert!(e.starts_with(&format!("{o} is from before appzones 0.6")) && e.contains(&format!("move it to {n}")), "{e}");
+        fs::write(&new, "").unwrap();
+        assert_eq!(old_host_file(n, o), Ok(()));
     }
 
     #[test]
