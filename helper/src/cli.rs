@@ -1979,7 +1979,8 @@ impl Cli {
             if lexists(&old) && lexists(&new) {
                 out.push(format!("{} is from before appzones 0.6 and is not read ({} is): remove it", sh(&old), sh(&new)));
             } else if lexists(&old) {
-                out.push(format!("{} is from before appzones 0.6 and is not read: mkdir -p {} && mv {} {}", sh(&old),
+                // (-n: never over a config made meanwhile)
+                out.push(format!("{} is from before appzones 0.6 and is not read: mkdir -p {} && mv -n {} {}", sh(&old),
                                  shell_quote(&sh(&home.join(".config/appzones"))), shell_quote(&sh(&old)), shell_quote(&sh(&new))));
             }
         }
@@ -1989,14 +1990,16 @@ impl Cli {
                 out.push(format!("{} (zone homes from before appzones 0.6) is not used ({} is): move what you still need \
                                   from it, then remove it", sh(&old), sh(&new)));
             } else if lexists(&old) {
-                out.push(format!("{} (zone homes from before appzones 0.6) is not used: appzones stop --all && mv {} {}",
+                // (-T: never into a state folder a command made meanwhile; it fails instead)
+                out.push(format!("{} (zone homes from before appzones 0.6) is not used: appzones stop --all && mv -T {} {}",
                                  sh(&old), shell_quote(&sh(&old)), shell_quote(&sh(&new))));
             }
         }
         // (alone there, it is an error of the configuration: config::validate)
         let (new, old) = (crate::policy::HOST_DENIED_FILE, crate::policy::LEGACY_HOST_DENIED_FILE);
         if config::env("DENIED_PATHS").is_none() && lexists(Path::new(old)) && lexists(Path::new(new)) {
-            out.push(format!("{old} is from before appzones 0.6 and is not read ({new} is): remove it"));
+            out.push(format!("{old} is from before appzones 0.6 and is not read ({new} is): put the entries you still \
+                              need into {new} (NixOS: programs.appzones.deniedPaths), then remove it"));
         }
         out
     }

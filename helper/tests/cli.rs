@@ -326,13 +326,13 @@ fn what_is_left_from_before_0_6_is_named_never_read() {
     let (rc, _, err) = b.cmd(&["list"]).env("ZONES_STATE", "/nonexistent").output().map(out).unwrap();
     assert_eq!(rc, 0, "{err}");
     assert!(err.contains("$ZONES_STATE is from before appzones 0.6 and is not read: set $APPZONES_STATE instead"), "{err}");
-    assert!(err.contains(&format!("{} (zone homes from before appzones 0.6) is not used: appzones stop --all && mv ",
+    assert!(err.contains(&format!("{} (zone homes from before appzones 0.6) is not used: appzones stop --all && mv -T ",
                                   old_state.display())), "{err}");
     assert!(!err.contains(".config/zones"), "{err}"); // ($APPZONES_CONFIG is set: the old file is not looked at)
     assert!(old_state.join("ta/home").is_dir());
     // at the default config path: the old file is named, never read
     let (_, _, err) = b.cmd(&["check"]).env_remove("APPZONES_CONFIG").output().map(out).unwrap();
-    assert!(err.contains("/home/.config/zones/zones.toml is from before appzones 0.6 and is not read: mkdir -p "), "{err}");
+    assert!(err.contains("/home/.config/zones/zones.toml is from before appzones 0.6 and is not read: mkdir -p ") && err.contains(" && mv -n "), "{err}");
     // the new folder there too: the old one is to be emptied by hand
     fs::create_dir_all(b.t.join("home/.local/share/appzones")).unwrap();
     let (_, _, err) = b.run(&["list"]);

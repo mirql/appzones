@@ -38,9 +38,9 @@ old one, then remove it.
 
 | before 0.6 | since 0.6 | what to do |
 |---|---|---|
-| `~/.config/zones/zones.toml` | `~/.config/appzones/zones.toml` | `mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/` |
-| `~/.local/share/zones/` (zone homes) | `~/.local/share/appzones/` | `appzones stop --all && mv ~/.local/share/zones ~/.local/share/appzones` |
-| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` | NixOS: the module writes the new one. Elsewhere: `sudo mv` it. Until then `appzones check` fails and no zone starts, as its paths would enter zones (the same for a new one that is a symlink to nothing) |
+| `~/.config/zones/zones.toml` | `~/.config/appzones/zones.toml` | `mkdir -p ~/.config/appzones && mv -n ~/.config/zones/zones.toml ~/.config/appzones/zones.toml` |
+| `~/.local/share/zones/` (zone homes) | `~/.local/share/appzones/` | `appzones stop --all && mv -T ~/.local/share/zones ~/.local/share/appzones` |
+| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` | NixOS: the module writes the new one from `deniedPaths`; put any entry of the old file that is not there into it first. Elsewhere: `sudo mkdir -p /etc/appzones && sudo mv -n /etc/zones/denied-paths /etc/appzones/`. While only the old file is there, `appzones check` fails and no zone starts, as its paths would enter zones (the same for a new one that is a symlink to nothing) |
 | `$ZONES_*` | `$APPZONES_*` | rename the variables |
 | `contrib/hyprland/zones.lua` | `contrib/hyprland/appzones.lua` | load `appzones.lua` in your Hyprland config |
 

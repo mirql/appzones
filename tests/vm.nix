@@ -539,8 +539,8 @@ pkgs.testers.runNixOSTest {
         assert "/home/alice/.local/share/zones (zone homes from before appzones 0.6) is not used: appzones stop --all && mv" in out, out
         u("test -f ~/.local/share/zones/ta/home/from-0.5 && test ! -e ~/.local/share/appzones")
         print("PASS  the old config and state are named, nothing read or moved")
-        u("mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/ && rmdir ~/.config/zones")
-        u("appzones stop --all && mv ~/.local/share/zones ~/.local/share/appzones")
+        u("mkdir -p ~/.config/appzones && mv -n ~/.config/zones/zones.toml ~/.config/appzones/zones.toml && rmdir ~/.config/zones")
+        u("appzones stop --all && mv -T ~/.local/share/zones ~/.local/share/appzones")
         out = u("appzones list 2>&1")
         assert "before appzones 0.6" not in out, out
         u("grep -qx kept ~/.local/share/appzones/ta/home/from-0.5")
