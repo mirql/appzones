@@ -16,7 +16,8 @@ validate file:
     cd helper && APPZONES_CONFIG="$(realpath ../{{file}})" cargo run --release -q --bin appzones-helper -- cli check
 
 # The example configurations are valid, on any host: a home of their own (the folders
-# they bind), a stand-in nix-ld (`work` has nix_ld = true), no host never-list or D-Bus names
+# they bind), the NixOS layout with a stand-in nix-ld (`work` has nix_ld = true), no host
+# never-list or D-Bus names
 examples:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -25,7 +26,7 @@ examples:
     touch "$t"/nix-ld/shim "$t"/nix-ld/lib/ld.so "$t"/denied-paths
     for f in examples/zones.toml examples/minimal.toml; do
         (cd helper && APPZONES_HOME_FOR_TESTS="$t/home" APPZONES_CONFIG="$(realpath ../$f)" \
-            APPZONES_NIX_LD_SHIM="$t/nix-ld/shim" APPZONES_NIX_LD_LIB="$t/nix-ld/lib" \
+            APPZONES_LAYOUT=nixos APPZONES_NIX_LD_SHIM="$t/nix-ld/shim" APPZONES_NIX_LD_LIB="$t/nix-ld/lib" \
             APPZONES_DENIED_PATHS="$t/denied-paths" APPZONES_DBUS_SERVICE_DIRS= \
             cargo run --release -q --bin appzones-helper -- cli check)
     done
