@@ -668,9 +668,13 @@ fn the_example_project_file_is_valid() {
     // examples/project.toml (docs/configuration/projects.md), trusted as a user would; the
     // helper's Nix build has only helper/, so there it is skipped (`just test` runs it)
     let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/project.toml");
-    let Ok(file) = fs::read_to_string(&example) else {
-        eprintln!("skipped: no {} (the helper's own build)", example.display());
-        return;
+    let file = match fs::read_to_string(&example) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("skipped: no {} (the helper's own build)", example.display());
+            return;
+        }
+        Err(e) => panic!("{}: {e}", example.display()),
     };
     let b = Box_::new("example", Some(TWO));
     let app = b.t.join("home/src/app");

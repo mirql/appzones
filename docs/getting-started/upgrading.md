@@ -14,7 +14,8 @@ What needs more than that:
   Building from a checkout needs Rust 1.85 or newer, and `make install` puts the
   binaries in `PREFIX/libexec/appzones`.
 - `wayland = "host"` (0.11.3) gives the host's socket only where the compositor has no
-  security context (GNOME, Weston); on Hyprland, sway or KDE the zone gets its own.
+  security context (GNOME, Weston, sway before 1.9); on Hyprland, sway 1.9 or later or KDE
+  the zone gets its own.
 
 ## From 0.7
 
