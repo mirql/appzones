@@ -21,6 +21,9 @@ validate file:
 examples:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [ "$(uname -s)" != Linux ]; then
+        echo "examples: skipped, they are Linux configurations (macOS refuses nix_ld, devices, ...)"; exit 0
+    fi
     t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
     mkdir -p "$t"/home/{Downloads,Pictures,Documents,code} "$t"/nix-ld/lib
     touch "$t"/nix-ld/shim "$t"/nix-ld/lib/ld.so "$t"/denied-paths
