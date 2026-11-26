@@ -662,3 +662,22 @@ fn project_zones_are_trusted_at_the_terminal() {
     let (rc, _, err) = b.run(&["check"]);
     assert!(rc == 1 && err.contains("name project zones"), "{err}");
 }
+
+#[test]
+fn the_example_project_file_is_valid() {
+    // examples/project.toml (docs/configuration/projects.md), trusted as a user would; the
+    // helper's Nix build has only helper/, so there it is skipped (`just test` runs it)
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/project.toml");
+    let Ok(file) = fs::read_to_string(&example) else {
+        eprintln!("skipped: no {} (the helper's own build)", example.display());
+        return;
+    };
+    let b = Box_::new("example", Some(TWO));
+    let app = b.t.join("home/src/app");
+    fs::create_dir_all(app.join(".git")).unwrap();
+    fs::write(app.join("appzones.toml"), &file).unwrap();
+    let (rc, shown, so) = at_terminal(&b, &app, &["trust"], Some("y\n"));
+    assert_eq!(rc, 0, "{shown}{so}");
+    let (rc, so, err) = b.run(&["check"]);
+    assert!(rc == 0 && so.contains("; 2 project zones (app/agent, app/dev)") && err.is_empty(), "{so}{err}");
+}
