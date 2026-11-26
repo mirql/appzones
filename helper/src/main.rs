@@ -9,7 +9,7 @@
 //!   appzones-helper config-json FILE, check-mount-source ...   for tests: the config and
 //!                                      the never-list as JSON
 //!
-//! The interfaces are those of the Python implementation it replaced (0.11): the config,
+//! The interfaces are those of the Python implementation it replaced in 0.12: the config,
 //! the commands and their outputs, the runtime layout, the agent protocol, settings_hash
 //! byte for byte (helper/tests/golden).
 
@@ -116,7 +116,7 @@ fn main() -> ExitCode {
 }
 
 /// `check-mount-source --home H --code-dir C [--denied-file F] [--list-denied] PATH...`:
-/// for each PATH, a JSON line: null (allowed) or the refusal, as zonecfg.mount_source_error
+/// for each PATH, a JSON line: null (allowed) or the refusal, as policy::mount_source_error
 /// says it; with --list-denied first the never-list itself, as one JSON list.
 fn check_mount_source(args: &[std::ffi::OsString]) -> u8 {
     use std::os::unix::ffi::OsStrExt;

@@ -1,5 +1,5 @@
 // appzones-mount-helper: the one step of `appzones mount` / `appzones umount` that needs
-// root, in Rust (the port of zone_mount_helper.py, whose docstring explains the design).
+// root, as its own small binary run through sudo.
 //
 //   sudo -n appzones-mount-helper mount ZONE NAME SOURCE [--ro]
 //   sudo -n appzones-mount-helper umount ZONE NAME [--lazy]
