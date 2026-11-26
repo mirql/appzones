@@ -79,16 +79,12 @@ fn out(o: Output) -> (i32, String, String) {
 #[test]
 fn unknown_command_suggests_the_nearest() {
     let b = Box_::new("unknown", Some(TWO));
-    // the pre-0.6 state stays where it is: a typo migrates nothing
-    fs::create_dir_all(b.t.join("home/.local/share/zones/ta")).unwrap();
     assert_eq!(b.run(&["lsit"]), (2, String::new(),
                "appzones: unknown command 'lsit' (did you mean 'list'?); see appzones --help\n".into()));
     assert_eq!(b.run(&["zzzzzz"]), (2, String::new(), "appzones: unknown command 'zzzzzz'; see appzones --help\n".into()));
     let (rc, _, err) = b.run(&["netsetup"]);
     assert_eq!(rc, 2);
     assert!(!err.contains("_netsetup"), "an internal command suggested: {err}");
-    assert!(b.t.join("home/.local/share/zones/ta").is_dir());
-    assert!(!b.t.join("home/.local/share/appzones").exists());
 }
 
 #[test]
@@ -296,42 +292,54 @@ fn list_json() {
 }
 
 #[test]
-fn state_moves_once_nothing_runs() {
-    // the pre-0.6 ~/.local/share/zones moves to ~/.local/share/appzones when no zone runs
-    let b = Box_::new("migrate", Some(TWO));
-    let legacy = b.t.join("home/.local/share/zones");
-    fs::create_dir_all(legacy.join("ta/home")).unwrap();
-    fs::write(legacy.join("ta/home/kept"), "x").unwrap();
-    // a server holds a zone's lock: it runs on the old directory, which stays
-    fs::create_dir_all(b.t.join("rt/appzones")).unwrap();
-    let held = hold_lock(&b.t.join("rt/appzones/ta.lock"));
-    let (rc, _, err) = b.run(&["list"]);
+fn which_json() {
+    let b = Box_::new("which", Some("version = 1\n[defaults]\ndns = \"public\"\n[zones.work]\ncolour = \"#f38ba8\"\nnetwork = \"internet\"\n"));
+    let (rc, so, err) = b.run(&["which", "work", "--json"]);
     assert_eq!(rc, 0, "{err}");
-    assert!(err.contains("once no zone runs"), "{err}");
-    assert!(legacy.join("ta/home/kept").exists());
-    drop(held);
-    // a server of this version holds the state lock (shared) from before it picks its
-    // state directory: the move waits for it too, so none starts in between
-    let state = fs::OpenOptions::new().read(true).write(true).create(true).truncate(false)
-        .open(b.t.join("rt/appzones/.state.lock")).unwrap();
-    // Safety: flock on our own file.
-    assert_eq!(unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&state), libc::LOCK_SH | libc::LOCK_NB) }, 0);
-    let (rc, _, err) = b.run(&["list"]);
+    assert!(so.starts_with("{\"name\": \"work\", \"settings\": {"), "{so}");
+    let data: serde_json::Value = serde_json::from_str(&so).unwrap();
+    assert_eq!(data["name"], "work");
+    assert_eq!(data["settings"]["network"], serde_json::json!({"value": "internet", "from": "zone"}));
+    assert_eq!(data["settings"]["dns"], serde_json::json!({"value": "public", "from": "defaults"}));
+    assert_eq!(data["settings"]["userns"], serde_json::json!({"value": true, "from": "builtin"}));
+
+    let (rc2, plain, _) = b.run(&["which", "work"]);
+    assert_eq!(rc2, 0);
+    let text_keys: Vec<&str> = plain.lines().map(|l| l.split_whitespace().next().unwrap()).collect();
+    let json_keys: Vec<&str> = data["settings"].as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    assert_eq!(text_keys, json_keys);
+
+    let (rc3, so3, _) = b.run(&["which", "--json", "work"]);
+    assert_eq!(rc3, 0);
+    assert_eq!(so, so3);
+}
+
+#[test]
+fn what_is_left_from_before_0_6_is_named_never_read() {
+    // the pre-0.6 folders and variables: a warning for each, with what to do; nothing is
+    // read or moved
+    let b = Box_::new("old", Some(TWO));
+    let old_state = b.t.join("home/.local/share/zones");
+    fs::create_dir_all(old_state.join("ta/home")).unwrap();
+    fs::create_dir_all(b.t.join("home/.config/zones")).unwrap();
+    fs::write(b.t.join("home/.config/zones/zones.toml"), "version = 1\n").unwrap();
+    let (rc, _, err) = b.cmd(&["list"]).env("ZONES_STATE", "/nonexistent").output().map(out).unwrap();
     assert_eq!(rc, 0, "{err}");
-    assert!(err.contains("once no zone runs"), "{err}");
-    assert!(legacy.join("ta/home/kept").exists());
-    drop(state);
-    let (rc, _, err) = b.run(&["list"]);
-    assert_eq!(rc, 0, "{err}");
-    if err.contains("once no zone runs") {
-        // this machine runs zones of an appzones from before the lock (seen by their command
-        // line, as they must be): the move waits for them, rightly; the Nix build checks it
-        eprintln!("skipped the move: zones of an older appzones run here");
-        return;
-    }
-    assert!(err.contains("moved"), "{err}");
-    assert_eq!(fs::read_to_string(b.t.join("home/.local/share/appzones/ta/home/kept")).unwrap(), "x");
-    assert!(!legacy.exists());
+    assert!(err.contains("$ZONES_STATE is from before appzones 0.6 and is not read: set $APPZONES_STATE instead"), "{err}");
+    assert!(err.contains(&format!("{} (zone homes from before appzones 0.6) is not used: appzones stop --all && mv -T ",
+                                  old_state.display())), "{err}");
+    assert!(!err.contains(".config/zones"), "{err}"); // ($APPZONES_CONFIG is set: the old file is not looked at)
+    assert!(old_state.join("ta/home").is_dir());
+    // at the default config path: the old file is named, never read
+    let (_, _, err) = b.cmd(&["check"]).env_remove("APPZONES_CONFIG").output().map(out).unwrap();
+    assert!(err.contains("/home/.config/zones/zones.toml is from before appzones 0.6 and is not read: mkdir -p ") && err.contains(" && mv -n "), "{err}");
+    // the new folder there too: the old one is to be emptied by hand
+    fs::create_dir_all(b.t.join("home/.local/share/appzones")).unwrap();
+    let (_, _, err) = b.run(&["list"]);
+    assert!(err.contains("is not used (") && err.contains("move what you still need from it, then remove it"), "{err}");
+    // a typo warns about nothing
+    let (_, _, err) = b.run(&["lsit"]);
+    assert!(!err.contains("before appzones 0.6"), "{err}");
 }
 
 #[test]
@@ -667,4 +675,27 @@ fn project_zones_are_trusted_at_the_terminal() {
     fs::write(b.t.join("zones.toml"), "version = 1\n[zones.p0123456789]\ncolour = \"#111111\"\n").unwrap();
     let (rc, _, err) = b.run(&["check"]);
     assert!(rc == 1 && err.contains("name project zones"), "{err}");
+}
+
+#[test]
+fn the_example_project_file_is_valid() {
+    // examples/project.toml (docs/configuration/projects.md), trusted as a user would; the
+    // helper's Nix build has only helper/, so there it is skipped (`just test` runs it)
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/project.toml");
+    let file = match fs::read_to_string(&example) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("skipped: no {} (the helper's own build)", example.display());
+            return;
+        }
+        Err(e) => panic!("{}: {e}", example.display()),
+    };
+    let b = Box_::new("example", Some(TWO));
+    let app = b.t.join("home/src/app");
+    fs::create_dir_all(app.join(".git")).unwrap();
+    fs::write(app.join("appzones.toml"), &file).unwrap();
+    let (rc, shown, so) = at_terminal(&b, &app, &["trust"], Some("y\n"));
+    assert_eq!(rc, 0, "{shown}{so}");
+    let (rc, so, err) = b.run(&["check"]);
+    assert!(rc == 0 && so.contains("; 2 project zones (app/agent, app/dev)") && err.is_empty(), "{so}{err}");
 }

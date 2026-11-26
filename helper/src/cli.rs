@@ -59,52 +59,6 @@ fn out(line: &str) {
 
 pub struct Cli {
     pub host: Host,
-    legacy_config: bool,
-    /// .state.lock, held shared while this command uses the pre-0.6 state directory (no
-    /// move starts under it)
-    state_hold: Option<std::fs::File>,
-}
-
-/// common.server_command: (subcommand, zone) when ARGV is a zone server of any appzones
-/// written in Python (this tree's zone.py or one in the Nix store), for servers from before
-/// the lock (0.7) and before 0.6.
-fn server_command(argv: &[String], cwd: &str, here: &Path) -> Option<(String, String)> {
-    let mut i = 1;
-    while i < argv.len() && argv[i].starts_with('-') {
-        if argv[i] == "-c" || argv[i] == "-m" {
-            return None;
-        }
-        i += if matches!(argv[i].as_str(), "-X" | "-W" | "-Q") { 2 } else { 1 };
-    }
-    if i >= argv.len() {
-        return None;
-    }
-    let script = &argv[i];
-    let rest = &argv[i + 1..argv.len().min(i + 3)];
-    if rest.len() < 2 || !(rest[0] == "serve" || rest[0] == "_supervise") || !script.ends_with("zone.py") {
-        return None;
-    }
-    let path = std::fs::canonicalize(Path::new(cwd).join(script)).unwrap_or_else(|_| Path::new(cwd).join(script));
-    let parent = path.parent();
-    let installed = parent.and_then(Path::file_name).is_some_and(|n| n == "appzones" || n == "zones")
-        && parent.and_then(Path::parent).and_then(Path::file_name).is_some_and(|n| n == "libexec")
-        && sh(&path).starts_with("/nix/store/");
-    let own = std::fs::canonicalize(here.join("zone.py")).ok();
-    // (an appzones from before the lock whose zone.py an upgrade removed, still running it)
-    let removed = !path.exists() && path.is_absolute()
-        && parent.and_then(Path::file_name).is_some_and(|n| n == "appzones" || n == "zones");
-    (own.as_deref() == Some(path.as_path()) || installed || removed).then(|| (rest[0].clone(), rest[1].clone()))
-}
-
-/// PID's command line and its working directory (macOS: "/", which only a Python server's
-/// relative script path would need, and there were none there).
-fn proc_argv(pid: &str) -> Option<(Vec<String>, String)> {
-    let argv = crate::sys::proc_argv(pid.parse().ok()?)?;
-    #[cfg(target_os = "linux")]
-    let cwd = sh(&std::fs::read_link(format!("/proc/{pid}/cwd")).ok()?);
-    #[cfg(not(target_os = "linux"))]
-    let cwd = "/".to_string();
-    Some((argv, cwd))
 }
 
 fn my_pids() -> Vec<(String, u32)> {
@@ -153,10 +107,7 @@ fn open_lock(path: &Path) -> std::io::Result<std::fs::File> {
 
 impl Cli {
     pub fn new(host: Host) -> Cli {
-        let legacy = config::env("CONFIG").filter(|c| !c.is_empty()).is_none()
-            && !host.home.join(".config/appzones/zones.toml").symlink_metadata().is_ok()
-            && host.home.join(".config/zones/zones.toml").symlink_metadata().is_ok();
-        Cli { host, legacy_config: legacy, state_hold: None }
+        Cli { host }
     }
 
     fn rt(&self) -> &Path {
@@ -329,14 +280,7 @@ impl Cli {
                 return true;
             }
         }
-        proc_argv(pid).and_then(|(a, c)| server_command(&a, &c, &self.host.here)).is_some_and(|(_, z)| z == name)
-    }
-
-    /// $XDG_RUNTIME_DIR/appzones/.state.lock: servers hold it shared, the move of the
-    /// pre-0.6 state directory takes it exclusively (close-on-exec: never in a zone).
-    fn state_lock(&self) -> Option<std::fs::File> {
-        self.mkdir_rt();
-        open_lock(&self.rt().join(".state.lock")).ok()
+        false
     }
 
     /// The zones whose lock file a process of this user holds open (a server runs them, or
@@ -473,12 +417,10 @@ impl Cli {
             .stdin(Stdio::null()).stdout(log.try_clone().unwrap_or_else(|e| die(&e.to_string())))
             .stderr(log.try_clone().unwrap_or_else(|e| die(&e.to_string()))).current_dir("/")
             .env_remove("NOTIFY_SOCKET").env_remove("LISTEN_FDS").env_remove("LISTEN_PID")
-            .env("APPZONES_CONFIG", std::path::absolute(&self.host.config).unwrap_or_else(|_| self.host.config.clone()))
-            .env_remove("ZONES_CONFIG");
+            .env("APPZONES_CONFIG", std::path::absolute(&self.host.config).unwrap_or_else(|_| self.host.config.clone()));
         for key in ["STATE", "DENIED_PATHS"] {
             if let Some(v) = config::env(key).filter(|v| !v.is_empty()) {
                 cmd.env(format!("APPZONES_{key}"), std::path::absolute(&v).unwrap_or_else(|_| PathBuf::from(&v)));
-                cmd.env_remove(format!("ZONES_{key}"));
             }
         }
         // Safety: between fork and exec only async-signal-safe calls: a session of its own,
@@ -1074,11 +1016,20 @@ impl Cli {
         0
     }
 
-    fn which(&self, name: &str) -> i32 {
+    fn which(&self, name: &str, as_json: bool) -> i32 {
         let cfg = self.load_zone(name, false);
         let z = cfg.zone(name).expect("checked");
-        for (k, o) in &z.origin {
-            out(&format!("{k:15} {:45} ({o})", json_dumps_unsorted(z.get(k))));
+        if as_json {
+            let mut settings = serde_json::Map::new();
+            for (k, o) in &z.origin {
+                let v: serde_json::Value = serde_json::from_str(&json_dumps_unsorted(z.get(k))).unwrap();
+                settings.insert(k.to_string(), json!({"value": v, "from": *o}));
+            }
+            out(&py_json(&json!({"name": name, "settings": settings})));
+        } else {
+            for (k, o) in &z.origin {
+                out(&format!("{k:15} {:45} ({o})", json_dumps_unsorted(z.get(k))));
+            }
         }
         0
     }
@@ -1215,6 +1166,22 @@ impl Cli {
             fails += i32::from(!ok);
             out(&format!("{}  machine-id is the zone's{}", if ok { "PASS" } else { "FAIL" },
                          if zone_id.is_some() { "" } else { " (the probe did not run)" }));
+            // the zone's resolvers, asked from here as its server asks them: refused on this
+            // host fails (#171: a VPN's DNS leak protection); no answer may be offline: SKIP
+            // (a zone started before zones.toml changed still asks the resolvers it started with)
+            if self.stale(probe, z) && plan::dns_upstreams(z).is_some() {
+                skipped.push(format!("names resolve (zones.toml changed for {probe}: `appzones restart {probe}` applies it)"));
+            } else if let Some(up) = plan::dns_upstreams(z) {
+                let dns = z.get("dns").as_str().unwrap_or("host");
+                match crate::host_dns::reach(&up) {
+                    Ok(()) => out(&format!("PASS  names resolve (dns = \"{dns}\": {} answers)", up.join(" or "))),
+                    Err(m) if m.refused => {
+                        fails += 1;
+                        out(&format!("FAIL  names resolve: {}", crate::host_dns::said(dns, &m)));
+                    }
+                    Err(m) => skipped.push(format!("names resolve ({} on this host: offline?)", crate::host_dns::said(dns, &m))),
+                }
+            }
         }
         for s in skipped {
             out(&format!("SKIP  {s}"));
@@ -1799,10 +1766,9 @@ impl Cli {
 
     fn mount(&self, name: &str, path: &str, ro: bool, as_name: Option<String>) -> i32 {
         self.load_zone(name, true);
-        // the root helper reads no environment: it mounts under ~/.local/share/appzones (or
-        // the pre-0.6 directory); a zone whose state is elsewhere would not see the mount
-        let default = [self.host.home.join(".local/share/appzones"), self.host.home.join(".local/share/zones")];
-        if !default.contains(&self.host.state) {
+        // the root helper reads no environment: it mounts under ~/.local/share/appzones; a
+        // zone whose state is elsewhere would not see the mount
+        if self.host.state != self.host.home.join(".local/share/appzones") {
             die(&format!("appzones mount works with the default state directory only ({} is set by $APPZONES_STATE)",
                          sh(&self.host.state)));
         }
@@ -1991,97 +1957,51 @@ impl Cli {
             }
         }
         let lock = self.take_lock(name, lock);
-        // held as long as this server runs (shared: other servers too), taken before the
-        // server chooses its state directory: the pre-0.6 move (migrate_state) waits for it
-        // (never without it: a server that could not take it does not start)
-        let state = self.state_lock().unwrap_or_else(|| die(&format!("{}: cannot open it", sh(&self.rt().join(".state.lock")))));
-        loop {
-            // Safety: flock on our own descriptor; blocking, as the move holds it only briefly.
-            if unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&state), libc::LOCK_SH) } == 0 {
-                break;
-            }
-            let e = std::io::Error::last_os_error();
-            if e.kind() != std::io::ErrorKind::Interrupted {
-                die(&format!("{}: {e}", sh(&self.rt().join(".state.lock"))));
-            }
-        }
-        let rc = crate::serve::serve_zone(name, lock, notify) as i32;
-        drop(state); // (held to here: the server's whole life)
-        rc
+        crate::serve::serve_zone(name, lock, notify) as i32
     }
 
-    // ── upgrading from before 0.6 ────────────────────────────────────────
+    // ── left from before 0.6 ─────────────────────────────────────────────
 
-    fn migrate_state(&mut self) {
-        if self.legacy_config {
-            warn(&format!("reading {}: since 0.6 it belongs in ~/.config/appzones/zones.toml (mkdir -p ~/.config/appzones \
-                           && mv ~/.config/zones/zones.toml ~/.config/appzones/)", self.config_path()));
+    /// What an appzones from before 0.6 left behind and this one does not read: a warning
+    /// for each, saying what to do. Nothing is read or moved.
+    fn old_things(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let lexists = |p: &Path| p.symlink_metadata().is_ok();
+        let mut vars: Vec<String> = std::env::vars_os().filter_map(|(k, _)| k.into_string().ok())
+            .filter(|k| k.starts_with("ZONES_")).collect();
+        vars.sort();
+        for k in vars {
+            out.push(format!("${k} is from before appzones 0.6 and is not read: set $APPZONES_{} instead", &k["ZONES_".len()..]));
         }
-        let mut running: Vec<String> = my_pids().into_iter().filter_map(|(p, _)| proc_argv(&p))
-            .filter(|(a, c)| server_command(a, c, &self.host.here).is_some()).map(|(a, _)| a.join(" ")).collect();
-        if running.iter().any(|r| r.contains("/libexec/zones/")) {
-            warn("zones started by appzones before 0.6 are running and this version does not see them: `appzones stop \
-                  --all`, then start them again");
-        }
-        if config::env("STATE").is_some_and(|s| !s.is_empty()) {
-            return;
-        }
-        let new = self.host.home.join(".local/share/appzones");
-        let legacy = self.host.home.join(".local/share/zones");
-        if self.host.state != legacy {
-            if legacy.symlink_metadata().is_ok() && new.symlink_metadata().is_ok() {
-                warn(&format!("{} is no longer used (since 0.6 {} is): move what you still need from it, then remove it",
-                              sh(&legacy), sh(&new)));
+        let home = &self.host.home;
+        if config::env("CONFIG").filter(|c| !c.is_empty()).is_none() {
+            let (old, new) = (home.join(".config/zones/zones.toml"), home.join(".config/appzones/zones.toml"));
+            if lexists(&old) && lexists(&new) {
+                out.push(format!("{} is from before appzones 0.6 and is not read ({} is): remove it", sh(&old), sh(&new)));
+            } else if lexists(&old) {
+                // (-n: never over a config made meanwhile)
+                out.push(format!("{} is from before appzones 0.6 and is not read: mkdir -p {} && mv -n {} {}", sh(&old),
+                                 shell_quote(&sh(&home.join(".config/appzones"))), shell_quote(&sh(&old)), shell_quote(&sh(&new))));
             }
-            return;
         }
-        // no server may start until the move is done (they take it shared first), and none
-        // of this version runs when it can be had
-        let Some(state_lock) = self.state_lock() else {
-            warn(&format!("{}: cannot open it; {} stays where it is", sh(&self.rt().join(".state.lock")), sh(&legacy)));
-            return;
-        };
-        let fd = std::os::fd::AsRawFd::as_raw_fd(&state_lock);
-        let share = |fd: RawFd| loop {
-            // Safety: flock on our own descriptor (blocking: a move holds it only briefly).
-            if unsafe { libc::flock(fd, libc::LOCK_SH) } == 0
-                || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
-                break;
+        if config::env("STATE").filter(|s| !s.is_empty()).is_none() {
+            let (old, new) = (home.join(".local/share/zones"), home.join(".local/share/appzones"));
+            if lexists(&old) && lexists(&new) {
+                out.push(format!("{} (zone homes from before appzones 0.6) is not used ({} is): move what you still need \
+                                  from it, then remove it", sh(&old), sh(&new)));
+            } else if lexists(&old) {
+                // (-T: never into a state folder a command made meanwhile; it fails instead)
+                out.push(format!("{} (zone homes from before appzones 0.6) is not used: appzones stop --all && mv -T {} {}",
+                                 sh(&old), shell_quote(&sh(&old)), shell_quote(&sh(&new))));
             }
-        };
-        if !flock_nb(fd) {
-            // held: by servers (shared), or by another command moving it now (briefly): once
-            // it can be had shared, where the state is is looked at again
-            share(fd);
-            self.state_hold = Some(state_lock);
-            if legacy.symlink_metadata().is_err() && new.is_dir() {
-                self.host.state = new; // moved meanwhile
-            } else {
-                warn(&format!("{} moves to {} once no zone runs (appzones stop --all)", sh(&legacy), sh(&new)));
-            }
-            return;
         }
-        // and every server since the lock (0.7), whatever it is written in: a zone lock held
-        running.extend(self.locked_zones());
-        let mounted = std::fs::read_to_string("/proc/self/mountinfo").map(|t| t.lines().filter_map(|l| l.split_whitespace().nth(4))
-            .map(crate::plan::mountinfo_path).any(|m| m == sh(&legacy) || m.starts_with(&format!("{}/", sh(&legacy))))).unwrap_or(true);
-        if !running.is_empty() || mounted {
-            warn(&format!("{} moves to {} once no zone runs (appzones stop --all)", sh(&legacy), sh(&new)));
-            share(fd); // (still used here: held shared while this command runs)
-            self.state_hold = Some(state_lock);
-            return;
+        // (alone there, it is an error of the configuration: config::validate)
+        let (new, old) = (crate::policy::HOST_DENIED_FILE, crate::policy::LEGACY_HOST_DENIED_FILE);
+        if config::env("DENIED_PATHS").is_none() && lexists(Path::new(old)) && lexists(Path::new(new)) {
+            out.push(format!("{old} is from before appzones 0.6 and is not read ({new} is): put the entries you still \
+                              need into {new} (NixOS: programs.appzones.deniedPaths), then remove it"));
         }
-        match std::fs::rename(&legacy, &new) {
-            Err(e) if new.symlink_metadata().is_err() => {
-                let t = e.to_string();
-                warn(&format!("could not move {} to {}: {}; using it where it is", sh(&legacy), sh(&new),
-                              t.split(" (os error").next().unwrap_or(&t)));
-                return;
-            }
-            Err(_) => {}
-            Ok(()) => warn(&format!("moved {} to {} (appzones 0.6)", sh(&legacy), sh(&new))),
-        }
-        self.host.state = new;
+        out
     }
 }
 
@@ -2155,7 +2075,7 @@ pub fn main(args: &[OsString]) -> i32 {
         out(&format!("appzones {} (config release {})", env!("CARGO_PKG_VERSION"), config::RELEASE));
         return 0;
     }
-    let mut cli = Cli::new(Host::new(crate::plan::exe_dir()));
+    let cli = Cli::new(Host::new(crate::plan::exe_dir()));
     let (cmd, rest) = (argv[0].as_str(), &argv[1..]);
     // what macOS has not (design/macos.md); check --probe is refused in check, after the
     // configuration is checked
@@ -2167,7 +2087,9 @@ pub fn main(args: &[OsString]) -> i32 {
         _ => {}
     }
     if cmd == "_autostart" || (COMMANDS.contains(&cmd) && cmd != "active" && cmd != "serve") {
-        cli.migrate_state();
+        for w in cli.old_things() {
+            warn(&w);
+        }
     }
     let one = || -> String {
         rest.first().cloned().unwrap_or_else(|| die(&format!("usage: appzones {cmd} ZONE")))
@@ -2201,7 +2123,12 @@ pub fn main(args: &[OsString]) -> i32 {
             }
         }
         "list" => cli.zone_list(rest.iter().any(|a| a == "--json")),
-        "which" => cli.which(&cli.zone_arg(&one(), false)),
+        "which" => {
+            let as_json = rest.iter().any(|a| a == "--json");
+            let rest2: Vec<&String> = rest.iter().filter(|a| *a != "--json").collect();
+            let name = rest2.first().cloned().unwrap_or_else(|| die("usage: appzones which ZONE"));
+            cli.which(&cli.zone_arg(name, false), as_json)
+        }
         "up" | "stop" | "restart" => cli.each_zone(cmd, rest),
         "ping" => {
             let r = agent::ping(cli.rt(), &cli.zone_arg(&one(), false));
@@ -2360,37 +2287,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&t);
         std::fs::create_dir_all(&t).unwrap();
         std::fs::canonicalize(&t).unwrap()
-    }
-
-    #[test]
-    fn servers_from_before_the_lock() {
-        // only the process's own script counts; an appzones installed in the store counts too
-        let here = tmp("server-command");
-        std::fs::write(here.join("zone.py"), "").unwrap();
-        let me = sh(&here.join("zone.py"));
-        let a = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let pair = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
-        for (argv, want) in [
-            (a(&["python3", "-B", &me, "serve", "aa"]), pair("serve", "aa")),
-            (a(&["python3", &me, "_supervise", "bb", "--x"]), pair("_supervise", "bb")),
-            (a(&["python3", "-c", "x", &me, "serve", "aa"]), None), // a script after -c CODE is not ours
-            (a(&["python3", "/home/u/tools/zone.py", "serve", "aa"]), None), // another zone.py
-            (a(&["python3", &me, "run", "--wait", "td", "--", "python3", &me, "serve", "td"]), None),
-            (a(&["python3", "/nix/store/abc-appzones-0.6.0/libexec/appzones/zone.py", "_supervise", "cc"]),
-             pair("_supervise", "cc")),
-            (a(&["python3", "/nix/store/abc-x/libexec/other/zone.py", "serve", "cc"]), None),
-            (a(&["python3", &me, "serve"]), None),
-            (a(&["python3", "-X", "dev", &me, "serve", "aa"]), pair("serve", "aa")), // an option with a value
-            (a(&["python3", "-m", "x", &me, "serve", "aa"]), None),
-            // a removed zone.py of an installed appzones (an upgrade while it ran)
-            (a(&["python3", "/usr/lib/appzones/zone.py", "serve", "dd"]), pair("serve", "dd")),
-            (a(&["python3", "/usr/local/lib/zones/zone.py", "_supervise", "ee"]), pair("_supervise", "ee")),
-        ] {
-            assert_eq!(server_command(&argv, "/", &here), want, "{argv:?}");
-        }
-        // a relative path, from the process's cwd
-        assert_eq!(server_command(&a(&["python3", "zone.py", "serve", "aa"]), &sh(&here), &here), pair("serve", "aa"));
-        let _ = std::fs::remove_dir_all(&here);
     }
 
     #[test]

@@ -16,6 +16,7 @@ appzones stop daily                # SIGTERM to every app in it (they save state
 appzones restart daily             # stop + start: applies zones.toml changes
 appzones stop --all
 appzones which work                # every setting in effect and where it came from
+appzones which work --json         # the same as JSON (one object, for scripts)
 appzones check                     # validate zones.toml
 appzones check --probe untrusted   # also run isolation probes inside the zone
 appzones new games                 # print a safe zone block; `-y` appends it to zones.toml

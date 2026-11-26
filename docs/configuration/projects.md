@@ -19,6 +19,9 @@ network  = "internet"
 checkout = "rw"                    # the project folder writable (default: read-only)
 ```
 
+[`examples/project.toml`](https://github.com/mirql/appzones/blob/main/examples/project.toml)
+is a fuller one, commented, to copy into a repository.
+
 ```bash
 cd ~/src/my-app
 appzones trust                     # shows what it asks for; trust it with a typed y

@@ -1,9 +1,11 @@
-# Design: appzones in Rust (experiment)
+# Design: appzones in Rust
 
-Status: phase 1 done and back on `main`, as an option chosen at install time (Python stays
-the default); phases 2 and 3 not started (see "Phase 1: the result"). Work went on the
-branch `rust-version`, with `main` merged into it regularly (merge commits). Reviewed by two
-other models before work started; their points are in this version.
+Status: **done, released in 0.12.0** (2026-11-21): all of appzones is one Rust binary plus
+the root helper of `appzones mount`; the Python and C code are gone (see "Everything in
+Rust"). This page is the record of how it was planned and built, kept for the reasons;
+the code is the reference now. Work went on the branch `rust-version`, with `main` merged
+into it regularly (merge commits). Reviewed by two other models before work started; their
+points are in this version.
 
 ## What and why
 

@@ -11,6 +11,27 @@ The config schema has its own release number (`requires = N` in
   project's, `env` is merged, any other key replaces the project's value. It is your file, so
   it needs no trust; `appzones which @dev` (now with `@`) marks those keys `(yours)`.
 
+- **Removed: what kept appzones from before 0.6 working** (`~/.config/zones/zones.toml`,
+  `~/.local/share/zones`, `/etc/zones/denied-paths`, `$ZONES_*`, `contrib/hyprland/zones.lua`).
+  None of these is read or moved any more. appzones warns about each one it finds and
+  prints the command that moves it. While the host's never-list exists only at
+  `/etc/zones/denied-paths`, `appzones check` fails and no zone starts, because its paths
+  would otherwise enter zones; the same when `/etc/appzones/denied-paths` is a symlink
+  to nothing (before, that gave an empty list). `appzones stop` no longer finds servers of the Python
+  appzones (before 0.12). See [Upgrading](https://mirql.github.io/appzones/getting-started/upgrading.html).
+
+- **`dns = "public"` behind a VPN's DNS leak protection** (#171): when the host lets DNS go
+  only to the VPN's resolver (Mullvad's firewall), names did not resolve in the zone and
+  nothing said why. The zone's server now asks its resolvers once at the zone's start and
+  says in the zone's log why they do not answer (`[zone] dev: names do not resolve: dns =
+  "public": 1.1.1.1:53 and 1.0.0.1:53 refused on this host (Operation not permitted); ...
+  dns = "host" asks the host's resolver`), and again, once, when queries start to be refused
+  later. `appzones check --probe ZONE` asks them too: `PASS  names resolve`, a `FAIL` with the
+  same reason when refused on the host, a `SKIP` when nothing answers (offline?).
+
+- **`appzones which ZONE --json`** (#75): the zone's settings as one JSON object, each with its value and where it
+  came from (`zone`, `defaults`, `builtin`), in the order `which` prints them.
+
 ## 0.14.0
 
 Two features for zones that run AI agents and dev tools. **Allow lists**: `allow = ["api.anthropic.com", "github.com"]` lets a zone reach only those host names, through appzones' own proxy, on Linux and macOS. **Project zones**: a repository can carry its own zones in an `appzones.toml`, shared by a team; each person trusts it once at the terminal (`appzones trust`), then runs `appzones run @ -- CMD` in the repository. The config release is 8: a `zones.toml` that uses `allow` needs `requires = 7`, one with `[projects]` `requires = 8`. Existing zones work as before; one fix: `appzones run` from a folder inside a bind reached through a symlink now starts the command in that folder, not in the zone's home.

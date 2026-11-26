@@ -14,9 +14,6 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    # also PRs into the experiment branch (the Rust parts), not only into main
-    base_branches:
-      - "rust-version"
   path_filters:
     - "!flake.lock"
     - "!docs/demo-*.gif"
@@ -24,10 +21,11 @@ reviews:
     - "!assets/**/*.svg"
     - "!assets/**/*.png"
   path_instructions:
-    - path: "helper/src/mount_helper.rs"
+    - path: "helper/src/mount_helper*.rs"
       instructions: |
-        Runs as root through sudo, as its own binary. Check that it reads no
-        environment, trusts only SUDO_UID for the caller, mounts only under the
+        Runs as root through sudo, as its own binary (mount_helper.rs; the code
+        is in mount_helper_linux.rs). Check that it reads no environment but
+        SUDO_UID, trusts only SUDO_UID for the caller, mounts only under the
         caller's appzones/*/mnt, and is safe against symlink swaps and races
         between checking a path and using it (fds, O_NOFOLLOW). unsafe only in
         `mod sys`. It should stay small; flag anything that grows its surface.
@@ -51,6 +49,22 @@ reviews:
       instructions: |
         Runs inside the zone (zone-init is PID 2 under bwrap) and serves the
         control socket. Treat everything arriving on the socket as untrusted input.
+    - path: "helper/src/project.rs"
+      instructions: |
+        A repository's appzones.toml is someone else's input. Nothing of it is
+        used before `appzones trust`; zones run from the trusted copy, never the
+        repo's file; only the keys in PROJECT_KEYS; no devices, Wayland or host
+        D-Bus. Flag anything that widens that.
+    - path: "helper/src/{seatbelt,proxy}.rs"
+      instructions: |
+        macOS zones. The Seatbelt profile starts from (deny default): flag every
+        new allow (files, network, mach-lookup, sysctl). The proxy must never
+        reach the host, its networks, private, CGNAT, link-local or multicast
+        ranges, and must check the address it connects to (no second lookup).
+    - path: "helper/src/sys.rs"
+      instructions: |
+        System calls Linux and macOS spell differently. Each unsafe block has a
+        `// Safety:` line; behaviour must be the same on both, or say where not.
     - path: "helper/src/zone_wayland.rs"
       instructions: |
         The wp_security_context_v1 helper. A failure must close the zone's
@@ -59,10 +73,11 @@ reviews:
       instructions: |
         What the Python implementation answered. An answer changes only on
         purpose, in the same PR as the code, with the reason stated.
-    - path: "nix/module.nix"
+    - path: "nix/{module,darwin-module}.nix"
       instructions: |
-        The sudo rule must allow the configured user only the mount helper,
-        nothing else. Flag new privileges, setuid wrappers or world-writable paths.
+        The NixOS and nix-darwin modules. On NixOS the sudo rule must allow the
+        configured user only the mount helper, nothing else (the darwin module has
+        none). Flag new privileges, setuid wrappers or world-writable paths.
     - path: "tests/**"
       instructions: |
         Isolation checks should assert that something is refused, not only that
@@ -71,6 +86,8 @@ reviews:
       instructions: "Every dependency pinned (=x.y.z) and justified in a comment; `just audit` (cargo deny) must pass."
     - path: "**/*.md"
       instructions: "If behaviour changes, the pages in docs/ and a CHANGELOG line under Unreleased change in the same PR."
+    - path: "**"
+      instructions: "The repo is public: no host names, local paths, private repo names or personal data in code, docs or comments."
 
 chat:
   auto_reply: true

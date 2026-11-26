@@ -8,7 +8,7 @@ search: <https://mirql.github.io/appzones/>.
 - **Configuration**: [overview](configuration.md) · [reference](configuration/reference.md) · [files and folders](configuration/files.md) · [devices and USB](configuration/devices.md) · [D-Bus](configuration/dbus.md) · [generic binaries](configuration/nix-ld.md)
 - **[Desktop](desktop.md)**: Hyprland borders and tags, a Waybar module
 - **[Troubleshooting](troubleshooting.md)**
-- **[Zones without systemd](without-systemd.md)**: why 0.7 makes systemd optional, and what changes
+- **[Zones without systemd](without-systemd.md)**: `appzones serve`, on-demand zones, other process managers
 - **[How it works](how-it-works.md)**: how a zone is built
 - **[Security and limits](security.md)**: the honest limits, reporting a vulnerability
 - **[Contributing](development.md)**: testing, development

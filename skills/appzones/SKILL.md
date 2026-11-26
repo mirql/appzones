@@ -81,6 +81,7 @@ to "just make it work"; explain the trade-off and let the user decide.
 command -v appzones && appzones list     # zones: state, network, dns, devices, apps running, colour
 appzones list --json                     # the same as JSON, for scripts and bars
 appzones which ZONE                      # every setting in effect and where it came from
+appzones which ZONE --json               # the same as JSON (one object, for scripts)
 appzones --version                       # the version and the config release (for a bug report)
 ```
 
@@ -92,9 +93,10 @@ an AppArmor profile on Ubuntu, a sudo rule for `appzones mount`). Outside NixOS,
 
 The config is `~/.config/appzones/zones.toml` (or `$APPZONES_CONFIG`). It is
 often a symlink into the user's dotfiles: edit the target (`readlink -f`).
-appzones before 0.6 used `~/.config/zones/zones.toml` and
-`~/.local/share/zones`; 0.6 reads the old config (with a warning) and moves
-the old state by itself.
+appzones before 0.6 used `~/.config/zones/zones.toml`, `~/.local/share/zones`,
+`/etc/zones/denied-paths` and `$ZONES_*`. These are not read any more: appzones
+warns about each one it finds and prints the command that moves it (zones do
+not start while the host's never-list is only at `/etc/zones/denied-paths`).
 
 ## Tasks
 
@@ -181,6 +183,7 @@ services. Rule 4's warning about writable binds applies.
 | Symptom | Why | What to do |
 |---|---|---|
 | A site or name does not resolve in the zone, but works elsewhere | `dns = "host"` uses the host's resolver, with its ad blocking and blocklists | Check on the host (`getent hosts NAME`). Either allow it in the host's DNS, or set `dns = "public"` for that zone (1.1.1.1 or 1.0.0.1, minimal `/etc/hosts`; internal names then do not resolve) |
+| No name resolves in a zone with `dns = "public"`, but works with `dns = "host"` | A VPN's or a firewall's DNS leak protection lets DNS go only to its own resolver: the zone's log (`appzones logs ZONE`) says `names do not resolve: dns = "public": ... refused on this host`; `check --probe` fails | `dns = "host"` for that zone, after the user's yes (rule 1) |
 | LAN, router, `localhost`, the host's services or a tailnet unreachable | By design: `network = "internet"` refuses all of them | For a NetBird mesh: `netbird = true`. `network = "host"` only with the user's yes (rule 2) |
 | `zone X cannot see FILE (not inside its binds)` | The file is outside the zone | `appzones mount`, a bind, or the app's file chooser (portal) |
 | `refused: ... never enters a zone` | The never-list | Do not work around it (rule 3); tell the user why |
