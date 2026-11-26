@@ -1,5 +1,4 @@
-# What holds the repository together, beside the code: contrib/hyprland/zones.lua (the
-# pre-0.6 name) is appzones.lua's code past each file's header comment; docs/_data/llms.yml
+# What holds the repository together, beside the code: docs/_data/llms.yml
 # (llms.txt, llms-full.txt) names every guide page, and only pages that exist; the shell
 # scripts parse.
 { pkgs }:
@@ -10,9 +9,6 @@ pkgs.runCommand "appzones-repo"
   }
   ''
     cd $src
-    code() { awk 'body || !/^--/ { body = 1; print }' "$1"; }
-    diff <(code contrib/hyprland/zones.lua) <(code contrib/hyprland/appzones.lua) \
-      || { echo "zones.lua is not appzones.lua's code"; exit 1; }
     for f in docs/index.md docs/guide.md docs/_data/llms.yml; do
       [ -f "$f" ] || { echo "$f is missing"; exit 1; }
     done

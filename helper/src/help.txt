@@ -56,5 +56,5 @@ Internal (systemd and the supervisor):
     appzones _cleanup ZONE                 detach ZONE's runtime mounts (its server, when it ends)
 
 Config: ~/.config/appzones/zones.toml ($APPZONES_CONFIG). State: ~/.local/share/appzones.
-Before 0.6: ~/.config/zones and ~/.local/share/zones (read, and moved; see migrate_state).
+Before 0.6: ~/.config/zones and ~/.local/share/zones (not read: appzones says how to move them).
 Docs: https://mirql.github.io/appzones/ (docs/ in the repo).

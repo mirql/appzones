@@ -30,25 +30,22 @@ What needs more than that:
 
 ## From 0.5
 
-0.6 keeps everything under the name appzones:
+0.6 renamed everything to appzones. Since 0.15 the old names are not read any more:
+appzones warns about each one it finds, with the command that moves it, and moves
+nothing itself. The commands below are for when the new place does not exist yet; when
+it does, appzones says so instead: keep the new one, take what you still need from the
+old one, then remove it.
 
-| before 0.6 | since 0.6 |
-|---|---|
-| `~/.config/zones/zones.toml` | `~/.config/appzones/zones.toml` |
-| `~/.local/share/zones/` (zone homes) | `~/.local/share/appzones/` |
-| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` (the module writes it) |
-| `$ZONES_*` | `$APPZONES_*` |
-| `contrib/hyprland/zones.lua` | `contrib/hyprland/appzones.lua` |
+| before 0.6 | since 0.6 | what to do |
+|---|---|---|
+| `~/.config/zones/zones.toml` | `~/.config/appzones/zones.toml` | `mkdir -p ~/.config/appzones && mv -n ~/.config/zones/zones.toml ~/.config/appzones/zones.toml` |
+| `~/.local/share/zones/` (zone homes) | `~/.local/share/appzones/` | `appzones stop --all && mv -T ~/.local/share/zones ~/.local/share/appzones` |
+| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` | NixOS: the module writes the new one from `deniedPaths`; put any entry of the old file that is not there into it first. Elsewhere: `sudo mkdir -p /etc/appzones && sudo cp /etc/zones/denied-paths /etc/appzones/denied-paths && sudo rm /etc/zones/denied-paths` (`cp` copies the entries, also when the old file is a symlink). While only the old file is there, `appzones check` fails and no zone starts, as its paths would enter zones (the same for a new one that is a symlink to nothing) |
+| `$ZONES_*` | `$APPZONES_*` | rename the variables |
+| `contrib/hyprland/zones.lua` | `contrib/hyprland/appzones.lua` | load `appzones.lua` in your Hyprland config |
 
-- **Zone homes move by themselves**: the first `appzones` command that runs
-  while no zone runs renames `~/.local/share/zones` to
-  `~/.local/share/appzones` and says so. Until then the old directory stays
-  in use. If backups or an impermanence setup list the old path, update them.
-- **The config does not move by itself** (it is often a link your dotfiles
-  manage): `appzones` reads the old file and says to move it:
-  `mkdir -p ~/.config/appzones && mv ~/.config/zones/zones.toml ~/.config/appzones/`.
-- **After the switch**: `appzones stop --all`, then start your zones again
-  (`appzones up NAME`, or log out and in). The first command after the stop
-  moves the zone homes.
-- The old variable names and `zones.lua` still work in 0.6 and will be
-  removed later. The window tag (`zone:NAME`) and `zones.toml` keep their names.
+If `appzones stop --all` says a zone still answers but no server of it was found, that
+zone runs under an older appzones: stop it where it runs (Ctrl-C in its terminal, or
+`systemctl --user stop appzones@NAME`), then move the folder. If backups or an
+impermanence setup list the old paths, update them. The window
+tag (`zone:NAME`) and `zones.toml` keep their names.

@@ -80,7 +80,7 @@
               helper = p.helper;
               mountHelper = p.mount-helper;
             };
-            # what holds the repository together: the Hyprland hook's pre-0.6 copy, the docs catalog
+            # what holds the repository together: the docs catalog, the shell scripts
             repo = import ./tests/repo.nix { inherit pkgs; };
             # the modules' deniedPaths type: only entries /etc/appzones/denied-paths gives back unchanged
             denied-path =

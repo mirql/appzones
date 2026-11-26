@@ -90,9 +90,10 @@ an AppArmor profile on Ubuntu, a sudo rule for `appzones mount`). Outside NixOS,
 
 The config is `~/.config/appzones/zones.toml` (or `$APPZONES_CONFIG`). It is
 often a symlink into the user's dotfiles: edit the target (`readlink -f`).
-appzones before 0.6 used `~/.config/zones/zones.toml` and
-`~/.local/share/zones`; 0.6 reads the old config (with a warning) and moves
-the old state by itself.
+appzones before 0.6 used `~/.config/zones/zones.toml`, `~/.local/share/zones`,
+`/etc/zones/denied-paths` and `$ZONES_*`. These are not read any more: appzones
+warns about each one it finds and prints the command that moves it (zones do
+not start while the host's never-list is only at `/etc/zones/denied-paths`).
 
 ## Tasks
 
