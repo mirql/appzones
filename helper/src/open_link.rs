@@ -38,7 +38,11 @@ fn send(sock: &str, url: &str) -> u8 {
             Ok(n) => got += n,
         }
     }
-    if &answer[..got] == b"ok\n" { 0 } else { 1 }
+    if &answer[..got] == b"ok\n" {
+        0
+    } else {
+        1
+    }
 }
 
 #[cfg(test)]
@@ -47,7 +51,8 @@ mod tests {
     use std::os::unix::net::UnixListener;
 
     fn server(answer: &'static [u8]) -> (String, std::thread::JoinHandle<Vec<u8>>) {
-        let dir = std::env::temp_dir().join(format!("open-link-{}-{}", std::process::id(), answer.len()));
+        let dir =
+            std::env::temp_dir().join(format!("open-link-{}-{}", std::process::id(), answer.len()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("links.sock");
         let _ = std::fs::remove_file(&path);

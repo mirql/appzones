@@ -20,8 +20,13 @@ pub fn agent_path(rt: &std::path::Path, name: &str) -> Result<PathBuf, String> {
 }
 
 /// A connection with REQ sent (and FDS with it); None when the zone does not answer.
-pub fn request(rt: &std::path::Path, name: &str, req: &Value, fds: &[RawFd], timeout: Option<Duration>)
-    -> Result<UnixStream, String> {
+pub fn request(
+    rt: &std::path::Path,
+    name: &str,
+    req: &Value,
+    fds: &[RawFd],
+    timeout: Option<Duration>,
+) -> Result<UnixStream, String> {
     let path = agent_path(rt, name)?;
     let s = match timeout {
         Some(t) => connect_within(&path, t)?,
@@ -59,7 +64,8 @@ pub fn connect_within(path: &std::path::Path, t: Duration) -> Result<UnixStream,
             if fd < 0 {
                 return Err(std::io::Error::last_os_error().to_string());
             }
-            let len = (std::mem::size_of::<libc::sa_family_t>() + bytes.len() + 1) as libc::socklen_t;
+            let len =
+                (std::mem::size_of::<libc::sa_family_t>() + bytes.len() + 1) as libc::socklen_t;
             if libc::connect(fd, (&sa as *const libc::sockaddr_un).cast(), len) == 0 {
                 Ok(<UnixStream as std::os::fd::FromRawFd>::from_raw_fd(fd))
             } else {
@@ -90,9 +96,15 @@ const MAX_REPLY: usize = 8 << 20;
 /// without the descriptors again.
 fn send_with_fds(s: &UnixStream, data: &[u8], fds: &[RawFd]) -> std::io::Result<()> {
     if fds.is_empty() || fds.len() > MAX_FDS {
-        return Err(std::io::Error::other(format!("{} descriptors in one request (1 to {MAX_FDS})", fds.len())));
+        return Err(std::io::Error::other(format!(
+            "{} descriptors in one request (1 to {MAX_FDS})",
+            fds.len()
+        )));
     }
-    let mut iov = libc::iovec { iov_base: data.as_ptr() as *mut _, iov_len: data.len() };
+    let mut iov = libc::iovec {
+        iov_base: data.as_ptr() as *mut _,
+        iov_len: data.len(),
+    };
     let mut cmsg = vec![0u64; 8];
     let len = std::mem::size_of_val(fds) as u32;
     // Safety: a msghdr over our buffers with one SCM_RIGHTS message of FDS.
@@ -139,12 +151,21 @@ pub fn readline(mut s: &UnixStream, mut buf: Vec<u8>) -> Result<(Value, Vec<u8>)
         None => (buf, Vec::new()),
     };
     let text = String::from_utf8_lossy(&line);
-    let v = if text.trim().is_empty() { json!({}) } else { serde_json::from_str(text.trim()).map_err(|e| e.to_string())? };
+    let v = if text.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(text.trim()).map_err(|e| e.to_string())?
+    };
     Ok((v, rest))
 }
 
 /// One request, its first reply line.
-pub fn ask(rt: &std::path::Path, name: &str, req: &Value, timeout: Duration) -> Result<Value, String> {
+pub fn ask(
+    rt: &std::path::Path,
+    name: &str,
+    req: &Value,
+    timeout: Duration,
+) -> Result<Value, String> {
     let s = request(rt, name, req, &[], Some(timeout))?;
     Ok(readline(&s, Vec::new())?.0)
 }
@@ -163,8 +184,13 @@ pub fn answers(rt: &std::path::Path, name: &str) -> bool {
 pub fn zone_procs(rt: &std::path::Path, name: &str) -> Result<Vec<Value>, String> {
     let r = ask(rt, name, &json!({"op": "ps"}), Duration::from_secs(5))?;
     let init = r.get("init").cloned().unwrap_or(Value::Null);
-    Ok(r.get("procs").and_then(Value::as_array).cloned().unwrap_or_default().into_iter()
-        .filter(|p| p.get(0).is_some_and(|pid| *pid != json!(1) && *pid != init)).collect())
+    Ok(r.get("procs")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.get(0).is_some_and(|pid| *pid != json!(1) && *pid != init))
+        .collect())
 }
 
 /// One request; {} when zone-init does not answer or does not know the op (agent.zone_request).
@@ -184,10 +210,14 @@ mod tests {
     fn readline_keeps_the_rest() {
         // two replies in one read: the second is not lost (appzones run --wait's exit code)
         let (mut a, b) = UnixStream::pair().unwrap();
-        a.write_all(b"{\"ok\": true, \"pid\": 7}\n{\"exit\": 0}\n").unwrap();
+        a.write_all(b"{\"ok\": true, \"pid\": 7}\n{\"exit\": 0}\n")
+            .unwrap();
         a.shutdown(std::net::Shutdown::Write).unwrap();
         let (first, rest) = readline(&b, Vec::new()).unwrap();
         assert_eq!(first, serde_json::json!({"ok": true, "pid": 7}));
-        assert_eq!(readline(&b, rest).unwrap().0, serde_json::json!({"exit": 0}));
+        assert_eq!(
+            readline(&b, rest).unwrap().0,
+            serde_json::json!({"exit": 0})
+        );
     }
 }

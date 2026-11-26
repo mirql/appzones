@@ -39,19 +39,35 @@ fn pipe() -> (RawFd, RawFd) {
 
 fn devnull(write: bool) -> RawFd {
     // Safety: open of a NUL-terminated path.
-    unsafe { libc::open(c"/dev/null".as_ptr(), if write { libc::O_WRONLY } else { libc::O_RDONLY } | libc::O_CLOEXEC) }
+    unsafe {
+        libc::open(
+            c"/dev/null".as_ptr(),
+            if write {
+                libc::O_WRONLY
+            } else {
+                libc::O_RDONLY
+            } | libc::O_CLOEXEC,
+        )
+    }
 }
 
 /// zone-init with listener L (as ZONE_CTL_FD) and SERVER (a pidfd, as ZONE_SERVER_FD).
 fn start(dir: &PathBuf, zone: &str, l: &UnixListener, server: RawFd) -> Child {
     let (lf, sf) = (l.as_raw_fd(), server);
     let mut c = Command::new(HELPER);
-    c.arg("zone-init").env_clear().env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .env("HOME", dir).env("ZONE", zone).env("XDG_RUNTIME_DIR", dir)
-        .env("ZONE_CTL_FD", lf.to_string()).env("ZONE_SERVER_FD", sf.to_string())
+    c.arg("zone-init")
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", dir)
+        .env("ZONE", zone)
+        .env("XDG_RUNTIME_DIR", dir)
+        .env("ZONE_CTL_FD", lf.to_string())
+        .env("ZONE_SERVER_FD", sf.to_string())
         // not UTF-8 (a Latin-1 locale's): zone-init starts and passes it on
         .env("LC_TEST", OsStr::from_bytes(b"caf\xe9"))
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     // Safety: only fcntl in the child, before exec: the two fds are inherited.
     unsafe {
         c.pre_exec(move || {
@@ -86,7 +102,10 @@ impl Init {
         let init = Init { dir, sock, child };
         let end = Instant::now() + Duration::from_secs(5);
         while Instant::now() < end {
-            if init.try_request(&json!({"op": "ping"}), &[], 1).is_some_and(|r| r[0]["ok"] == json!(true)) {
+            if init
+                .try_request(&json!({"op": "ping"}), &[], 1)
+                .is_some_and(|r| r[0]["ok"] == json!(true))
+            {
                 return init;
             }
             std::thread::sleep(Duration::from_millis(50));
@@ -102,7 +121,8 @@ impl Init {
     }
 
     fn connect(&self, req: &Value, fds: &[RawFd]) -> UnixStream {
-        self.connect_raw(format!("{req}\n").as_bytes(), fds).expect("connect")
+        self.connect_raw(format!("{req}\n").as_bytes(), fds)
+            .expect("connect")
     }
 
     fn try_request(&self, req: &Value, fds: &[RawFd], n: usize) -> Option<Vec<Value>> {
@@ -130,7 +150,10 @@ fn send(s: &UnixStream, data: &[u8], fds: &[RawFd]) -> std::io::Result<()> {
     }
     // Safety: a msghdr over our buffers, the control buffer sized by CMSG_SPACE.
     unsafe {
-        let mut iov = libc::iovec { iov_base: data.as_ptr() as *mut _, iov_len: data.len() };
+        let mut iov = libc::iovec {
+            iov_base: data.as_ptr() as *mut _,
+            iov_len: data.len(),
+        };
         let size = std::mem::size_of_val(fds) as u32;
         let mut cbuf = vec![0u8; libc::CMSG_SPACE(size) as usize];
         let mut msg: libc::msghdr = std::mem::zeroed();
@@ -190,21 +213,58 @@ fn bad_requests() {
     assert_eq!(r["ok"], json!(false));
     assert!(r["error"].as_str().unwrap().contains("unknown op"), "{r}");
     let mut s = z.connect_raw(b"not json\n", &[]).unwrap();
-    assert_eq!(lines(&mut s, 1), [json!({"ok": false, "error": "bad request"})]);
+    assert_eq!(
+        lines(&mut s, 1),
+        [json!({"ok": false, "error": "bad request"})]
+    );
     for argv in [json!([]), json!("sh"), json!([1])] {
-        assert_eq!(z.request(json!({"op": "run", "argv": argv}))["ok"], json!(false), "{argv}");
+        assert_eq!(
+            z.request(json!({"op": "run", "argv": argv}))["ok"],
+            json!(false),
+            "{argv}"
+        );
     }
     let r = z.request(json!({"op": "run", "argv": ["/nonexistent/program"]}));
     assert_eq!(r["ok"], json!(false));
-    assert!(r["error"].as_str().unwrap().contains("/nonexistent/program"), "{r}");
-    assert_eq!(z.request(json!({"op": "run", "argv": ["true"], "bus": "elsewhere"}))["ok"], json!(false));
-    for argv in [json!("sh"), json!([1]), json!([["sh"]]), json!([]), json!(""), json!(0), json!({})] {
-        assert_eq!(z.request(json!({"op": "shell", "argv": argv}))["ok"], json!(false), "{argv}");
+    assert!(
+        r["error"]
+            .as_str()
+            .unwrap()
+            .contains("/nonexistent/program"),
+        "{r}"
+    );
+    assert_eq!(
+        z.request(json!({"op": "run", "argv": ["true"], "bus": "elsewhere"}))["ok"],
+        json!(false)
+    );
+    for argv in [
+        json!("sh"),
+        json!([1]),
+        json!([["sh"]]),
+        json!([]),
+        json!(""),
+        json!(0),
+        json!({}),
+    ] {
+        assert_eq!(
+            z.request(json!({"op": "shell", "argv": argv}))["ok"],
+            json!(false),
+            "{argv}"
+        );
     }
-    assert_eq!(z.request(json!({"op": "busy", "path": "/etc"}))["ok"], json!(false));
+    assert_eq!(
+        z.request(json!({"op": "busy", "path": "/etc"}))["ok"],
+        json!(false)
+    );
     assert_eq!(z.request(json!({"op": "mounts"}))["ok"], json!(true));
-    assert_eq!(z.request(json!({"op": "status", "pid": 1}))["ok"], json!(false));
-    assert_eq!(z.request(json!({"op": "resize", "pid": 1, "rows": 1, "cols": 1})), json!({"ok": false}));
+    assert_eq!(
+        z.request(json!({"op": "status", "pid": 1}))["ok"],
+        json!(false)
+    );
+    assert_eq!(
+        z.request(json!({"op": "resize", "pid": 1, "rows": 1, "cols": 1})),
+        json!({"ok": false})
+    );
 }
 
 #[test]
@@ -212,8 +272,11 @@ fn run_wait() {
     // --wait: the client's three fds (pipes) become the command's; the exit code comes last
     let z = Init::new("wait");
     let ((in_r, in_w), (out_r, out_w), (err_r, err_w)) = (pipe(), pipe(), pipe());
-    let mut s = z.connect(&json!({"op": "run", "argv": ["sh", "-c", "read x; echo got $x; echo oops >&2; exit 3"],
-                                  "wait": true}), &[in_r, out_w, err_w]);
+    let mut s = z.connect(
+        &json!({"op": "run", "argv": ["sh", "-c", "read x; echo got $x; echo oops >&2; exit 3"],
+                                  "wait": true}),
+        &[in_r, out_w, err_w],
+    );
     for f in [in_r, out_w, err_w] {
         close(f);
     }
@@ -223,10 +286,19 @@ fn run_wait() {
     close(in_w);
     assert_eq!(lines(&mut s, 1), [json!({"exit": 3})]);
     drop(s);
-    assert_eq!((read_all(out_r), read_all(err_r)), ("got hi\n".to_string(), "oops\n".to_string()));
+    assert_eq!(
+        (read_all(out_r), read_all(err_r)),
+        ("got hi\n".to_string(), "oops\n".to_string())
+    );
     // killed by a signal: a negative exit code
     let null = [devnull(false), devnull(true), devnull(true)];
-    let r = z.try_request(&json!({"op": "run", "argv": ["sh", "-c", "kill -9 $$"], "wait": true}), &null, 2).unwrap();
+    let r = z
+        .try_request(
+            &json!({"op": "run", "argv": ["sh", "-c", "kill -9 $$"], "wait": true}),
+            &null,
+            2,
+        )
+        .unwrap();
     assert_eq!(r[1], json!({"exit": -9}));
     // a variable that is not UTF-8 reaches a command unchanged
     let r = z.try_request(&json!({"op": "run", "argv": ["sh", "-c", "test \"$LC_TEST\" = \"$(printf 'caf\\351')\""],
@@ -243,12 +315,32 @@ fn run_wait_refuses() {
     let z = Init::new("refuses");
     let (mut master, mut slave) = (0, 0);
     // Safety: openpty into locals, no name, termios or size.
-    assert_eq!(unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(),
-                                      std::ptr::null()) }, 0);
+    assert_eq!(
+        unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                std::ptr::null(),
+            )
+        },
+        0
+    );
     let (a, _b) = UnixStream::pair().unwrap();
     let null = devnull(true);
-    for fds in [&[slave, null, null][..], &[a.as_raw_fd(), null, null], &[null, null]] {
-        let r = z.try_request(&json!({"op": "run", "argv": ["true"], "wait": true}), fds, 1).unwrap();
+    for fds in [
+        &[slave, null, null][..],
+        &[a.as_raw_fd(), null, null],
+        &[null, null],
+    ] {
+        let r = z
+            .try_request(
+                &json!({"op": "run", "argv": ["true"], "wait": true}),
+                fds,
+                1,
+            )
+            .unwrap();
         assert_eq!(r[0]["ok"], json!(false), "{fds:?}");
     }
     for f in [master, slave, null] {
@@ -266,9 +358,20 @@ fn run_status_ps() {
     let pid = r["pid"].as_i64().unwrap_or_else(|| panic!("{r}"));
     let checks = || {
         let st = z.request(json!({"op": "status", "pid": pid}));
-        assert_eq!((&st["ok"], &st["running"], &st["exit"]), (&json!(true), &json!(true), &Value::Null), "{st}");
+        assert_eq!(
+            (&st["ok"], &st["running"], &st["exit"]),
+            (&json!(true), &json!(true), &Value::Null),
+            "{st}"
+        );
         let ps = z.request(json!({"op": "ps"}));
-        assert!(ps["procs"].as_array().unwrap().iter().any(|p| p[0] == json!(pid)), "{ps}");
+        assert!(
+            ps["procs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p[0] == json!(pid)),
+            "{ps}"
+        );
         assert!(ps["init"].is_i64(), "{ps}");
         assert_eq!(ps["helpers"], json!([]));
     };
@@ -285,28 +388,52 @@ fn run_status_ps() {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    assert_eq!((&st["running"], &st["exit"]), (&json!(false), &json!(0)), "{st}");
-    assert!(st["tail"].as_array().unwrap().iter().any(|t| t.as_str().unwrap().contains("line-two")), "{st}");
+    assert_eq!(
+        (&st["running"], &st["exit"]),
+        (&json!(false), &json!(0)),
+        "{st}"
+    );
+    assert!(
+        st["tail"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t.as_str().unwrap().contains("line-two")),
+        "{st}"
+    );
 }
 
 #[test]
 fn shell() {
     // a pty in the zone; after the first line the connection carries raw bytes
     let z = Init::new("shell");
-    let mut s = z.connect(&json!({"op": "shell", "rows": 30, "cols": 100, "term": "dumb",
-                                  "argv": ["sh", "-c", "read x; stty size; echo shell-$TERM-ok"]}), &[]);
+    let mut s = z.connect(
+        &json!({"op": "shell", "rows": 30, "cols": 100, "term": "dumb",
+                                  "argv": ["sh", "-c", "read x; stty size; echo shell-$TERM-ok"]}),
+        &[],
+    );
     let mut first = Vec::new();
     while !first.ends_with(b"\n") {
         let mut c = [0u8; 1];
-        assert_eq!(s.read(&mut c).unwrap(), 1, "closed before the reply: {first:?}");
+        assert_eq!(
+            s.read(&mut c).unwrap(),
+            1,
+            "closed before the reply: {first:?}"
+        );
         first.push(c[0]);
     }
-    assert_eq!(serde_json::from_slice::<Value>(&first).unwrap()["ok"], json!(true));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&first).unwrap()["ok"],
+        json!(true)
+    );
     s.write_all(b"go\n").unwrap();
     let mut out = Vec::new();
     let _ = s.read_to_end(&mut out);
     let out = String::from_utf8_lossy(&out);
-    assert!(out.contains("30 100") && out.contains("shell-dumb-ok"), "{out}");
+    assert!(
+        out.contains("30 100") && out.contains("shell-dumb-ok"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -326,7 +453,9 @@ fn output_is_bounded() {
     }
     assert_eq!(st["running"], json!(false), "{st}");
     let tail = st["tail"].as_array().unwrap();
-    assert!(tail.iter().all(|t| t.as_str().unwrap().chars().count() <= 1024));
+    assert!(tail
+        .iter()
+        .all(|t| t.as_str().unwrap().chars().count() <= 1024));
     assert_eq!(tail.last(), Some(&json!("done")), "{st}");
 }
 
@@ -365,7 +494,10 @@ fn ends_with_its_server() {
     close(pidfd);
     drop(l);
     std::thread::sleep(Duration::from_millis(500));
-    assert!(init.try_wait().unwrap().is_none(), "zone-init ended with its server alive");
+    assert!(
+        init.try_wait().unwrap().is_none(),
+        "zone-init ended with its server alive"
+    );
     server.kill().unwrap();
     server.wait().unwrap();
     let end = Instant::now() + Duration::from_secs(10);

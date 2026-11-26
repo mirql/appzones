@@ -52,23 +52,48 @@ fn receive_pidfd(host: &Host, name: &str, timeout: f64) -> RawFd {
     let end = Instant::now() + Duration::from_secs_f64(timeout);
     let s = loop {
         // (never a blocking connect: a full queue would wait past the deadline)
-        let left = end.saturating_duration_since(Instant::now()).max(Duration::from_millis(1));
+        let left = end
+            .saturating_duration_since(Instant::now())
+            .max(Duration::from_millis(1));
         match crate::agent::connect_within(&path, left) {
             Ok(s) => break s,
             Err(_) if Instant::now() <= end => std::thread::sleep(Duration::from_millis(50)),
-            Err(_) => die(&format!("zone {name}: no pidfd from its server; not starting the zone")),
+            Err(_) => die(&format!(
+                "zone {name}: no pidfd from its server; not starting the zone"
+            )),
         }
     };
-    let _ = s.set_read_timeout(Some(end.saturating_duration_since(Instant::now()).max(Duration::from_millis(1))));
-    let bad = || -> ! { die(&format!("zone {name}: no valid pidfd from its server; not starting the zone")) };
+    let _ = s.set_read_timeout(Some(
+        end.saturating_duration_since(Instant::now())
+            .max(Duration::from_millis(1)),
+    ));
+    let bad = || -> ! {
+        die(&format!(
+            "zone {name}: no valid pidfd from its server; not starting the zone"
+        ))
+    };
     // the peer must be this user
-    let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
+    let mut cred = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
     // Safety: SO_PEERCRED into a ucred of the given size.
-    let rc = unsafe { libc::getsockopt(s.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED,
-                                       (&mut cred as *mut libc::ucred).cast(), &mut len) };
+    let rc = unsafe {
+        libc::getsockopt(
+            s.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&mut cred as *mut libc::ucred).cast(),
+            &mut len,
+        )
+    };
     let mut buf = [0u8; 16];
-    let mut iov = libc::iovec { iov_base: buf.as_mut_ptr().cast(), iov_len: buf.len() };
+    let mut iov = libc::iovec {
+        iov_base: buf.as_mut_ptr().cast(),
+        iov_len: buf.len(),
+    };
     let mut cmsg = [0u64; 8];
     let mut fds = Vec::new();
     // Safety: recvmsg into our buffers; the descriptors in SCM_RIGHTS are new and ours.
@@ -84,7 +109,8 @@ fn receive_pidfd(host: &Host, name: &str, timeout: f64) -> RawFd {
             while !c.is_null() {
                 if (*c).cmsg_level == libc::SOL_SOCKET && (*c).cmsg_type == libc::SCM_RIGHTS {
                     let data = libc::CMSG_DATA(c).cast::<RawFd>();
-                    let count = ((*c).cmsg_len as usize - libc::CMSG_LEN(0) as usize) / std::mem::size_of::<RawFd>();
+                    let count = ((*c).cmsg_len as usize - libc::CMSG_LEN(0) as usize)
+                        / std::mem::size_of::<RawFd>();
                     for i in 0..count {
                         fds.push(std::ptr::read_unaligned(data.add(i)));
                     }
@@ -96,7 +122,8 @@ fn receive_pidfd(host: &Host, name: &str, timeout: f64) -> RawFd {
     };
     // Safety: getuid has no preconditions.
     let me = unsafe { libc::getuid() };
-    if rc != 0 || cred.uid != me || n < 0 || &buf[..n.max(0) as usize] != b"pidfd" || fds.len() != 1 {
+    if rc != 0 || cred.uid != me || n < 0 || &buf[..n.max(0) as usize] != b"pidfd" || fds.len() != 1
+    {
         for f in fds {
             // Safety: closing descriptors we received.
             unsafe { libc::close(f) };
@@ -127,7 +154,8 @@ fn pin_binds_by(argv: Vec<String>, policy: &crate::policy::Policy) -> Result<Vec
         let (mode, raw, dest) = (&argv[i + 1], &argv[i + 2], &argv[i + 3]);
         i += 4;
         let expanded = policy.expand(raw.as_bytes());
-        let c = CString::new(expanded).map_err(|_| format!("bind {raw}: a NUL byte; refusing to start the zone"))?;
+        let c = CString::new(expanded)
+            .map_err(|_| format!("bind {raw}: a NUL byte; refusing to start the zone"))?;
         // O_PATH: nothing is read through it; ordinary symlinks are followed, a magic link
         // never (/proc/PID/root and its kind reach another mount namespace, whose paths read
         // back as this one's, past the check below)
@@ -137,10 +165,21 @@ fn pin_binds_by(argv: Vec<String>, policy: &crate::policy::Policy) -> Result<Vec
             mode: u64,
             resolve: u64,
         }
-        let how = OpenHow { flags: (libc::O_PATH | libc::O_CLOEXEC) as u64, mode: 0, resolve: libc::RESOLVE_NO_MAGICLINKS };
+        let how = OpenHow {
+            flags: (libc::O_PATH | libc::O_CLOEXEC) as u64,
+            mode: 0,
+            resolve: libc::RESOLVE_NO_MAGICLINKS,
+        };
         // Safety: openat2 reads the NUL-terminated path and the open_how struct of the given size.
-        let fd = unsafe { libc::syscall(libc::SYS_openat2, libc::AT_FDCWD, c.as_ptr(), &how as *const OpenHow,
-                                        std::mem::size_of::<OpenHow>()) } as libc::c_int;
+        let fd = unsafe {
+            libc::syscall(
+                libc::SYS_openat2,
+                libc::AT_FDCWD,
+                c.as_ptr(),
+                &how as *const OpenHow,
+                std::mem::size_of::<OpenHow>(),
+            )
+        } as libc::c_int;
         if fd < 0 {
             let e = std::io::Error::last_os_error();
             let text = e.to_string();
@@ -149,22 +188,33 @@ fn pin_binds_by(argv: Vec<String>, policy: &crate::policy::Policy) -> Result<Vec
         }
         // Safety: a descriptor we just opened.
         let file = unsafe { std::fs::File::from_raw_fd(fd) };
-        let real = std::fs::read_link(format!("/proc/self/fd/{fd}")).ok()
+        let real = std::fs::read_link(format!("/proc/self/fd/{fd}"))
+            .ok()
             .map(|t| t.as_os_str().as_bytes().to_vec())
             .filter(|t| !t.ends_with(b" (deleted)") && t.starts_with(b"/"));
         let Some(real) = real else {
             return Err(format!("bind {raw}: was removed or replaced while the zone started; refusing to start the zone"));
         };
-        let meta = file.metadata().map_err(|e| format!("bind {raw}: {e}; refusing to start the zone"))?;
-        let err = policy.policy_error(&real, raw.as_bytes())
+        let meta = file
+            .metadata()
+            .map_err(|e| format!("bind {raw}: {e}; refusing to start the zone"))?;
+        let err = policy
+            .policy_error(&real, raw.as_bytes())
             .or_else(|| crate::policy::Policy::kind_error(&meta, raw));
         if let Some(err) = err {
             return Err(format!("bind {err}; refusing to start the zone"));
         }
         let fd = file.into_raw_fd();
         inheritable(fd);
-        out.extend([if mode == "rw" { "--bind-fd".to_string() } else { "--ro-bind-fd".to_string() }, fd.to_string(),
-                    dest.clone()]);
+        out.extend([
+            if mode == "rw" {
+                "--bind-fd".to_string()
+            } else {
+                "--ro-bind-fd".to_string()
+            },
+            fd.to_string(),
+            dest.clone(),
+        ]);
     }
     Ok(out)
 }
@@ -180,11 +230,17 @@ pub fn main(host: &Host, rules: &str, info: &str, name: &str, argv: Vec<String>)
             }
         }
     }
-    let timeout = std::env::var("ZONE_START_TIMEOUT").ok().and_then(|t| t.parse::<f64>().ok()).unwrap_or(30.0);
+    let timeout = std::env::var("ZONE_START_TIMEOUT")
+        .ok()
+        .and_then(|t| t.parse::<f64>().ok())
+        .unwrap_or(30.0);
     std::env::remove_var("ZONE_START_TIMEOUT");
     if rules != "-" {
         let nft = host.tool("nft").unwrap_or_else(|e| die(&e));
-        let ok = std::process::Command::new(nft).args(["-f", rules]).status().is_ok_and(|s| s.success());
+        let ok = std::process::Command::new(nft)
+            .args(["-f", rules])
+            .status()
+            .is_ok_and(|s| s.success());
         if !ok {
             die("nft rules failed to load; refusing to start the zone without them");
         }
@@ -199,7 +255,13 @@ pub fn main(host: &Host, rules: &str, info: &str, name: &str, argv: Vec<String>)
     }
     let c = CString::new(info).unwrap_or_else(|_| die("a NUL byte in the info path"));
     // Safety: open a NUL-terminated path; the descriptor becomes fd 3.
-    let fd = unsafe { libc::open(c.as_ptr(), libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_CLOEXEC, 0o600) };
+    let fd = unsafe {
+        libc::open(
+            c.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
     if fd < 0 {
         die(&format!("{info}: {}", std::io::Error::last_os_error()));
     }
@@ -215,12 +277,20 @@ pub fn main(host: &Host, rules: &str, info: &str, name: &str, argv: Vec<String>)
     let srv = receive_pidfd(host, name, timeout);
     let mut argv = argv;
     if let Some(i) = argv.iter().position(|a| a == "--") {
-        let extra = ["--setenv".to_string(), "ZONE_CTL_FD".into(), ctl.to_string(), "--setenv".into(),
-                     "ZONE_SERVER_FD".into(), srv.to_string()];
+        let extra = [
+            "--setenv".to_string(),
+            "ZONE_CTL_FD".into(),
+            ctl.to_string(),
+            "--setenv".into(),
+            "ZONE_SERVER_FD".into(),
+            srv.to_string(),
+        ];
         argv.splice(i..i, extra);
     }
     let argv = pin_binds(argv, host.here.as_os_str().to_owned());
-    let Some(first) = argv.first() else { die("nothing to run") };
+    let Some(first) = argv.first() else {
+        die("nothing to run")
+    };
     // bwrap gets SIGKILL when its parent (pasta, or the server) dies: the zone ends with
     // its server however zone-init fares (this survives the exec)
     // Safety: prctl and getppid, no memory involved.
@@ -231,7 +301,9 @@ pub fn main(host: &Host, rules: &str, info: &str, name: &str, argv: Vec<String>)
             die("the zone's parent ended while it started");
         }
     }
-    let err = std::os::unix::process::CommandExt::exec(std::process::Command::new(first).args(&argv[1..]));
+    let err = std::os::unix::process::CommandExt::exec(
+        std::process::Command::new(first).args(&argv[1..]),
+    );
     die(&format!("{first}: {err}"))
 }
 
@@ -250,12 +322,32 @@ mod tests {
         }
         std::fs::write(t.join("denied-paths"), "").unwrap();
         let h = std::fs::canonicalize(&h).unwrap();
-        let policy = crate::policy::Policy { home: h.clone().into(), code_dir: t.join("code").into(),
-                                             denied_file: Some(t.join("denied-paths").into()), state_dir: None, extra: vec![] };
+        let policy = crate::policy::Policy {
+            home: h.clone().into(),
+            code_dir: t.join("code").into(),
+            denied_file: Some(t.join("denied-paths").into()),
+            state_dir: None,
+            extra: vec![],
+        };
         let a = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let out = pin_binds_by(a(&["bwrap", PIN, "ro", "~/Docs/proj", "/home/x/Docs/proj", "--", "true"]), &policy).unwrap();
+        let out = pin_binds_by(
+            a(&[
+                "bwrap",
+                PIN,
+                "ro",
+                "~/Docs/proj",
+                "/home/x/Docs/proj",
+                "--",
+                "true",
+            ]),
+            &policy,
+        )
+        .unwrap();
         assert_eq!(out[..2], a(&["bwrap", "--ro-bind-fd"]));
-        assert_eq!(std::fs::read_link(format!("/proc/self/fd/{}", out[2])).unwrap(), h.join("Docs/proj"));
+        assert_eq!(
+            std::fs::read_link(format!("/proc/self/fd/{}", out[2])).unwrap(),
+            h.join("Docs/proj")
+        );
         assert_eq!(out[3..], a(&["/home/x/Docs/proj", "--", "true"]));
         // Safety: the descriptor pin_binds opened for us.
         unsafe { libc::close(out[2].parse().unwrap()) };
@@ -263,10 +355,14 @@ mod tests {
         std::fs::remove_dir(h.join("Docs/proj")).unwrap();
         std::os::unix::fs::symlink(h.join(".ssh"), h.join("Docs/proj")).unwrap();
         let err = pin_binds_by(a(&["bwrap", PIN, "rw", "~/Docs/proj", "/x"]), &policy).unwrap_err();
-        assert!(err.contains(".ssh") && err.ends_with("refusing to start the zone"), "{err}");
+        assert!(
+            err.contains(".ssh") && err.ends_with("refusing to start the zone"),
+            "{err}"
+        );
         // an ordinary symlink to a magic link (/proc/PID/cwd, another namespace's view): never opened
         std::os::unix::fs::symlink("/proc/self/cwd", h.join("Docs/magic")).unwrap();
-        let err = pin_binds_by(a(&["bwrap", PIN, "ro", "~/Docs/magic", "/x"]), &policy).unwrap_err();
+        let err =
+            pin_binds_by(a(&["bwrap", PIN, "ro", "~/Docs/magic", "/x"]), &policy).unwrap_err();
         assert!(err.contains("refusing to start the zone"), "{err}");
         let err = pin_binds_by(a(&["bwrap", PIN, "rw", "~/Docs/gone", "/x"]), &policy).unwrap_err();
         assert!(err.contains("No such file"), "{err}");

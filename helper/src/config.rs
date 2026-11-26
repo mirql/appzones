@@ -15,35 +15,102 @@ use crate::pyfmt::{close_match, fnmatchcase, json_dumps, repr, repr_strs, sha256
 
 pub const RELEASE: i64 = 9;
 pub const NAME_PATTERN: &str = "^[a-z][a-z0-9-]{1,20}$";
-const TOP: &[&str] = &["version", "requires", "defaults", "zones", "apps", "projects"];
+const TOP: &[&str] = &[
+    "version", "requires", "defaults", "zones", "apps", "projects",
+];
 pub const APP_KEYS: &[&str] = &["command", "desktop", "zones", "args", "bus"];
 const DEVICES: &[&str] = &["gpu", "audio", "mic", "camera", "screencast", "usb"];
 pub const BUSES: &[&str] = &["host", "zone", "none"];
 /// (setting, the release that added it), in zonecfg.SINCE's order.
-const SINCE: &[(&str, i64)] = &[("requires", 2), ("bus", 2), ("apps.bus", 2), ("bus = \"zone\"", 2),
-    ("bus = \"none\"", 2), ("nix_ld", 3), ("tmp", 3), ("usb", 4), ("supervisor", 5), ("start_timeout", 5),
-    ("linger", 5), ("wayland", 6), ("allow", 7), ("projects", 8),
-    ("[projects.\"PATH\"]", 9)];
+const SINCE: &[(&str, i64)] = &[
+    ("requires", 2),
+    ("bus", 2),
+    ("apps.bus", 2),
+    ("bus = \"zone\"", 2),
+    ("bus = \"none\"", 2),
+    ("nix_ld", 3),
+    ("tmp", 3),
+    ("usb", 4),
+    ("supervisor", 5),
+    ("start_timeout", 5),
+    ("linger", 5),
+    ("wayland", 6),
+    ("allow", 7),
+    ("projects", 8),
+    ("[projects.\"PATH\"]", 9),
+];
 const SERVER_ONLY: &[&str] = &["supervisor", "start_timeout"];
 
-const DBUS_NEVER: &[&str] = &["org.freedesktop.systemd1*", "org.freedesktop.secrets*", "org.kde.kwalletd*",
-    "org.freedesktop.Flatpak*", "org.gnome.keyring*", "org.freedesktop.impl.portal.*", "ca.desrt.dconf*",
-    "org.kde.kdeconnect*", "org.freedesktop.login1*", "org.freedesktop.portal.Flatpak*", "org.kde.klauncher*",
-    "org.kde.KWin*", "org.gtk.vfs*", "org.freedesktop.thumbnails*", "org.xfce.Xfconf*",
-    "org.freedesktop.FileManager1*", "org.xfce.FileManager*", "org.xfce.Thunar*", "org.xfce.SessionManager*",
-    "org.gnome.SessionManager*", "org.gnome.Shell*", "org.kde.ksmserver*", "org.kde.plasmashell*",
+const DBUS_NEVER: &[&str] = &[
+    "org.freedesktop.systemd1*",
+    "org.freedesktop.secrets*",
+    "org.kde.kwalletd*",
+    "org.freedesktop.Flatpak*",
+    "org.gnome.keyring*",
+    "org.freedesktop.impl.portal.*",
+    "ca.desrt.dconf*",
+    "org.kde.kdeconnect*",
+    "org.freedesktop.login1*",
+    "org.freedesktop.portal.Flatpak*",
+    "org.kde.klauncher*",
+    "org.kde.KWin*",
+    "org.gtk.vfs*",
+    "org.freedesktop.thumbnails*",
+    "org.xfce.Xfconf*",
+    "org.freedesktop.FileManager1*",
+    "org.xfce.FileManager*",
+    "org.xfce.Thunar*",
+    "org.xfce.SessionManager*",
+    "org.gnome.SessionManager*",
+    "org.gnome.Shell*",
+    "org.kde.ksmserver*",
+    "org.kde.plasmashell*",
     // the portal itself (zones get it filtered, per method; a talk would beat the filters),
     // other zones' names, and host-side control
-    "org.freedesktop.portal.Desktop", "dev.mirql.zone*", "org.mozilla.*_zone_*", "org.gnome.Mutter*",
-    "org.kde.kglobalaccel*"];
-const OWN_NEVER: &[&str] = &["org.freedesktop.*", "org.kde.*", "org.gnome.*", "org.xfce.*", "org.a11y.*",
-    "com.canonical.*", "org.mozilla.firefox*", "org.mozilla.thunderbird*", "org.mozilla.librewolf*",
-    "dev.mirql.zone*", "org.mozilla.*_zone_*"];
-const ENV_NEVER: &[&str] = &["SSH_AUTH_SOCK", "GPG_*", "HYPRLAND_INSTANCE_SIGNATURE", "OPENCODE*", "SOPS_*",
-    "*TOKEN*", "*KEY*", "*SECRET*", "*PASSWORD*", "DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY",
-    "XDG_RUNTIME_DIR", "LD_PRELOAD", "LD_LIBRARY_PATH", "DISPLAY", "XAUTHORITY",
+    "org.freedesktop.portal.Desktop",
+    "dev.mirql.zone*",
+    "org.mozilla.*_zone_*",
+    "org.gnome.Mutter*",
+    "org.kde.kglobalaccel*",
+];
+const OWN_NEVER: &[&str] = &[
+    "org.freedesktop.*",
+    "org.kde.*",
+    "org.gnome.*",
+    "org.xfce.*",
+    "org.a11y.*",
+    "com.canonical.*",
+    "org.mozilla.firefox*",
+    "org.mozilla.thunderbird*",
+    "org.mozilla.librewolf*",
+    "dev.mirql.zone*",
+    "org.mozilla.*_zone_*",
+];
+const ENV_NEVER: &[&str] = &[
+    "SSH_AUTH_SOCK",
+    "GPG_*",
+    "HYPRLAND_INSTANCE_SIGNATURE",
+    "OPENCODE*",
+    "SOPS_*",
+    "*TOKEN*",
+    "*KEY*",
+    "*SECRET*",
+    "*PASSWORD*",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "WAYLAND_DISPLAY",
+    "XDG_RUNTIME_DIR",
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "DISPLAY",
+    "XAUTHORITY",
     // the loader (all of it), glibc's own hooks, appzones' own and the nix-ld settings
-    "LD_*", "GLIBC_TUNABLES", "GCONV_PATH", "ZONE_*", "NIX_LD*", "HYPRLAND_*"];
+    "LD_*",
+    "GLIBC_TUNABLES",
+    "GCONV_PATH",
+    "ZONE_*",
+    "NIX_LD*",
+    "HYPRLAND_*",
+];
 
 /// $APPZONES_<name>.
 pub fn env(name: &str) -> Option<String> {
@@ -92,12 +159,29 @@ pub fn policy(code_dir: OsString) -> Policy {
     let state = std::env::var_os("XDG_STATE_HOME").filter(|s| s.as_bytes().starts_with(b"/"));
     // (relative ones as they resolve from here, as appzones uses them; an empty one is none)
     let cwd = std::env::current_dir().ok();
-    let extra = ["CONFIG", "STATE"].iter().filter_map(|k| env(k)).filter(|v| !v.is_empty())
-        .filter_map(|v| if v.starts_with('/') { Some(OsString::from(v)) } else { cwd.as_ref().map(|d| d.join(v).into_os_string()) })
+    let extra = ["CONFIG", "STATE"]
+        .iter()
+        .filter_map(|k| env(k))
+        .filter(|v| !v.is_empty())
+        .filter_map(|v| {
+            if v.starts_with('/') {
+                Some(OsString::from(v))
+            } else {
+                cwd.as_ref().map(|d| d.join(v).into_os_string())
+            }
+        })
         .collect();
     // (an empty override is none: the host's file, as Python reads it)
-    let denied_file = env("DENIED_PATHS").filter(|v| !v.is_empty()).map(OsString::from);
-    Policy { home: home(), code_dir, denied_file, state_dir: state, extra }
+    let denied_file = env("DENIED_PATHS")
+        .filter(|v| !v.is_empty())
+        .map(OsString::from);
+    Policy {
+        home: home(),
+        code_dir,
+        denied_file,
+        state_dir: state,
+        extra,
+    }
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))] // (nix_ld's host check, Linux only)
@@ -111,8 +195,12 @@ fn host_layout() -> &'static str {
 }
 
 fn nix_ld_paths() -> (String, String) {
-    let shim = env("NIX_LD_SHIM").filter(|s| !s.is_empty()).unwrap_or_else(|| "/lib64/ld-linux-x86-64.so.2".into());
-    let lib = env("NIX_LD_LIB").filter(|s| !s.is_empty()).unwrap_or_else(|| "/run/current-system/sw/share/nix-ld/lib".into());
+    let shim = env("NIX_LD_SHIM")
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/lib64/ld-linux-x86-64.so.2".into());
+    let lib = env("NIX_LD_LIB")
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/run/current-system/sw/share/nix-ld/lib".into());
     (shim, lib)
 }
 
@@ -120,7 +208,8 @@ fn nix_ld_paths() -> (String, String) {
 pub fn host_nix_ld() -> Option<(String, String)> {
     let (shim, lib) = nix_ld_paths();
     let real = String::from_utf8_lossy(&realpath(shim.as_bytes())?).into_owned();
-    (Path::new(&real).exists() && real.contains("nix-ld") && Path::new(&lib).join("ld.so").exists()).then_some((real, lib))
+    (Path::new(&real).exists() && real.contains("nix-ld") && Path::new(&lib).join("ld.so").exists())
+        .then_some((real, lib))
 }
 
 fn dbus_denied(name: &str) -> bool {
@@ -128,11 +217,15 @@ fn dbus_denied(name: &str) -> bool {
         return true; // talk=* or org.* is far too wide
     }
     let trimmed = format!("{}*", name.trim_end_matches('*'));
-    DBUS_NEVER.iter().any(|p| fnmatchcase(name, p) || fnmatchcase(p.trim_end_matches('*'), &trimmed))
+    DBUS_NEVER
+        .iter()
+        .any(|p| fnmatchcase(name, p) || fnmatchcase(p.trim_end_matches('*'), &trimmed))
 }
 
 fn own_denied(name: &str) -> bool {
-    OWN_NEVER.iter().any(|p| fnmatchcase(name, p) || format!("{name}.x") == p.replace('*', "x"))
+    OWN_NEVER
+        .iter()
+        .any(|p| fnmatchcase(name, p) || format!("{name}.x") == p.replace('*', "x"))
 }
 
 pub fn env_denied(name: &str) -> bool {
@@ -145,18 +238,36 @@ pub fn env_denied(name: &str) -> bool {
 fn activatable_names() -> Option<Vec<String>> {
     if !has_env("DBUS_SERVICE_DIRS") {
         // (5 s, as Python: a bus that does not answer means the names are not known)
-        let out = crate::plan::output_within(std::process::Command::new("busctl")
-            .args(["--user", "--json=short", "call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
-                   "org.freedesktop.DBus", "ListActivatableNames"]), Some(std::time::Duration::from_secs(5)), false)?;
+        let out = crate::plan::output_within(
+            std::process::Command::new("busctl").args([
+                "--user",
+                "--json=short",
+                "call",
+                "org.freedesktop.DBus",
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus",
+                "ListActivatableNames",
+            ]),
+            Some(std::time::Duration::from_secs(5)),
+            false,
+        )?;
         if !out.status.success() {
             return None;
         }
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
         let list = v.get("data")?.get(0)?.as_array()?;
-        return Some(list.iter().filter_map(|n| n.as_str().map(String::from)).collect());
+        return Some(
+            list.iter()
+                .filter_map(|n| n.as_str().map(String::from))
+                .collect(),
+        );
     }
     let mut names = Vec::new();
-    for d in env("DBUS_SERVICE_DIRS").unwrap_or_default().split(':').filter(|d| !d.is_empty()) {
+    for d in env("DBUS_SERVICE_DIRS")
+        .unwrap_or_default()
+        .split(':')
+        .filter(|d| !d.is_empty())
+    {
         let entries = std::fs::read_dir(d).ok()?;
         let mut files = Vec::new();
         for e in entries {
@@ -189,9 +300,13 @@ impl Ctx {
     }
 
     fn host_activatable(&self, name: &str) -> bool {
-        let Some(names) = self.activatable() else { return true };
+        let Some(names) = self.activatable() else {
+            return true;
+        };
         match name.strip_suffix(".*") {
-            Some(pre) => names.iter().any(|n| n == pre || n.starts_with(&format!("{pre}."))),
+            Some(pre) => names
+                .iter()
+                .any(|n| n == pre || n.starts_with(&format!("{pre}."))),
             None => names.iter().any(|n| n == name),
         }
     }
@@ -210,16 +325,38 @@ pub fn keys() -> Vec<(&'static str, Value)> {
     let mut dbus = Table::new();
     dbus.insert("talk".into(), Value::Array(vec![]));
     dbus.insert("own".into(), Value::Array(vec![]));
-    vec![("network", s("internet")), ("netbird", Value::Boolean(false)), ("dns", s("host")),
-         ("allow", Value::Array(vec![])), ("links", s("portal")),
-         ("keyring", s("basic")), ("devices", strs(&["gpu", "audio"])), ("camera", s("portal")),
-         ("usb", Value::Array(vec![])), ("wayland", s("zone")), ("x11", s("none")), ("clipboard", s("both")),
-         ("autostart", Value::Boolean(false)), ("autostart_apps", Value::Array(vec![])),
-         ("userns", Value::Boolean(true)), ("machine_id", s("zone")), ("theme", Value::Boolean(true)),
-         ("packages", Value::Array(vec![])), ("env", Value::Table(Table::new())), ("binds", Value::Array(vec![])),
-         ("dbus", Value::Table(dbus)), ("bus", s("host")), ("nix_ld", Value::Boolean(false)), ("tmp", s("ram")),
-         ("home", s("")), ("colour", s("")), ("force_host", Value::Boolean(false)), ("supervisor", s("auto")),
-         ("start_timeout", s("30s")), ("linger", s(""))]
+    vec![
+        ("network", s("internet")),
+        ("netbird", Value::Boolean(false)),
+        ("dns", s("host")),
+        ("allow", Value::Array(vec![])),
+        ("links", s("portal")),
+        ("keyring", s("basic")),
+        ("devices", strs(&["gpu", "audio"])),
+        ("camera", s("portal")),
+        ("usb", Value::Array(vec![])),
+        ("wayland", s("zone")),
+        ("x11", s("none")),
+        ("clipboard", s("both")),
+        ("autostart", Value::Boolean(false)),
+        ("autostart_apps", Value::Array(vec![])),
+        ("userns", Value::Boolean(true)),
+        ("machine_id", s("zone")),
+        ("theme", Value::Boolean(true)),
+        ("packages", Value::Array(vec![])),
+        ("env", Value::Table(Table::new())),
+        ("binds", Value::Array(vec![])),
+        ("dbus", Value::Table(dbus)),
+        ("bus", s("host")),
+        ("nix_ld", Value::Boolean(false)),
+        ("tmp", s("ram")),
+        ("home", s("")),
+        ("colour", s("")),
+        ("force_host", Value::Boolean(false)),
+        ("supervisor", s("auto")),
+        ("start_timeout", s("30s")),
+        ("linger", s("")),
+    ]
 }
 
 fn is_key(k: &str) -> bool {
@@ -232,7 +369,8 @@ fn str_of(v: &Value) -> Option<&str> {
 
 /// Python's `x in LIST` for a string x.
 fn list_has(v: &Value, x: &str) -> bool {
-    v.as_array().is_some_and(|a| a.iter().any(|e| e.as_str() == Some(x)))
+    v.as_array()
+        .is_some_and(|a| a.iter().any(|e| e.as_str() == Some(x)))
 }
 
 fn strlist(v: Option<&Value>) -> Option<String> {
@@ -246,7 +384,13 @@ fn enum_check(v: &Value, vals: &[&str]) -> Option<String> {
     if v.as_str().is_some_and(|x| vals.contains(&x)) {
         None
     } else {
-        Some(format!("must be one of {}", vals.iter().map(|x| py_repr(x)).collect::<Vec<_>>().join(", ")))
+        Some(format!(
+            "must be one of {}",
+            vals.iter()
+                .map(|x| py_repr(x))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
     }
 }
 
@@ -288,7 +432,10 @@ fn duration_check(v: &Value, lo: i64, hi: i64, empty: bool) -> Option<String> {
         return None;
     }
     let Some(d) = duration(v) else {
-        return Some(format!("must be a duration such as \"30s\", \"10m\" or \"1h\"{}", if empty { " or \"\"" } else { "" }));
+        return Some(format!(
+            "must be a duration such as \"30s\", \"10m\" or \"1h\"{}",
+            if empty { " or \"\"" } else { "" }
+        ));
     };
     if !(lo as f64 <= d && d <= hi as f64) {
         return Some(if hi >= 3600 {
@@ -306,7 +453,11 @@ fn match_dollar(v: &str, ok: impl Fn(&str) -> bool) -> bool {
 }
 
 fn usb_id_ok(x: &str) -> bool {
-    let hex = |s: &str| s.len() == 4 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    let hex = |s: &str| {
+        s.len() == 4
+            && s.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    };
     match x.split_once(':') {
         Some((v, p)) => hex(v) && hex(p),
         None => hex(x),
@@ -341,26 +492,58 @@ impl Ctx {
             }
             "dns" => enum_check(v, &["host", "public"]),
             "allow" => strlist(Some(v)).or_else(|| {
-                let bad: Vec<&str> = v.as_array()?.iter().filter_map(str_of).filter(|n| !allow_name_ok(n)).collect();
-                (!bad.is_empty()).then(|| format!("entries must be host names (lowercase, with a dot) or *.domain, \
-                                                  never addresses: {}", repr_strs(&bad)))
+                let bad: Vec<&str> = v
+                    .as_array()?
+                    .iter()
+                    .filter_map(str_of)
+                    .filter(|n| !allow_name_ok(n))
+                    .collect();
+                (!bad.is_empty()).then(|| {
+                    format!(
+                        "entries must be host names (lowercase, with a dot) or *.domain, \
+                                                  never addresses: {}",
+                        repr_strs(&bad)
+                    )
+                })
             }),
             "links" => {
                 let ok = matches!(v.as_str(), Some("portal") | Some("zone"))
-                    || v.as_str().and_then(|x| x.strip_prefix("zone:")).is_some_and(zone_name_ok);
+                    || v.as_str()
+                        .and_then(|x| x.strip_prefix("zone:"))
+                        .is_some_and(zone_name_ok);
                 (!ok).then(|| "must be 'portal' (host default browser), 'zone' (this zone's browser) or 'zone:NAME'".into())
             }
             "keyring" => enum_check(v, &["basic", "zone"]),
             "devices" => strlist(Some(v)).or_else(|| {
-                let bad: Vec<&str> = v.as_array()?.iter().filter_map(str_of).filter(|d| !DEVICES.contains(d)).collect();
-                (!bad.is_empty()).then(|| format!("unknown device(s) {}; known: {}", repr_strs(&bad), DEVICES.join(", ")))
+                let bad: Vec<&str> = v
+                    .as_array()?
+                    .iter()
+                    .filter_map(str_of)
+                    .filter(|d| !DEVICES.contains(d))
+                    .collect();
+                (!bad.is_empty()).then(|| {
+                    format!(
+                        "unknown device(s) {}; known: {}",
+                        repr_strs(&bad),
+                        DEVICES.join(", ")
+                    )
+                })
             }),
             "camera" => enum_check(v, &["portal", "device"]),
             "usb" => strlist(Some(v)).or_else(|| {
-                let bad: Vec<&str> = v.as_array()?.iter().filter_map(str_of)
-                    .filter(|x| !match_dollar(x, usb_id_ok)).collect();
-                (!bad.is_empty()).then(|| format!("entries must be \"vvvv\" or \"vvvv:pppp\" (lowercase hex, as lsusb \
-                                                  prints them): {}", repr_strs(&bad)))
+                let bad: Vec<&str> = v
+                    .as_array()?
+                    .iter()
+                    .filter_map(str_of)
+                    .filter(|x| !match_dollar(x, usb_id_ok))
+                    .collect();
+                (!bad.is_empty()).then(|| {
+                    format!(
+                        "entries must be \"vvvv\" or \"vvvv:pppp\" (lowercase hex, as lsusb \
+                                                  prints them): {}",
+                        repr_strs(&bad)
+                    )
+                })
             }),
             "wayland" => enum_check(v, &["zone", "none", "host"]),
             "x11" => enum_check(v, &["none", "own"]),
@@ -368,41 +551,88 @@ impl Ctx {
             "autostart_apps" => strlist(Some(v)),
             "packages" => strlist(Some(v)).or_else(|| {
                 // nixpkgs attribute paths: they go into a Nix expression and a path
-                let ok = |a: &str| a.split('.').all(|p| !p.is_empty() && p.bytes().next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
-                    && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"_-'".contains(&b)));
-                let bad: Vec<&str> = v.as_array()?.iter().filter_map(str_of).filter(|a| !ok(a)).collect();
-                (!bad.is_empty()).then(|| format!("not nixpkgs attribute names: {}", repr_strs(&bad)))
+                let ok = |a: &str| {
+                    a.split('.').all(|p| {
+                        !p.is_empty()
+                            && p.bytes()
+                                .next()
+                                .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                            && p.bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b"_-'".contains(&b))
+                    })
+                };
+                let bad: Vec<&str> = v
+                    .as_array()?
+                    .iter()
+                    .filter_map(str_of)
+                    .filter(|a| !ok(a))
+                    .collect();
+                (!bad.is_empty())
+                    .then(|| format!("not nixpkgs attribute names: {}", repr_strs(&bad)))
             }),
             "machine_id" => enum_check(v, &["zone", "host"]),
             "env" => match v {
                 Value::Table(t) if t.values().all(Value::is_str) => {
-                    let name_ok = |k: &str| k.bytes().next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
-                        && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
-                    let odd: Vec<&str> = t.keys().map(String::as_str).filter(|k| !name_ok(k)).collect();
-                    let bad: Vec<&str> = t.keys().map(String::as_str).filter(|k| env_denied(k)).collect();
-                    let nul: Vec<&str> = t.iter().filter(|(_, v)| v.as_str().is_some_and(|s| s.contains('\0')
-                        || s == crate::plan::PIN)).map(|(k, _)| k.as_str()).collect();
+                    let name_ok = |k: &str| {
+                        k.bytes()
+                            .next()
+                            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                            && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                    };
+                    let odd: Vec<&str> = t
+                        .keys()
+                        .map(String::as_str)
+                        .filter(|k| !name_ok(k))
+                        .collect();
+                    let bad: Vec<&str> = t
+                        .keys()
+                        .map(String::as_str)
+                        .filter(|k| env_denied(k))
+                        .collect();
+                    let nul: Vec<&str> = t
+                        .iter()
+                        .filter(|(_, v)| {
+                            v.as_str()
+                                .is_some_and(|s| s.contains('\0') || s == crate::plan::PIN)
+                        })
+                        .map(|(k, _)| k.as_str())
+                        .collect();
                     if !odd.is_empty() {
-                        Some(format!("names are letters, digits and _, not starting with a digit: {}", repr_strs(&odd)))
+                        Some(format!(
+                            "names are letters, digits and _, not starting with a digit: {}",
+                            repr_strs(&odd)
+                        ))
                     } else if !nul.is_empty() {
-                        Some(format!("values may not hold a NUL byte or be {}: {}", crate::plan::PIN, repr_strs(&nul)))
+                        Some(format!(
+                            "values may not hold a NUL byte or be {}: {}",
+                            crate::plan::PIN,
+                            repr_strs(&nul)
+                        ))
                     } else {
-                        (!bad.is_empty()).then(|| format!("never passed into a zone: {}", repr_strs(&bad)))
+                        (!bad.is_empty())
+                            .then(|| format!("never passed into a zone: {}", repr_strs(&bad)))
                     }
                 }
                 _ => Some("must be a table of strings".into()),
             },
             "binds" => {
-                let Value::Array(a) = v else { return Some("must be a list of { path, mode }".into()) };
+                let Value::Array(a) = v else {
+                    return Some("must be a list of { path, mode }".into());
+                };
                 for b in a {
-                    let Value::Table(t) = b else { return Some(format!("bind {}: keys are path and mode", repr(b))) };
+                    let Value::Table(t) = b else {
+                        return Some(format!("bind {}: keys are path and mode", repr(b)));
+                    };
                     if t.keys().any(|k| k != "path" && k != "mode") || !t.contains_key("path") {
                         return Some(format!("bind {}: keys are path and mode", repr(b)));
                     }
                     let Some(path) = t["path"].as_str().filter(|p| !p.is_empty()) else {
                         return Some(format!("bind {}: path must be a non-empty string", repr(b)));
                     };
-                    if !t.get("mode").is_none_or(|m| matches!(m.as_str(), Some("rw") | Some("ro"))) {
+                    if !t
+                        .get("mode")
+                        .is_none_or(|m| matches!(m.as_str(), Some("rw") | Some("ro")))
+                    {
                         return Some(format!("bind {path}: mode must be 'rw' or 'ro'"));
                     }
                 }
@@ -420,7 +650,9 @@ impl Ctx {
     }
 
     fn check_dbus(&self, v: &Value) -> Option<String> {
-        let Value::Table(t) = v else { return Some("must be { talk = [...], own = [...] }".into()) };
+        let Value::Table(t) = v else {
+            return Some("must be { talk = [...], own = [...] }".into());
+        };
         if t.keys().any(|k| k != "talk" && k != "own") {
             return Some("must be { talk = [...], own = [...] }".into());
         }
@@ -430,13 +662,24 @@ impl Ctx {
             if let Some(e) = strlist(Some(list)) {
                 return Some(format!("dbus.{k} {e}"));
             }
-            let names: Vec<&str> = list.as_array().map(|a| a.iter().filter_map(str_of).collect()).unwrap_or_default();
-            let bad: Vec<&str> = names.iter().copied().filter(|n| dbus_denied(n) || (k == "own" && own_denied(n))).collect();
+            let names: Vec<&str> = list
+                .as_array()
+                .map(|a| a.iter().filter_map(str_of).collect())
+                .unwrap_or_default();
+            let bad: Vec<&str> = names
+                .iter()
+                .copied()
+                .filter(|n| dbus_denied(n) || (k == "own" && own_denied(n)))
+                .collect();
             if !bad.is_empty() {
                 return Some(format!("dbus.{k}: never granted: {}", repr_strs(&bad)));
             }
             if k == "own" {
-                let wide: Vec<&str> = names.iter().copied().filter(|n| n.ends_with(".*") && n.matches('.').count() < 3).collect();
+                let wide: Vec<&str> = names
+                    .iter()
+                    .copied()
+                    .filter(|n| n.ends_with(".*") && n.matches('.').count() < 3)
+                    .collect();
                 if !wide.is_empty() {
                     return Some(format!("dbus.own: a wildcard needs at least three labels before .* (org.example.app.*): {}",
                                         repr_strs(&wide)));
@@ -446,7 +689,11 @@ impl Ctx {
                 return Some(format!("dbus.{k}: cannot ask the session bus which names it can start (ListActivatableNames), \
                                      so cannot check whether a call would start a host program; nothing extra is granted"));
             }
-            let act: Vec<&str> = names.iter().copied().filter(|n| self.host_activatable(n)).collect();
+            let act: Vec<&str> = names
+                .iter()
+                .copied()
+                .filter(|n| self.host_activatable(n))
+                .collect();
             if !act.is_empty() {
                 return Some(format!("dbus.{k}: {} can be started on the host bus by a call from the zone (a host .service \
                                      file provides it); a single-instance app that needs it: bus = \"zone\" in its [apps] entry",
@@ -474,7 +721,10 @@ impl Zone {
     }
 
     fn origin(&self, k: &str) -> &str {
-        self.origin.iter().find(|(n, _)| *n == k).map_or("builtin", |(_, o)| *o)
+        self.origin
+            .iter()
+            .find(|(n, _)| *n == k)
+            .map_or("builtin", |(_, o)| *o)
     }
 }
 
@@ -500,24 +750,38 @@ impl Config {
 
 fn unknown_key<'a>(where_: &str, k: &str, known: impl IntoIterator<Item = &'a str>) -> String {
     let near = close_match(k, known, 0.75);
-    format!("{where_}unknown key {}{}", py_repr(k), near.map_or(String::new(), |n| format!(" (did you mean {}?)", py_repr(n))))
+    format!(
+        "{where_}unknown key {}{}",
+        py_repr(k),
+        near.map_or(String::new(), |n| format!(
+            " (did you mean {}?)",
+            py_repr(n)
+        ))
+    )
 }
 
 /// Python's `x == 1` for a TOML value (1, 1.0 and true all are).
 fn equals_one(v: Option<&Value>) -> bool {
-    matches!(v, Some(Value::Integer(1)) | Some(Value::Boolean(true))) || matches!(v, Some(Value::Float(f)) if *f == 1.0)
+    matches!(v, Some(Value::Integer(1)) | Some(Value::Boolean(true)))
+        || matches!(v, Some(Value::Float(f)) if *f == 1.0)
 }
 
 /// C's strerror, as Python's OSError shows it.
 fn strerror(n: i32) -> String {
     // Safety: strerror returns a NUL-terminated static string for any number.
-    unsafe { std::ffi::CStr::from_ptr(libc::strerror(n)).to_string_lossy().into_owned() }
+    unsafe {
+        std::ffi::CStr::from_ptr(libc::strerror(n))
+            .to_string_lossy()
+            .into_owned()
+    }
 }
 
 /// tomllib's form of a parse error: "MESSAGE (at line L, column C)".
 fn parse_error(text: &str, e: &toml::de::Error) -> String {
     let msg = e.message().trim().trim_end_matches('.');
-    let Some(span) = e.span() else { return msg.to_string() };
+    let Some(span) = e.span() else {
+        return msg.to_string();
+    };
     let before = &text[..span.start.min(text.len())];
     let line = before.matches('\n').count() + 1;
     let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
@@ -545,13 +809,23 @@ pub fn load(path: &Path, shown: &str, code_dir: OsString) -> Config {
 
 /// zonecfg.load_text.
 pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
-    let ctx = Ctx { policy: policy(code_dir), activatable: std::cell::OnceCell::new() };
+    let ctx = Ctx {
+        policy: policy(code_dir),
+        activatable: std::cell::OnceCell::new(),
+    };
     let mut errors: Vec<String> = Vec::new();
     let raw: Table = match text.parse() {
         Ok(t) => t,
         Err(e) => {
-            return Config { zones: vec![], apps: Table::new(), errors: vec![format!("{path}: {}", parse_error(text, &e))],
-                            warnings: vec![], projects: vec![], projects_enabled: true, overrides: vec![] };
+            return Config {
+                zones: vec![],
+                apps: Table::new(),
+                errors: vec![format!("{path}: {}", parse_error(text, &e))],
+                warnings: vec![],
+                projects: vec![],
+                projects_enabled: true,
+                overrides: vec![],
+            };
         }
     };
     for k in raw.keys() {
@@ -559,17 +833,31 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
             errors.push(unknown_key("top level: ", k, TOP.iter().copied()));
         }
     }
-    let shapes: Vec<String> = ["defaults", "zones", "apps"].iter()
-        .filter(|k| raw.get(**k).is_some_and(|v| !v.is_table())).map(|k| format!("{k} must be a table")).collect();
+    let shapes: Vec<String> = ["defaults", "zones", "apps"]
+        .iter()
+        .filter(|k| raw.get(**k).is_some_and(|v| !v.is_table()))
+        .map(|k| format!("{k} must be a table"))
+        .collect();
     if !shapes.is_empty() {
         errors.extend(shapes);
-        return Config { zones: vec![], apps: Table::new(), errors, warnings: vec![], projects: vec![], projects_enabled: true, overrides: vec![] };
+        return Config {
+            zones: vec![],
+            apps: Table::new(),
+            errors,
+            warnings: vec![],
+            projects: vec![],
+            projects_enabled: true,
+            overrides: vec![],
+        };
     }
     if !equals_one(raw.get("version")) {
         errors.push("version must be 1".into());
     }
     let empty = Table::new();
-    let defaults = raw.get("defaults").and_then(Value::as_table).unwrap_or(&empty);
+    let defaults = raw
+        .get("defaults")
+        .and_then(Value::as_table)
+        .unwrap_or(&empty);
     let keys = keys();
     for k in defaults.keys() {
         if !is_key(k) {
@@ -579,11 +867,20 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
     let mut zones: Vec<Zone> = Vec::new();
     for (zname, zraw) in raw.get("zones").and_then(Value::as_table).unwrap_or(&empty) {
         if !zone_name_ok(zname) {
-            errors.push(format!("zone name {} must match {NAME_PATTERN}", py_repr(zname)));
+            errors.push(format!(
+                "zone name {} must match {NAME_PATTERN}",
+                py_repr(zname)
+            ));
         } else if RESERVED.contains(&zname.as_str()) {
-            errors.push(format!("zone name {} is reserved (bin, etc, launcher, lib, share)", py_repr(zname)));
+            errors.push(format!(
+                "zone name {} is reserved (bin, etc, launcher, lib, share)",
+                py_repr(zname)
+            ));
         } else if crate::project::is_internal_name(zname) {
-            errors.push(format!("zone name {}: p and 10 hex digits name project zones", py_repr(zname)));
+            errors.push(format!(
+                "zone name {}: p and 10 hex digits name project zones",
+                py_repr(zname)
+            ));
         }
         let Value::Table(zraw) = zraw else {
             errors.push(format!("[zones.{zname}] must be a table"));
@@ -604,14 +901,27 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
         }
         for k in zraw.keys() {
             if !is_key(k) {
-                errors.push(unknown_key(&format!("[zones.{zname}] "), k, keys.iter().map(|(n, _)| *n)));
+                errors.push(unknown_key(
+                    &format!("[zones.{zname}] "),
+                    k,
+                    keys.iter().map(|(n, _)| *n),
+                ));
             }
         }
         // a name seen twice (TOML refuses that already): the last one, as a dict would
         zones.retain(|z| &z.name != zname);
-        zones.push(Zone { name: zname.clone(), settings, origin, project: false });
+        zones.push(Zone {
+            name: zname.clone(),
+            settings,
+            origin,
+            project: false,
+        });
     }
-    let apps = raw.get("apps").and_then(Value::as_table).cloned().unwrap_or_default();
+    let apps = raw
+        .get("apps")
+        .and_then(Value::as_table)
+        .cloned()
+        .unwrap_or_default();
     errors.extend(validate(&ctx, &zones, &apps));
     // [projects]: whether trusted projects' zones are used (crate::project)
     let mut projects_enabled = true;
@@ -622,14 +932,19 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
             for (k, v) in t {
                 match (k.as_str(), v) {
                     ("enabled", Value::Boolean(b)) => projects_enabled = *b,
-                    ("enabled", _) => errors.push("[projects] enabled must be true or false".into()),
+                    ("enabled", _) => {
+                        errors.push("[projects] enabled must be true or false".into())
+                    }
                     // the user's own additions to a project's zones (their file: no trust needed)
                     (path, _) if path.starts_with('/') || path.starts_with("~/") => {
                         let p = format!("[projects.{}]", py_repr(path));
-                        let Some(Value::Table(zs)) = v.as_table().and_then(|t| {
-                            (t.len() == 1).then(|| t.get("zones")).flatten()
-                        }) else {
-                            errors.push(format!("{p} has one table, zones (zones.NAME = {{ key = value }})"));
+                        let Some(Value::Table(zs)) = v
+                            .as_table()
+                            .and_then(|t| (t.len() == 1).then(|| t.get("zones")).flatten())
+                        else {
+                            errors.push(format!(
+                                "{p} has one table, zones (zones.NAME = {{ key = value }})"
+                            ));
                             continue;
                         };
                         for (zname, zt) in zs {
@@ -645,16 +960,27 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
                                     errors.push(format!("{zp} {key}: project zones never start at login (start them in \
                                                          the project: appzones up @NAME)"));
                                 } else if !is_key(key) {
-                                    errors.push(unknown_key(&format!("{zp} "), key, keys.iter().map(|(n, _)| *n)));
+                                    errors.push(unknown_key(
+                                        &format!("{zp} "),
+                                        key,
+                                        keys.iter().map(|(n, _)| *n),
+                                    ));
                                 } else if let Some(e) = ctx.check(key, val) {
                                     errors.push(format!("{zp} {key} {e}"));
                                 }
                             }
-                            overrides.push((ctx.policy.expand(path.as_bytes()), zname.clone(), zt.clone()));
+                            overrides.push((
+                                ctx.policy.expand(path.as_bytes()),
+                                zname.clone(),
+                                zt.clone(),
+                            ));
                         }
                     }
-                    _ => errors.push(format!("[projects] {}: enabled, or a project's path (absolute or ~/...) with \
-                                              its zones", py_repr(k))),
+                    _ => errors.push(format!(
+                        "[projects] {}: enabled, or a project's path (absolute or ~/...) with \
+                                              its zones",
+                        py_repr(k)
+                    )),
                 }
             }
         }
@@ -673,13 +999,24 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
                                              update appzones (and rebuild) to get the newer one. Until then, what this \
                                              zone does not know:")];
                 errs.extend(errors.iter().map(|e| format!("  {e}")));
-                return Config { zones, apps, errors: errs, warnings: vec![], projects: vec![], projects_enabled: true, overrides: vec![] };
+                return Config {
+                    zones,
+                    apps,
+                    errors: errs,
+                    warnings: vec![],
+                    projects: vec![],
+                    projects_enabled: true,
+                    overrides: vec![],
+                };
             }
         }
         _ => errors.push("requires must be a release number (an integer, 1 or more)".into()),
     }
-    let used: Vec<(&str, i64)> = SINCE.iter().copied()
-        .filter(|(n, since)| req_int.is_some_and(|r| *since > r) && uses(&raw, n)).collect();
+    let used: Vec<(&str, i64)> = SINCE
+        .iter()
+        .copied()
+        .filter(|(n, since)| req_int.is_some_and(|r| *since > r) && uses(&raw, n))
+        .collect();
     if !used.is_empty() && errors.is_empty() {
         let max = used.iter().map(|(_, s)| *s).max().unwrap_or(1);
         errors.push(format!("requires = {}, but the file uses {} (zones release {max}): set requires = {max}, so an \
@@ -696,7 +1033,9 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
             warnings.push(format!("[zones.{n}] keyring = \"zone\" is not built yet; the zone runs with \"basic\" for now"));
         }
         if is("x11", "own") {
-            warnings.push(format!("[zones.{n}] x11 = \"own\" is not built yet; the zone has no X11 for now"));
+            warnings.push(format!(
+                "[zones.{n}] x11 = \"own\" is not built yet; the zone has no X11 for now"
+            ));
         }
         if is("network", "host") {
             warnings.push(format!("[zones.{n}] network = \"host\": the zone reaches everything the host reaches, \
@@ -717,14 +1056,22 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
     let mut grants: Vec<(String, String)> = Vec::new();
     for z in &zones {
         if let Some(Value::Array(own)) = z.get("dbus").as_table().and_then(|t| t.get("own")) {
-            grants.extend(own.iter().filter_map(str_of).map(|n| (n.to_string(), z.name.clone())));
+            grants.extend(
+                own.iter()
+                    .filter_map(str_of)
+                    .map(|n| (n.to_string(), z.name.clone())),
+            );
         }
     }
     let mut clashes: Vec<(String, Vec<String>)> = Vec::new();
     for (i, (a, za)) in grants.iter().enumerate() {
         for (b, zb) in &grants[i + 1..] {
             if za != zb && names_overlap(a, b) {
-                let key = if a == b { a.clone() } else { format!("{a} / {b}") };
+                let key = if a == b {
+                    a.clone()
+                } else {
+                    format!("{a} / {b}")
+                };
                 let at = match clashes.iter().position(|(k, _)| *k == key) {
                     Some(p) => p,
                     None => {
@@ -746,14 +1093,24 @@ pub fn load_text(text: &str, path: &str, code_dir: OsString) -> Config {
                              and the app in the other zone would hand its work (a URL, a file) to that one; a zone \
                              never hands anything to another zone", py_repr(&n), zs.join(", ")));
     }
-    Config { zones, apps, errors, warnings, projects: vec![], projects_enabled, overrides }
+    Config {
+        zones,
+        apps,
+        errors,
+        warnings,
+        projects: vec![],
+        projects_enabled,
+        overrides,
+    }
 }
 
 /// zonecfg.names_overlap: bus names (or "prefix.*" patterns) that can name the same name.
 fn names_overlap(a: &str, b: &str) -> bool {
     match (a.strip_suffix(".*"), b.strip_suffix(".*")) {
         (None, None) => a == b,
-        (Some(pa), Some(pb)) => pa == pb || pa.starts_with(&format!("{pb}.")) || pb.starts_with(&format!("{pa}.")),
+        (Some(pa), Some(pb)) => {
+            pa == pb || pa.starts_with(&format!("{pb}.")) || pb.starts_with(&format!("{pa}."))
+        }
         (Some(p), None) => b == p || b.starts_with(&format!("{p}.")),
         (None, Some(p)) => a == p || a.starts_with(&format!("{p}.")),
     }
@@ -762,22 +1119,40 @@ fn names_overlap(a: &str, b: &str) -> bool {
 /// zonecfg.uses: whether the raw TOML uses a setting from SINCE.
 fn uses(raw: &Table, what: &str) -> bool {
     let empty = Table::new();
-    let mut tables: Vec<&Table> = vec![raw.get("defaults").and_then(Value::as_table).unwrap_or(&empty)];
-    tables.extend(raw.get("zones").and_then(Value::as_table).into_iter().flat_map(|z| z.values().filter_map(Value::as_table)));
-    let apps: Vec<&Table> = raw.get("apps").and_then(Value::as_table).into_iter()
-        .flat_map(|a| a.values().filter_map(Value::as_table)).collect();
+    let mut tables: Vec<&Table> = vec![raw
+        .get("defaults")
+        .and_then(Value::as_table)
+        .unwrap_or(&empty)];
+    tables.extend(
+        raw.get("zones")
+            .and_then(Value::as_table)
+            .into_iter()
+            .flat_map(|z| z.values().filter_map(Value::as_table)),
+    );
+    let apps: Vec<&Table> = raw
+        .get("apps")
+        .and_then(Value::as_table)
+        .into_iter()
+        .flat_map(|a| a.values().filter_map(Value::as_table))
+        .collect();
     if what == "requires" || what == "projects" {
         return raw.contains_key(what);
     }
     if what == "[projects.\"PATH\"]" {
-        return raw.get("projects").and_then(Value::as_table).is_some_and(|t| t.keys().any(|k| k != "enabled"));
+        return raw
+            .get("projects")
+            .and_then(Value::as_table)
+            .is_some_and(|t| t.keys().any(|k| k != "enabled"));
     }
     if let Some(k) = what.strip_prefix("apps.") {
         return apps.iter().any(|a| a.contains_key(k));
     }
     if let Some((k, v)) = what.split_once(" = ") {
         let v = v.trim_matches('"');
-        return tables.iter().chain(apps.iter()).any(|t| t.get(k).and_then(Value::as_str) == Some(v));
+        return tables
+            .iter()
+            .chain(apps.iter())
+            .any(|t| t.get(k).and_then(Value::as_str) == Some(v));
     }
     tables.iter().any(|t| t.contains_key(what))
 }
@@ -787,7 +1162,10 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
     let mut errs = Vec::new();
     // the host's never-list where its paths would be left out: refused for every zone
     if ctx.policy.denied_file.is_none() {
-        errs.extend(crate::policy::host_file_error(crate::policy::HOST_DENIED_FILE, crate::policy::LEGACY_HOST_DENIED_FILE));
+        errs.extend(crate::policy::host_file_error(
+            crate::policy::HOST_DENIED_FILE,
+            crate::policy::LEGACY_HOST_DENIED_FILE,
+        ));
     }
     let mut seen_colour: Vec<(String, String)> = Vec::new();
     let zone_named = |n: &str| zones.iter().find(|z| z.name == n);
@@ -821,27 +1199,45 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
             } else if truly("netbird") {
                 errs.push(format!("{p} allow and netbird = true: the NetBird mesh would be reachable around the list"));
             } else if is("dns", "public") {
-                errs.push(format!("{p} allow: names are resolved by appzones' proxy, with the host's resolver; \
-                                   dns = \"public\" cannot apply (leave it out)"));
+                errs.push(format!(
+                    "{p} allow: names are resolved by appzones' proxy, with the host's resolver; \
+                                   dns = \"public\" cannot apply (leave it out)"
+                ));
             }
         }
         if is("network", "host") && z.name == "untrusted" && !value_truthy(z.get("force_host")) {
-            errs.push(format!("{p} network = \"host\" in untrusted needs force_host = true"));
+            errs.push(format!(
+                "{p} network = \"host\" in untrusted needs force_host = true"
+            ));
         }
         if is("wayland", "host") && z.name == "untrusted" && !value_truthy(z.get("force_host")) {
-            errs.push(format!("{p} wayland = \"host\" in untrusted needs force_host = true"));
+            errs.push(format!(
+                "{p} wayland = \"host\" in untrusted needs force_host = true"
+            ));
         }
-        if let Some(t) = z.get("links").as_str().and_then(|l| l.strip_prefix("zone:")) {
+        if let Some(t) = z
+            .get("links")
+            .as_str()
+            .and_then(|l| l.strip_prefix("zone:"))
+        {
             if zone_named(t).is_none() {
                 errs.push(format!("{p} links names unknown zone {}", py_repr(t)));
             }
         }
         let devices = z.get("devices");
-        if devices.is_array() && !list_has(devices, "camera") && matches!(z.origin("camera"), "zone" | "yours") {
-            errs.push(format!("{p} camera is set but \"camera\" is not in devices"));
+        if devices.is_array()
+            && !list_has(devices, "camera")
+            && matches!(z.origin("camera"), "zone" | "yours")
+        {
+            errs.push(format!(
+                "{p} camera is set but \"camera\" is not in devices"
+            ));
         }
         if let (true, Some(usb)) = (devices.is_array(), z.get("usb").as_array()) {
-            if !usb.is_empty() && !list_has(devices, "usb") && matches!(z.origin("usb"), "zone" | "yours") {
+            if !usb.is_empty()
+                && !list_has(devices, "usb")
+                && matches!(z.origin("usb"), "zone" | "yours")
+            {
                 errs.push(format!("{p} usb is set but \"usb\" is not in devices"));
             }
             if list_has(devices, "usb") && usb.is_empty() {
@@ -851,7 +1247,11 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
         }
         if let Some(binds) = z.get("binds").as_array() {
             for b in binds {
-                if let Some(path) = b.as_table().and_then(|t| t.get("path")).and_then(Value::as_str) {
+                if let Some(path) = b
+                    .as_table()
+                    .and_then(|t| t.get("path"))
+                    .and_then(Value::as_str)
+                {
                     if let Some(e) = ctx.policy.bind_error(path.as_bytes()) {
                         errs.push(format!("{p} bind {e}"));
                     }
@@ -870,13 +1270,24 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
                 }
             }
         }
-        for a in z.get("autostart_apps").as_array().map(|v| v.as_slice()).unwrap_or(&[]) {
+        for a in z
+            .get("autostart_apps")
+            .as_array()
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+        {
             let Some(a) = a.as_str() else { continue };
             match apps.get(a) {
-                None => errs.push(format!("{p} autostart_apps names undeclared app {}", py_repr(a))),
+                None => errs.push(format!(
+                    "{p} autostart_apps names undeclared app {}",
+                    py_repr(a)
+                )),
                 Some(Value::Table(t)) if t.get("zones").is_none_or(Value::is_array) => {
                     if !t.get("zones").is_some_and(|zs| list_has(zs, &z.name)) {
-                        errs.push(format!("{p} autostart_apps: app {} is not declared for this zone", py_repr(a)));
+                        errs.push(format!(
+                            "{p} autostart_apps: app {} is not declared for this zone",
+                            py_repr(a)
+                        ));
                     }
                 }
                 Some(_) => {} // reported with the app
@@ -889,7 +1300,8 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
             errs.push(format!("{p} must be a table with command = [...], zones = [...], args = {{ ZONE = [...] }}"));
             continue;
         };
-        if !a.get("zones").is_none_or(Value::is_array) || !a.get("args").is_none_or(Value::is_table) {
+        if !a.get("zones").is_none_or(Value::is_array) || !a.get("args").is_none_or(Value::is_table)
+        {
             errs.push(format!("{p} must be a table with command = [...], zones = [...], args = {{ ZONE = [...] }}"));
             continue;
         }
@@ -911,7 +1323,10 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
             errs.push(format!("{p} zones must be a list of zone names"));
             continue;
         }
-        let znames: Vec<&str> = azones.as_array().map(|v| v.iter().filter_map(str_of).collect()).unwrap_or_default();
+        let znames: Vec<&str> = azones
+            .as_array()
+            .map(|v| v.iter().filter_map(str_of).collect())
+            .unwrap_or_default();
         for zn in &znames {
             if zone_named(zn).is_none() {
                 errs.push(format!("{p} zones names unknown zone {}", py_repr(zn)));
@@ -923,19 +1338,25 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
         if let Some(args) = a.get("args").and_then(Value::as_table) {
             for (zn, args) in args {
                 if !znames.contains(&zn.as_str()) {
-                    errs.push(format!("{p} args for {}, which is not in its zones", py_repr(zn)));
+                    errs.push(format!(
+                        "{p} args for {}, which is not in its zones",
+                        py_repr(zn)
+                    ));
                 }
                 if strlist(Some(args)).is_some() {
                     errs.push(format!("{p} args.{zn} must be a list of strings"));
                 }
             }
         }
-        if a.get("bus").is_some_and(|b| !b.as_str().is_some_and(|b| BUSES.contains(&b))) {
+        if a.get("bus")
+            .is_some_and(|b| !b.as_str().is_some_and(|b| BUSES.contains(&b)))
+        {
             errs.push(format!("{p} bus must be one of 'host', 'zone', 'none'"));
         }
         if a.get("bus").and_then(Value::as_str) == Some("none") {
             for zn in &znames {
-                if zone_named(zn).is_some_and(|z| matches!(z.get("userns"), Value::Boolean(false))) {
+                if zone_named(zn).is_some_and(|z| matches!(z.get("userns"), Value::Boolean(false)))
+                {
                     errs.push(format!("{p} bus = \"none\" needs userns = true in zone {} (the app gets its own mount \
                                        namespace without the bus socket)", py_repr(zn)));
                 }
@@ -943,8 +1364,12 @@ fn validate(ctx: &Ctx, zones: &[Zone], apps: &Table) -> Vec<String> {
         }
     }
     for z in zones {
-        if z.get("bus").as_str() == Some("none") && matches!(z.get("userns"), Value::Boolean(false)) {
-            errs.push(format!("[zones.{}] bus = \"none\" needs userns = true", z.name));
+        if z.get("bus").as_str() == Some("none") && matches!(z.get("userns"), Value::Boolean(false))
+        {
+            errs.push(format!(
+                "[zones.{}] bus = \"none\" needs userns = true",
+                z.name
+            ));
         }
     }
     errs
@@ -971,9 +1396,11 @@ fn value_truthy(v: &Value) -> bool {
 pub fn settings_hash(z: &Zone) -> String {
     let mut t = Table::new();
     for (k, v) in &z.settings {
-        if SERVER_ONLY.contains(&k.as_str()) || (k == "linger" && v.as_str() == Some(""))
+        if SERVER_ONLY.contains(&k.as_str())
+            || (k == "linger" && v.as_str() == Some(""))
             || (k == "wayland" && v.as_str() == Some("zone"))
-            || (k == "allow" && v.as_array().is_some_and(|a| a.is_empty())) {
+            || (k == "allow" && v.as_array().is_some_and(|a| a.is_empty()))
+        {
             continue;
         }
         t.insert(k.clone(), v.clone());
@@ -985,15 +1412,33 @@ pub fn settings_hash(z: &Zone) -> String {
 
 /// zonecfg.resolve_app: the argv of app APP in ZONE; Ok(None) when APP is not declared.
 pub fn resolve_app(cfg: &Config, zone: &str, app: &str) -> Result<Option<Vec<String>>, String> {
-    let Some(a) = cfg.apps.get(app).and_then(Value::as_table) else { return Ok(None) };
-    let zones: Vec<&str> = a.get("zones").and_then(Value::as_array).map(|v| v.iter().filter_map(str_of).collect())
+    let Some(a) = cfg.apps.get(app).and_then(Value::as_table) else {
+        return Ok(None);
+    };
+    let zones: Vec<&str> = a
+        .get("zones")
+        .and_then(Value::as_array)
+        .map(|v| v.iter().filter_map(str_of).collect())
         .unwrap_or_default();
     if !zones.contains(&zone) {
-        return Err(format!("app {} is not declared for zone {} (its zones: {})", py_repr(app), py_repr(zone), zones.join(", ")));
+        return Err(format!(
+            "app {} is not declared for zone {} (its zones: {})",
+            py_repr(app),
+            py_repr(zone),
+            zones.join(", ")
+        ));
     }
-    let mut argv: Vec<String> = a.get("command").and_then(Value::as_array).map(|v| v.iter().filter_map(str_of)
-        .map(String::from).collect()).unwrap_or_default();
-    if let Some(extra) = a.get("args").and_then(Value::as_table).and_then(|t| t.get(zone)).and_then(Value::as_array) {
+    let mut argv: Vec<String> = a
+        .get("command")
+        .and_then(Value::as_array)
+        .map(|v| v.iter().filter_map(str_of).map(String::from).collect())
+        .unwrap_or_default();
+    if let Some(extra) = a
+        .get("args")
+        .and_then(Value::as_table)
+        .and_then(|t| t.get(zone))
+        .and_then(Value::as_array)
+    {
         argv.extend(extra.iter().filter_map(str_of).map(String::from));
     }
     Ok(Some(argv))
@@ -1001,11 +1446,18 @@ pub fn resolve_app(cfg: &Config, zone: &str, app: &str) -> Result<Option<Vec<Str
 
 /// zonecfg.app_bus: the bus an app (or, with None, an undeclared command) gets in ZONE.
 pub fn app_bus(cfg: &Config, zone: &str, app: Option<&str>) -> String {
-    if let Some(b) = app.and_then(|a| cfg.apps.get(a)).and_then(|a| a.get("bus")).and_then(Value::as_str)
-        .filter(|b| !b.is_empty()) {
+    if let Some(b) = app
+        .and_then(|a| cfg.apps.get(a))
+        .and_then(|a| a.get("bus"))
+        .and_then(Value::as_str)
+        .filter(|b| !b.is_empty())
+    {
         return b.to_string();
     }
-    cfg.zone(zone).and_then(|z| z.get("bus").as_str()).unwrap_or("host").to_string()
+    cfg.zone(zone)
+        .and_then(|z| z.get("bus").as_str())
+        .unwrap_or("host")
+        .to_string()
 }
 
 /// `appzones-helper config-json FILE [--name SHOWN] [--code-dir DIR]`: the loaded
@@ -1038,17 +1490,27 @@ pub fn host_refusals(z: &Zone) -> Vec<String> {
 /// Every check of the host's file that zone Z, built elsewhere (a project's zone with the
 /// user's additions), fails, next to the host's zones HOST (which it may name).
 pub fn check_zone(z: &Zone, host: &[Zone]) -> Vec<String> {
-    let ctx = Ctx { policy: policy("/nonexistent".into()), activatable: std::cell::OnceCell::new() };
+    let ctx = Ctx {
+        policy: policy("/nonexistent".into()),
+        activatable: std::cell::OnceCell::new(),
+    };
     let mut all: Vec<Zone> = host.to_vec();
     all.push(z.clone());
     let mine = format!("[zones.{}]", z.name);
-    validate(&ctx, &all, &Table::new()).into_iter().filter(|e| e.starts_with(&mine))
-        .map(|e| e[mine.len()..].trim_start().to_string()).collect()
+    validate(&ctx, &all, &Table::new())
+        .into_iter()
+        .filter(|e| e.starts_with(&mine))
+        .map(|e| e[mine.len()..].trim_start().to_string())
+        .collect()
 }
 
 /// The check of zone key K's value V, as the host's file has it (project files use it).
 pub fn check_key(k: &str, v: &Value) -> Option<String> {
-    Ctx { policy: policy("/nonexistent".into()), activatable: std::cell::OnceCell::new() }.check(k, v)
+    Ctx {
+        policy: policy("/nonexistent".into()),
+        activatable: std::cell::OnceCell::new(),
+    }
+    .check(k, v)
 }
 
 /// The host's configuration (load) and, when it is valid and allows them, the zones of the
@@ -1071,7 +1533,9 @@ pub fn config_json_main(args: &[OsString]) -> u8 {
         return 2;
     };
     let mut shown = file.to_string_lossy().into_owned();
-    let mut code_dir = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.as_os_str().to_owned()))
+    let mut code_dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|p| p.as_os_str().to_owned()))
         .unwrap_or_default();
     while let Some(a) = it.next() {
         let Some(v) = it.next() else { return 2 };
@@ -1086,24 +1550,34 @@ pub fn config_json_main(args: &[OsString]) -> u8 {
     for z in &cfg.zones {
         // (keys added after the Python answers were kept, at their default, are left out of
         // this view: those answers stay as they were, helper/tests/golden)
-        let unset = |k: &str| k == "allow" && z.get("allow").as_array().is_some_and(|a| a.is_empty());
+        let unset =
+            |k: &str| k == "allow" && z.get("allow").as_array().is_some_and(|a| a.is_empty());
         let mut settings = String::new();
         let mut shown = z.settings.clone();
         shown.retain(|k, _| !unset(k));
         json_dumps(&Value::Table(shown), &mut settings);
-        let origin: serde_json::Map<String, serde_json::Value> = z.origin.iter().filter(|(k, _)| !unset(k))
-            .map(|(k, o)| ((*k).to_string(), serde_json::Value::String((*o).into()))).collect();
+        let origin: serde_json::Map<String, serde_json::Value> = z
+            .origin
+            .iter()
+            .filter(|(k, _)| !unset(k))
+            .map(|(k, o)| ((*k).to_string(), serde_json::Value::String((*o).into())))
+            .collect();
         zones.insert(z.name.clone(), serde_json::json!({
             "settings": serde_json::from_str::<serde_json::Value>(&settings).unwrap_or_default(),
             "origin": origin,
             "hash": settings_hash(z),
         }));
     }
-    let mut out = serde_json::json!({"errors": cfg.errors, "warnings": cfg.warnings, "zones": zones});
+    let mut out =
+        serde_json::json!({"errors": cfg.errors, "warnings": cfg.warnings, "zones": zones});
     // (only when there are some: the answers of configurations without them stay as they were)
-    let refused: serde_json::Map<String, serde_json::Value> = cfg.zones.iter()
-        .map(|z| (z.name.clone(), host_refusals(z))).filter(|(_, r)| !r.is_empty())
-        .map(|(n, r)| (n, serde_json::json!(r))).collect();
+    let refused: serde_json::Map<String, serde_json::Value> = cfg
+        .zones
+        .iter()
+        .map(|z| (z.name.clone(), host_refusals(z)))
+        .filter(|(_, r)| !r.is_empty())
+        .map(|(n, r)| (n, serde_json::json!(r)))
+        .collect();
     if cfg.errors.is_empty() && !refused.is_empty() {
         out["refused"] = serde_json::Value::Object(refused);
     }
@@ -1139,11 +1613,23 @@ mod tests {
         assert!(own_denied("org.mozilla.firefox_zone_work"));
         assert!(!own_denied("com.example.app"));
         // the portal itself, other zones' names, host-side control
-        for n in ["org.freedesktop.portal.Desktop", "dev.mirql.zone.work", "org.mozilla.firefox_zone_work.x",
-                  "org.gnome.Mutter.RemoteDesktop", "org.kde.kglobalaccel"] {
+        for n in [
+            "org.freedesktop.portal.Desktop",
+            "dev.mirql.zone.work",
+            "org.mozilla.firefox_zone_work.x",
+            "org.gnome.Mutter.RemoteDesktop",
+            "org.kde.kglobalaccel",
+        ] {
             assert!(dbus_denied(n), "{n}");
         }
-        for n in ["LD_AUDIT", "GLIBC_TUNABLES", "GCONV_PATH", "ZONE_DNS", "NIX_LD_LIBRARY_PATH", "HYPRLAND_CMD"] {
+        for n in [
+            "LD_AUDIT",
+            "GLIBC_TUNABLES",
+            "GCONV_PATH",
+            "ZONE_DNS",
+            "NIX_LD_LIBRARY_PATH",
+            "HYPRLAND_CMD",
+        ] {
             assert!(env_denied(n), "{n}");
         }
         assert!(env_denied("github_token"));
@@ -1153,55 +1639,145 @@ mod tests {
 
     #[test]
     fn checked_values() {
-        let ctx = Ctx { policy: policy("/nonexistent-code".into()), activatable: std::cell::OnceCell::new() };
-        let t = |text: &str| -> Value { format!("x = {text}").parse::<Table>().unwrap()["x"].clone() };
-        assert!(ctx.check("env", &t("{ \"A=B\" = \"x\" }")).is_some_and(|e| e.contains("letters, digits")));
+        let ctx = Ctx {
+            policy: policy("/nonexistent-code".into()),
+            activatable: std::cell::OnceCell::new(),
+        };
+        let t =
+            |text: &str| -> Value { format!("x = {text}").parse::<Table>().unwrap()["x"].clone() };
+        assert!(ctx
+            .check("env", &t("{ \"A=B\" = \"x\" }"))
+            .is_some_and(|e| e.contains("letters, digits")));
         assert!(ctx.check("env", &t("{ \"\" = \"x\" }")).is_some());
-        assert!(ctx.check("env", &t("{ A = \"x\\u0000y\" }")).is_some_and(|e| e.contains("NUL")));
+        assert!(ctx
+            .check("env", &t("{ A = \"x\\u0000y\" }"))
+            .is_some_and(|e| e.contains("NUL")));
         assert!(ctx.check("env", &t("{ A = \"--zones-pin\" }")).is_some());
         assert_eq!(ctx.check("env", &t("{ FOO_1 = \"bar\" }")), None);
-        assert!(ctx.check("packages", &t("[\"hello\", \"python3Packages.requests\"]")).is_none());
-        assert!(ctx.check("packages", &t("[\"a; b\"]")).is_some_and(|e| e.contains("not nixpkgs attribute names")));
+        assert!(ctx
+            .check("packages", &t("[\"hello\", \"python3Packages.requests\"]"))
+            .is_none());
+        assert!(ctx
+            .check("packages", &t("[\"a; b\"]"))
+            .is_some_and(|e| e.contains("not nixpkgs attribute names")));
         assert!(ctx.check("packages", &t("[\"../x\"]")).is_some());
-        assert!(ctx.check("usb", &t("[\"abcd\\n\"]")).is_some(), "a trailing newline is not a match");
-        assert_eq!(ctx.check("allow", &t("[\"api.anthropic.com\", \"*.githubusercontent.com\", \"a-b.c9.io\"]")), None);
-        for bad in ["\"github\"", "\"GitHub.com\"", "\"1.2.3.4\"", "\"*.com.\"", "\"*\"", "\"a..b\"", "\"-a.b\"",
-                    "\"a.b/x\"", "\"a.b:443\"", "\"*.*.b.c\"", "\"0x8.0x80808\"", "\"*.0x8.0x8\"", "\"8.8.8.8\"",
-                    "\"10.0.0.010\"", "\"a.1com\""] {
-            assert!(ctx.check("allow", &t(&format!("[{bad}]"))).is_some(), "{bad}");
+        assert!(
+            ctx.check("usb", &t("[\"abcd\\n\"]")).is_some(),
+            "a trailing newline is not a match"
+        );
+        assert_eq!(
+            ctx.check(
+                "allow",
+                &t("[\"api.anthropic.com\", \"*.githubusercontent.com\", \"a-b.c9.io\"]")
+            ),
+            None
+        );
+        for bad in [
+            "\"github\"",
+            "\"GitHub.com\"",
+            "\"1.2.3.4\"",
+            "\"*.com.\"",
+            "\"*\"",
+            "\"a..b\"",
+            "\"-a.b\"",
+            "\"a.b/x\"",
+            "\"a.b:443\"",
+            "\"*.*.b.c\"",
+            "\"0x8.0x80808\"",
+            "\"*.0x8.0x8\"",
+            "\"8.8.8.8\"",
+            "\"10.0.0.010\"",
+            "\"a.1com\"",
+        ] {
+            assert!(
+                ctx.check("allow", &t(&format!("[{bad}]"))).is_some(),
+                "{bad}"
+            );
         }
     }
 
     #[test]
     fn project_overrides() {
-        let load = |t: &str| load_text(&format!("version = 1\nrequires = 9\n{t}"), "z.toml", "/nonexistent".into());
+        let load = |t: &str| {
+            load_text(
+                &format!("version = 1\nrequires = 9\n{t}"),
+                "z.toml",
+                "/nonexistent".into(),
+            )
+        };
         let c = load("[projects.\"~/src/app\".zones.dev]\nenv = { A = \"1\" }\nbinds = [{ path = \"~/data\", mode = \"ro\" }]\n");
         assert!(c.errors.is_empty(), "{:?}", c.errors);
         assert_eq!(c.overrides.len(), 1);
-        assert_eq!((c.overrides[0].0.ends_with(b"/src/app"), c.overrides[0].1.as_str()), (true, "dev"));
-        for (t, says) in [("[projects.\"~/src/app\".zones.dev]\ncolour = \"#123456\"\n", "its own"),
-                          ("[projects.\"~/src/app\".zones.dev]\nsandwich = 1\n", "unknown key"),
-                          ("[projects.\"~/src/app\".zones.dev]\nautostart_apps = [\"x\"]\n", "never start at login"),
-                          ("[projects.\"~/src/app\".zones.dev]\nautostart = true\n", "never start at login"),
-                          ("[projects.\"~/src/app\".zones.dev]\nnetwork = \"moon\"\n", "network"),
-                          ("[projects.\"~/src/app\"]\nnetwork = \"none\"\n", "one table, zones"),
-                          ("[projects.\"src/app\".zones.dev]\n", "a project's path")] {
+        assert_eq!(
+            (
+                c.overrides[0].0.ends_with(b"/src/app"),
+                c.overrides[0].1.as_str()
+            ),
+            (true, "dev")
+        );
+        for (t, says) in [
+            (
+                "[projects.\"~/src/app\".zones.dev]\ncolour = \"#123456\"\n",
+                "its own",
+            ),
+            (
+                "[projects.\"~/src/app\".zones.dev]\nsandwich = 1\n",
+                "unknown key",
+            ),
+            (
+                "[projects.\"~/src/app\".zones.dev]\nautostart_apps = [\"x\"]\n",
+                "never start at login",
+            ),
+            (
+                "[projects.\"~/src/app\".zones.dev]\nautostart = true\n",
+                "never start at login",
+            ),
+            (
+                "[projects.\"~/src/app\".zones.dev]\nnetwork = \"moon\"\n",
+                "network",
+            ),
+            (
+                "[projects.\"~/src/app\"]\nnetwork = \"none\"\n",
+                "one table, zones",
+            ),
+            ("[projects.\"src/app\".zones.dev]\n", "a project's path"),
+        ] {
             let e = load(t).errors.join("\n");
             assert!(e.contains(says), "{t}: {e}");
         }
-        let old = load_text("version = 1\nrequires = 8\n[projects.\"~/src/app\".zones.dev]\nenv = { A = \"1\" }\n", "z.toml",
-                            "/nonexistent".into());
-        assert!(old.errors.iter().any(|e| e.contains("requires = 9")), "{:?}", old.errors);
+        let old = load_text(
+            "version = 1\nrequires = 8\n[projects.\"~/src/app\".zones.dev]\nenv = { A = \"1\" }\n",
+            "z.toml",
+            "/nonexistent".into(),
+        );
+        assert!(
+            old.errors.iter().any(|e| e.contains("requires = 9")),
+            "{:?}",
+            old.errors
+        );
     }
 
     #[test]
     fn allow_needs_internet() {
-        let load = |z: &str| load_text(&format!("version = 1\nrequires = 7\n[zones.aa]\ncolour = \"#112233\"\n{z}\n"), "z.toml",
-                                       "/nonexistent".into());
+        let load = |z: &str| {
+            load_text(
+                &format!("version = 1\nrequires = 7\n[zones.aa]\ncolour = \"#112233\"\n{z}\n"),
+                "z.toml",
+                "/nonexistent".into(),
+            )
+        };
         assert!(load("allow = [\"github.com\"]").errors.is_empty());
-        for (z, says) in [("network = \"none\"\nallow = [\"github.com\"]", "needs network"),
-                          ("netbird = true\nallow = [\"github.com\"]", "NetBird"),
-                          ("dns = \"public\"\nallow = [\"github.com\"]", "dns = \"public\"")] {
+        for (z, says) in [
+            (
+                "network = \"none\"\nallow = [\"github.com\"]",
+                "needs network",
+            ),
+            ("netbird = true\nallow = [\"github.com\"]", "NetBird"),
+            (
+                "dns = \"public\"\nallow = [\"github.com\"]",
+                "dns = \"public\"",
+            ),
+        ] {
             let e = load(z).errors;
             assert!(e.len() == 1 && e[0].contains(says), "{z}: {e:?}");
         }
@@ -1209,8 +1785,16 @@ mod tests {
         let a = load("").zones.remove(0);
         let b = load("allow = []").zones.remove(0);
         assert_eq!(settings_hash(&a), settings_hash(&b));
-        assert_ne!(settings_hash(&a), settings_hash(&load("allow = [\"github.com\"]").zones.remove(0)));
-        let e = load_text("version = 1\n[zones.aa]\ncolour = \"#112233\"\nallow = [\"github.com\"]\n", "z.toml", "/x".into()).errors;
+        assert_ne!(
+            settings_hash(&a),
+            settings_hash(&load("allow = [\"github.com\"]").zones.remove(0))
+        );
+        let e = load_text(
+            "version = 1\n[zones.aa]\ncolour = \"#112233\"\nallow = [\"github.com\"]\n",
+            "z.toml",
+            "/x".into(),
+        )
+        .errors;
         assert!(e.iter().any(|e| e.contains("requires = 7")), "{e:?}");
     }
 

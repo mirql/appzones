@@ -7,9 +7,9 @@ default:
 # Every quick offline check, before a PR: the Rust tests and clippy, the examples, the secret scan
 check: test examples secret-scan
 
-# The Rust tests and clippy (no Nix; the golden tests run in `just build`)
+# The Rust formatting, tests and clippy (no Nix; the golden tests run in `just build`)
 test:
-    cd helper && cargo test --release -q && cargo clippy --release -q --all-targets -- -D warnings
+    cd helper && cargo fmt --check && cargo test --release -q && cargo clippy --release -q --all-targets -- -D warnings
 
 # Validate a zones.toml
 validate file:

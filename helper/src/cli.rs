@@ -23,15 +23,25 @@ use crate::policy::{py_repr, zone_name_ok, RESERVED};
 use crate::pyfmt::{close_match, json_dumps_unsorted, py_json};
 
 const HELP: &str = include_str!("help.txt");
-const COMMANDS: &[&str] = &["active", "apps", "check", "list", "logs", "mount", "mounts", "new", "ping", "ps", "restart",
-    "run", "serve", "shell", "stop", "trust", "umount", "untrust", "up", "which"];
-const PALETTE: &[&str] = &["#a6e3a1", "#89b4fa", "#f38ba8", "#f9e2af", "#cba6f7", "#94e2d5", "#fab387", "#f5c2e7",
-    "#74c7ec", "#eba0ac", "#b4befe", "#89dceb"];
+const COMMANDS: &[&str] = &[
+    "active", "apps", "check", "list", "logs", "mount", "mounts", "new", "ping", "ps", "restart",
+    "run", "serve", "shell", "stop", "trust", "umount", "untrust", "up", "which",
+];
+const PALETTE: &[&str] = &[
+    "#a6e3a1", "#89b4fa", "#f38ba8", "#f9e2af", "#cba6f7", "#94e2d5", "#fab387", "#f5c2e7",
+    "#74c7ec", "#eba0ac", "#b4befe", "#89dceb",
+];
 const START_TIMEOUT: f64 = 30.0;
 const ALREADY_SERVED: i32 = 75;
 const LOG_MAX: u64 = 2 * 1024 * 1024;
-const DBUS_OWN_FAILED: &[&str] = &["Failed to register", "org.freedesktop.DBus.Error.ServiceUnknown",
-    "org.freedesktop.DBus.Error.AccessDenied", "Unable to acquire bus name", "Could not acquire name", "RequestName"];
+const DBUS_OWN_FAILED: &[&str] = &[
+    "Failed to register",
+    "org.freedesktop.DBus.Error.ServiceUnknown",
+    "org.freedesktop.DBus.Error.AccessDenied",
+    "Unable to acquire bus name",
+    "Could not acquire name",
+    "RequestName",
+];
 
 /// `die`: one line on stderr, then the exit status.
 fn die_code(msg: &str, code: i32) -> ! {
@@ -64,13 +74,18 @@ pub struct Cli {
 fn my_pids() -> Vec<(String, u32)> {
     // Safety: getuid has no preconditions.
     let uid = unsafe { libc::getuid() };
-    crate::sys::my_pids().into_iter().map(|p| (p.to_string(), uid)).collect()
+    crate::sys::my_pids()
+        .into_iter()
+        .map(|p| (p.to_string(), uid))
+        .collect()
 }
 
 /// macOS: whether ARGV is a server of zone NAME (`appzones-helper cli serve NAME ...`).
 #[cfg(not(target_os = "linux"))]
 fn serves(argv: &[String], name: Option<&str>) -> bool {
-    argv.windows(3).any(|w| w[0] == "cli" && (w[1] == "serve" || w[1] == "_supervise") && name.is_none_or(|n| w[2] == n))
+    argv.windows(3).any(|w| {
+        w[0] == "cli" && (w[1] == "serve" || w[1] == "_supervise") && name.is_none_or(|n| w[2] == n)
+    })
 }
 
 /// The exit status of our child PID (retried on EINTR); None when there is no such child
@@ -101,8 +116,13 @@ fn flock_nb(fd: RawFd) -> bool {
 }
 
 fn open_lock(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new().read(true).write(true).create(true).mode(0o600)
-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW).open(path)
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+        .open(path)
 }
 
 impl Cli {
@@ -119,14 +139,23 @@ impl Cli {
     }
 
     fn load(&self) -> Config {
-        config::load_all(&self.host.config, &self.config_path(), self.host.here.as_os_str().to_owned(), &self.host.home)
+        config::load_all(
+            &self.host.config,
+            &self.config_path(),
+            self.host.here.as_os_str().to_owned(),
+            &self.host.home,
+        )
     }
 
     /// common.load_cfg.
     fn load_cfg(&self, quiet: bool) -> Config {
         let cfg = self.load();
         if !cfg.errors.is_empty() {
-            die(&format!("{} is invalid:\n  {}", self.config_path(), cfg.errors.join("\n  ")));
+            die(&format!(
+                "{} is invalid:\n  {}",
+                self.config_path(),
+                cfg.errors.join("\n  ")
+            ));
         }
         if !quiet {
             for w in &cfg.warnings {
@@ -141,8 +170,16 @@ impl Cli {
         let cfg = self.load_cfg(quiet);
         if cfg.zone(name).is_none() {
             let names: Vec<&str> = cfg.zones.iter().map(|z| z.name.as_str()).collect();
-            die(&format!("no zone {} in {} (zones: {})", py_repr(name), self.config_path(),
-                         if names.is_empty() { "none".to_string() } else { names.join(", ") }));
+            die(&format!(
+                "no zone {} in {} (zones: {})",
+                py_repr(name),
+                self.config_path(),
+                if names.is_empty() {
+                    "none".to_string()
+                } else {
+                    names.join(", ")
+                }
+            ));
         }
         cfg
     }
@@ -177,34 +214,66 @@ impl Cli {
     // ── systemd ──────────────────────────────────────────────────────────
 
     fn systemctl(&self, args: &[&str], check: bool) -> (i32, String, String) {
-        let o = Command::new("systemctl").arg("--user").args(args).stdin(Stdio::null()).output();
+        let o = Command::new("systemctl")
+            .arg("--user")
+            .args(args)
+            .stdin(Stdio::null())
+            .output();
         let (code, so, se) = match o {
-            Ok(o) => (o.status.code().unwrap_or(1), String::from_utf8_lossy(&o.stdout).into_owned(),
-                      String::from_utf8_lossy(&o.stderr).into_owned()),
+            Ok(o) => (
+                o.status.code().unwrap_or(1),
+                String::from_utf8_lossy(&o.stdout).into_owned(),
+                String::from_utf8_lossy(&o.stderr).into_owned(),
+            ),
             Err(e) if check => die(&format!("systemctl --user {}: {e}", args.join(" "))),
             Err(_) => (127, String::new(), String::new()),
         };
         if check && code != 0 {
-            die(&format!("systemctl --user {}: {}", args.join(" "),
-                         if se.trim().is_empty() { code.to_string() } else { se.trim().to_string() }));
+            die(&format!(
+                "systemctl --user {}: {}",
+                args.join(" "),
+                if se.trim().is_empty() {
+                    code.to_string()
+                } else {
+                    se.trim().to_string()
+                }
+            ));
         }
         (code, so, se)
     }
 
     fn unit_installed(&self) -> bool {
-        let (code, so, _) = self.systemctl(&["show", "-p", "LoadState", "--value", "appzones@probe.service"], false);
+        let (code, so, _) = self.systemctl(
+            &[
+                "show",
+                "-p",
+                "LoadState",
+                "--value",
+                "appzones@probe.service",
+            ],
+            false,
+        );
         code == 0 && so.trim() == "loaded"
     }
 
     /// common.supervisor.
     fn supervisor(&self, z: Option<&Zone>) -> String {
-        if let Some(s) = z.and_then(|z| z.get("supervisor").as_str()).filter(|s| *s != "auto") {
+        if let Some(s) = z
+            .and_then(|z| z.get("supervisor").as_str())
+            .filter(|s| *s != "auto")
+        {
             return s.to_string();
         }
-        let v = config::env("SUPERVISOR").unwrap_or_else(|| "auto".into()).trim().to_lowercase();
+        let v = config::env("SUPERVISOR")
+            .unwrap_or_else(|| "auto".into())
+            .trim()
+            .to_lowercase();
         let v = if v == "none" { "spawn".to_string() } else { v };
         if !["auto", "systemd", "spawn"].contains(&v.as_str()) {
-            die(&format!("APPZONES_SUPERVISOR={}: use one of auto, systemd, spawn", py_repr(&v)));
+            die(&format!(
+                "APPZONES_SUPERVISOR={}: use one of auto, systemd, spawn",
+                py_repr(&v)
+            ));
         }
         v
     }
@@ -216,7 +285,14 @@ impl Cli {
 
     fn unit_runs(&self, name: &str) -> bool {
         let (_, so, _) = self.systemctl(&["is-active", &format!("appzones@{name}.service")], false);
-        ["active", "activating", "deactivating", "reloading", "refreshing"].contains(&so.trim())
+        [
+            "active",
+            "activating",
+            "deactivating",
+            "reloading",
+            "refreshing",
+        ]
+        .contains(&so.trim())
     }
 
     fn check_manager_env(&self) {
@@ -247,7 +323,9 @@ impl Cli {
     #[cfg(not(target_os = "linux"))]
     fn holds_lock(pid: &str, lock: (u64, u64)) -> bool {
         let Ok(p) = pid.parse() else { return false };
-        !crate::sys::sandboxed(p) && crate::sys::has_open(p, lock) && crate::sys::proc_argv(p).is_some_and(|a| serves(&a, None))
+        !crate::sys::sandboxed(p)
+            && crate::sys::has_open(p, lock)
+            && crate::sys::proc_argv(p).is_some_and(|a| serves(&a, None))
     }
 
     /// Whether PID holds the flock on the file LOCK (dev, ino), not merely has it open (an
@@ -255,10 +333,21 @@ impl Cli {
     /// which lists the locks held through it.
     #[cfg(target_os = "linux")]
     fn holds_lock(pid: &str, lock: (u64, u64)) -> bool {
-        let Ok(it) = std::fs::read_dir(format!("/proc/{pid}/fd")) else { return false };
-        it.filter_map(|e| e.ok()).filter(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == lock))
-            .any(|e| std::fs::read_to_string(format!("/proc/{pid}/fdinfo/{}", e.file_name().to_string_lossy()))
-                .is_ok_and(|t| t.lines().any(|l| l.starts_with("lock:") && l.contains("FLOCK"))))
+        let Ok(it) = std::fs::read_dir(format!("/proc/{pid}/fd")) else {
+            return false;
+        };
+        it.filter_map(|e| e.ok())
+            .filter(|e| std::fs::metadata(e.path()).is_ok_and(|m| (m.dev(), m.ino()) == lock))
+            .any(|e| {
+                std::fs::read_to_string(format!(
+                    "/proc/{pid}/fdinfo/{}",
+                    e.file_name().to_string_lossy()
+                ))
+                .is_ok_and(|t| {
+                    t.lines()
+                        .any(|l| l.starts_with("lock:") && l.contains("FLOCK"))
+                })
+            })
     }
 
     fn is_server(&self, pid: &str, name: &str, lock: Option<(u64, u64)>) -> bool {
@@ -267,12 +356,19 @@ impl Cli {
         {
             // Safety: getuid has no preconditions.
             let uid = unsafe { libc::getuid() };
-            if std::fs::metadata(format!("/proc/{pid}")).map(|m| m.uid()).ok() != Some(uid) {
+            if std::fs::metadata(format!("/proc/{pid}"))
+                .map(|m| m.uid())
+                .ok()
+                != Some(uid)
+            {
                 return false;
             }
         }
         #[cfg(not(target_os = "linux"))]
-        if !pid.parse().is_ok_and(|p| crate::sys::my_pids().contains(&p)) {
+        if !pid
+            .parse()
+            .is_ok_and(|p| crate::sys::my_pids().contains(&p))
+        {
             return false;
         }
         if let Some(l) = lock.or_else(|| self.lock_id(name)) {
@@ -287,20 +383,36 @@ impl Cli {
     /// a client is starting one): by the processes' descriptors, never by taking the lock,
     /// which would make a server starting in that instant give up.
     fn locked_zones(&self) -> Vec<String> {
-        let Ok(it) = std::fs::read_dir(self.rt()) else { return vec![] };
-        it.filter_map(|e| e.ok()).filter_map(|e| {
-            let n = e.file_name().to_string_lossy().into_owned();
-            let zone = n.strip_suffix(".lock").filter(|z| zone_name_ok(z))?.to_string();
-            let m = std::fs::symlink_metadata(e.path()).ok().filter(|m| m.is_file())?;
-            let lock = (m.dev(), m.ino());
-            my_pids().iter().any(|(p, _)| Self::holds(p, lock)).then_some(zone)
-        }).collect()
+        let Ok(it) = std::fs::read_dir(self.rt()) else {
+            return vec![];
+        };
+        it.filter_map(|e| e.ok())
+            .filter_map(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                let zone = n
+                    .strip_suffix(".lock")
+                    .filter(|z| zone_name_ok(z))?
+                    .to_string();
+                let m = std::fs::symlink_metadata(e.path())
+                    .ok()
+                    .filter(|m| m.is_file())?;
+                let lock = (m.dev(), m.ino());
+                my_pids()
+                    .iter()
+                    .any(|(p, _)| Self::holds(p, lock))
+                    .then_some(zone)
+            })
+            .collect()
     }
 
     /// client.server_pids.
     fn server_pids(&self, name: &str) -> Vec<i32> {
         let lock = self.lock_id(name);
-        my_pids().into_iter().filter(|(p, _)| self.is_server(p, name, lock)).filter_map(|(p, _)| p.parse().ok()).collect()
+        my_pids()
+            .into_iter()
+            .filter(|(p, _)| self.is_server(p, name, lock))
+            .filter_map(|(p, _)| p.parse().ok())
+            .collect()
     }
 
     /// SIGINT (stop for good) to zone NAME's servers outside its unit, then until they exit.
@@ -308,14 +420,22 @@ impl Cli {
         #[cfg(not(target_os = "linux"))]
         {
             // no pidfds: SIGINT to each server found, then until none answers kill(pid, 0)
-            let pids: Vec<i32> = self.server_pids(name).into_iter()
+            let pids: Vec<i32> = self
+                .server_pids(name)
+                .into_iter()
                 // Safety: kill(2) of a pid just checked to be this zone's server.
-                .filter(|p| self.is_server(&p.to_string(), name, None) && unsafe { libc::kill(*p, libc::SIGINT) } == 0).collect();
+                .filter(|p| {
+                    self.is_server(&p.to_string(), name, None)
+                        && unsafe { libc::kill(*p, libc::SIGINT) } == 0
+                })
+                .collect();
             let end = Instant::now() + Duration::from_secs(20);
             // Safety: kill(pid, 0) only asks whether the process is there.
             while pids.iter().any(|p| unsafe { libc::kill(*p, 0) } == 0) {
                 if Instant::now() > end {
-                    die(&format!("zone {name}: its server did not exit within 20 s after SIGINT"));
+                    die(&format!(
+                        "zone {name}: its server did not exit within 20 s after SIGINT"
+                    ));
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
@@ -329,7 +449,9 @@ impl Cli {
     fn signal_servers_pidfd(&self, name: &str) {
         let mut pfds: Vec<RawFd> = Vec::new();
         for pid in self.server_pids(name) {
-            let Some(pfd) = crate::sys::pidfd_open(pid) else { continue };
+            let Some(pfd) = crate::sys::pidfd_open(pid) else {
+                continue;
+            };
             if self.is_server(&pid.to_string(), name, None) {
                 let sent = crate::sys::pidfd_signal(pfd, libc::SIGINT);
                 if sent.is_ok() {
@@ -339,8 +461,10 @@ impl Cli {
                 let e = sent.unwrap_err();
                 if e.raw_os_error() != Some(libc::ESRCH) {
                     let t = e.to_string();
-                    warn(&format!("zone {name}: could not signal its server (pid {pid}): {}",
-                                  t.split(" (os error").next().unwrap_or(&t)));
+                    warn(&format!(
+                        "zone {name}: could not signal its server (pid {pid}): {}",
+                        t.split(" (os error").next().unwrap_or(&t)
+                    ));
                 }
             }
             // Safety: closing our pidfd.
@@ -348,7 +472,14 @@ impl Cli {
         }
         let end = Instant::now() + Duration::from_secs(20);
         while !pfds.is_empty() {
-            let mut polls: Vec<libc::pollfd> = pfds.iter().map(|f| libc::pollfd { fd: *f, events: libc::POLLIN, revents: 0 }).collect();
+            let mut polls: Vec<libc::pollfd> = pfds
+                .iter()
+                .map(|f| libc::pollfd {
+                    fd: *f,
+                    events: libc::POLLIN,
+                    revents: 0,
+                })
+                .collect();
             let left = end.saturating_duration_since(Instant::now()).as_millis() as libc::c_int;
             // Safety: poll on our pidfds.
             let n = unsafe { libc::poll(polls.as_mut_ptr(), polls.len() as libc::nfds_t, left) };
@@ -357,7 +488,9 @@ impl Cli {
                     // Safety: closing our pidfds.
                     unsafe { libc::close(*f) };
                 }
-                die(&format!("zone {name}: its server did not exit within 20 s after SIGINT"));
+                die(&format!(
+                    "zone {name}: its server did not exit within 20 s after SIGINT"
+                ));
             }
             for p in polls.iter().filter(|p| p.revents != 0) {
                 // Safety: closing a pidfd whose process has exited.
@@ -375,20 +508,32 @@ impl Cli {
         if std::fs::metadata(&path).is_ok_and(|m| m.len() > LOG_MAX) {
             let _ = std::fs::rename(&path, path.with_file_name(format!("{name}.log.1")));
         }
-        std::fs::OpenOptions::new().append(true).create(true).mode(0o600)
-            .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW).open(path)
+        std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .mode(0o600)
+            .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+            .open(path)
     }
 
     fn log_tail(&self, name: &str, since: u64) -> String {
-        let Ok(mut f) = std::fs::File::open(self.log_path(name)) else { return String::new() };
+        let Ok(mut f) = std::fs::File::open(self.log_path(name)) else {
+            return String::new();
+        };
         let size = f.metadata().map(|m| m.len()).unwrap_or(0);
         use std::io::Seek;
-        let _ = f.seek(std::io::SeekFrom::Start(since.max(size.saturating_sub(16384))));
+        let _ = f.seek(std::io::SeekFrom::Start(
+            since.max(size.saturating_sub(16384)),
+        ));
         let mut b = Vec::new();
         let _ = f.read_to_end(&mut b);
         let text = String::from_utf8_lossy(&b).into_owned();
         let lines: Vec<&str> = crate::policy::split_lines(&text);
-        lines[lines.len().saturating_sub(15)..].iter().map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n")
+        lines[lines.len().saturating_sub(15)..]
+            .iter()
+            .map(|l| format!("  {l}"))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// client._start_server: `appzones serve NAME` detached (its own session, cwd /, the
@@ -399,28 +544,57 @@ impl Cli {
         }
         let log = self.open_log(name).unwrap_or_else(|e| {
             let t = e.to_string();
-            die(&format!("zone {name}: cannot open its log {}: {}", sh(&self.log_path(name)),
-                         t.split(" (os error").next().unwrap_or(&t)))
+            die(&format!(
+                "zone {name}: cannot open its log {}: {}",
+                sh(&self.log_path(name)),
+                t.split(" (os error").next().unwrap_or(&t)
+            ))
         });
         let since = log.metadata().map(|m| m.len()).unwrap_or(0);
         let mut p = [0 as RawFd; 2];
         // close-on-exec (the server gets its end below)
         if !crate::sys::pipe(&mut p, false) {
-            die(&format!("zone {name}: could not start its server: {}", std::io::Error::last_os_error()));
+            die(&format!(
+                "zone {name}: could not start its server: {}",
+                std::io::Error::last_os_error()
+            ));
         }
         // Safety: the two new descriptors are ours.
-        let (r, w) = unsafe { (std::fs::File::from_raw_fd(p[0]), std::fs::File::from_raw_fd(p[1])) };
+        let (r, w) = unsafe {
+            (
+                std::fs::File::from_raw_fd(p[0]),
+                std::fs::File::from_raw_fd(p[1]),
+            )
+        };
         let exe = std::env::current_exe().unwrap_or_else(|e| die(&format!("own path: {e}")));
         let (lfd, wfd) = (lock.as_raw_fd(), w.as_raw_fd());
         let mut cmd = Command::new(&exe);
-        cmd.args(["cli", "serve", name, "--lock-fd", &lfd.to_string(), "--notify-fd", &wfd.to_string()])
-            .stdin(Stdio::null()).stdout(log.try_clone().unwrap_or_else(|e| die(&e.to_string())))
-            .stderr(log.try_clone().unwrap_or_else(|e| die(&e.to_string()))).current_dir("/")
-            .env_remove("NOTIFY_SOCKET").env_remove("LISTEN_FDS").env_remove("LISTEN_PID")
-            .env("APPZONES_CONFIG", std::path::absolute(&self.host.config).unwrap_or_else(|_| self.host.config.clone()));
+        cmd.args([
+            "cli",
+            "serve",
+            name,
+            "--lock-fd",
+            &lfd.to_string(),
+            "--notify-fd",
+            &wfd.to_string(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap_or_else(|e| die(&e.to_string())))
+        .stderr(log.try_clone().unwrap_or_else(|e| die(&e.to_string())))
+        .current_dir("/")
+        .env_remove("NOTIFY_SOCKET")
+        .env_remove("LISTEN_FDS")
+        .env_remove("LISTEN_PID")
+        .env(
+            "APPZONES_CONFIG",
+            std::path::absolute(&self.host.config).unwrap_or_else(|_| self.host.config.clone()),
+        );
         for key in ["STATE", "DENIED_PATHS"] {
             if let Some(v) = config::env(key).filter(|v| !v.is_empty()) {
-                cmd.env(format!("APPZONES_{key}"), std::path::absolute(&v).unwrap_or_else(|_| PathBuf::from(&v)));
+                cmd.env(
+                    format!("APPZONES_{key}"),
+                    std::path::absolute(&v).unwrap_or_else(|_| PathBuf::from(&v)),
+                );
             }
         }
         // Safety: between fork and exec only async-signal-safe calls: a session of its own,
@@ -446,7 +620,10 @@ impl Cli {
         drop(w);
         drop(log);
         if pid < 0 {
-            die(&format!("zone {name}: could not start its server: {}", std::io::Error::last_os_error()));
+            die(&format!(
+                "zone {name}: could not start its server: {}",
+                std::io::Error::last_os_error()
+            ));
         }
         if !exited_ok(wait_child(pid)) {
             die(&format!("zone {name}: could not start its server"));
@@ -473,7 +650,8 @@ impl Cli {
                 }
                 let limit = *limit.get_or_insert_with(|| {
                     let cfg = self.load_zone(name, true);
-                    2.0 * config::duration(cfg.zone(name).expect("checked").get("start_timeout")).unwrap_or(START_TIMEOUT)
+                    2.0 * config::duration(cfg.zone(name).expect("checked").get("start_timeout"))
+                        .unwrap_or(START_TIMEOUT)
                 });
                 if started.elapsed().as_secs_f64() > limit {
                     let pids = self.server_pids(name);
@@ -502,7 +680,11 @@ impl Cli {
     fn wait_ready(&self, name: &str, mut r: std::fs::File, since: u64, quiet: bool) {
         let mut note = Some(Instant::now() + Duration::from_secs(3));
         loop {
-            let mut pfd = libc::pollfd { fd: r.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+            let mut pfd = libc::pollfd {
+                fd: r.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
             // Safety: poll on the pipe we own.
             let n = unsafe { libc::poll(&mut pfd, 1, 1000) };
             if n > 0 {
@@ -510,12 +692,17 @@ impl Cli {
                 if r.read(&mut b).ok() == Some(1) && b[0] == b'\n' {
                     return;
                 }
-                die(&format!("zone {name} did not start; the end of its log ({}):\n{}", sh(&self.log_path(name)),
-                             self.log_tail(name, since)));
+                die(&format!(
+                    "zone {name} did not start; the end of its log ({}):\n{}",
+                    sh(&self.log_path(name)),
+                    self.log_tail(name, since)
+                ));
             }
             if !quiet && note.is_some_and(|t| Instant::now() > t) {
-                warn(&format!("zone {name} is still starting (Ctrl-C leaves it starting; log: {})",
-                              sh(&self.log_path(name))));
+                warn(&format!(
+                    "zone {name} is still starting (Ctrl-C leaves it starting; log: {})",
+                    sh(&self.log_path(name))
+                ));
                 note = None;
             }
         }
@@ -544,7 +731,10 @@ impl Cli {
         self.check_manager_env();
         let (code, _, se) = self.systemctl(&["start", &format!("appzones@{name}.service")], false);
         if code != 0 {
-            die(&format!("zone {name} failed to start; see `appzones logs {name}`\n{}", se.trim()));
+            die(&format!(
+                "zone {name} failed to start; see `appzones logs {name}`\n{}",
+                se.trim()
+            ));
         }
         for _ in 0..200 {
             if self.answers(name) {
@@ -552,7 +742,9 @@ impl Cli {
             }
             std::thread::sleep(Duration::from_millis(50));
         }
-        die(&format!("zone {name} did not answer within 10 s; see `appzones logs {name}`"));
+        die(&format!(
+            "zone {name} did not answer within 10 s; see `appzones logs {name}`"
+        ));
     }
 
     fn stop_zone(&self, name: &str) {
@@ -579,7 +771,9 @@ impl Cli {
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
-            die(&format!("zone {name} did not answer within 10 s of its restart; see `appzones logs {name}`"));
+            die(&format!(
+                "zone {name} did not answer within 10 s of its restart; see `appzones logs {name}`"
+            ));
         }
         let outside = !self.server_pids(name).is_empty();
         self.stop_zone(name);
@@ -594,12 +788,19 @@ impl Cli {
     /// `up|stop|restart ZONE|--all`: for one zone or every one; a failure goes on with the
     /// others. Each runs in a child of ours, so its die() ends only that one.
     fn each_zone(&self, cmd: &str, rest: &[String]) -> i32 {
-        let Some(first) = rest.first() else { die(&format!("usage: appzones {cmd} ZONE|--all")) };
+        let Some(first) = rest.first() else {
+            die(&format!("usage: appzones {cmd} ZONE|--all"))
+        };
         let every = first == "--all";
         let first = &self.zone_arg(first, cmd != "stop");
         // (--all: up and restart are for the host's own zones; stop ends project zones too)
         let mut names: Vec<String> = if every {
-            self.load_cfg(true).zones.iter().filter(|z| cmd == "stop" || !z.project).map(|z| z.name.clone()).collect()
+            self.load_cfg(true)
+                .zones
+                .iter()
+                .filter(|z| cmd == "stop" || !z.project)
+                .map(|z| z.name.clone())
+                .collect()
         } else {
             vec![first.clone()]
         };
@@ -630,7 +831,12 @@ impl Cli {
         let mut failed = 0;
         for n in names {
             // (stop --all: only zones something runs; a server whose zone-init does not answer counts)
-            if cmd == "stop" && every && !self.answers(&n) && self.server_pids(&n).is_empty() && !self.unit_runs(&n) {
+            if cmd == "stop"
+                && every
+                && !self.answers(&n)
+                && self.server_pids(&n).is_empty()
+                && !self.unit_runs(&n)
+            {
                 continue;
             }
             if cmd != "stop" {
@@ -669,27 +875,59 @@ impl Cli {
 
     fn bind_paths(&self, z: &Zone) -> Vec<String> {
         let policy = config::policy(self.host.here.as_os_str().to_owned());
-        z.get("binds").as_array().cloned().unwrap_or_default().iter()
-            .filter_map(|b| b.as_table().and_then(|t| t.get("path")).and_then(Value::as_str).map(String::from))
-            .map(|p| String::from_utf8_lossy(&policy.expand(p.as_bytes())).into_owned()).collect()
+        z.get("binds")
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|b| {
+                b.as_table()
+                    .and_then(|t| t.get("path"))
+                    .and_then(Value::as_str)
+                    .map(String::from)
+            })
+            .map(|p| String::from_utf8_lossy(&policy.expand(p.as_bytes())).into_owned())
+            .collect()
     }
 
     /// client.outside_paths: arguments that name an existing host file the zone cannot see.
     fn outside_paths(&self, z: &Zone, args: &[String]) -> Vec<String> {
         let visible: Vec<String> = self.bind_paths(z).iter().map(|p| plan::rp(p)).collect();
-        args.iter().filter(|a| {
-            let p = a.strip_prefix("file://").unwrap_or(a);
-            if !p.starts_with('/') || p.starts_with("/nix/store") || p.starts_with("/dev/null") || !Path::new(p).exists() {
-                return false;
-            }
-            let r = plan::rp(p);
-            !visible.iter().any(|v| r == *v || r.starts_with(&format!("{v}/")) || v == "/")
-        }).cloned().collect()
+        args.iter()
+            .filter(|a| {
+                let p = a.strip_prefix("file://").unwrap_or(a);
+                if !p.starts_with('/')
+                    || p.starts_with("/nix/store")
+                    || p.starts_with("/dev/null")
+                    || !Path::new(p).exists()
+                {
+                    return false;
+                }
+                let r = plan::rp(p);
+                !visible
+                    .iter()
+                    .any(|v| r == *v || r.starts_with(&format!("{v}/")) || v == "/")
+            })
+            .cloned()
+            .collect()
     }
 
-    fn run(&self, name: &str, words: &[String], wait: bool, restart: bool, bus: Option<String>) -> i32 {
+    fn run(
+        &self,
+        name: &str,
+        words: &[String],
+        wait: bool,
+        restart: bool,
+        bus: Option<String>,
+    ) -> i32 {
         let cfg = self.load_cfg(true);
-        let Some(z) = cfg.zone(name) else { die(&format!("no zone {} in {}", py_repr(name), self.config_path())) };
+        let Some(z) = cfg.zone(name) else {
+            die(&format!(
+                "no zone {} in {}",
+                py_repr(name),
+                self.config_path()
+            ))
+        };
         if words.is_empty() {
             die("usage: appzones run ZONE APP [ARGS...] | appzones run ZONE -- CMD [ARGS...]");
         }
@@ -698,16 +936,37 @@ impl Cli {
             if argv.is_empty() {
                 die("nothing to run after --");
             }
-            let base = Path::new(&argv[0]).file_name().map(|b| b.to_string_lossy().into_owned()).unwrap_or_default();
-            let app = cfg.apps.iter().find(|(_, a)| a.get("command").and_then(Value::as_array).and_then(|c| c.first())
-                .and_then(Value::as_str).is_some_and(|c| Path::new(c).file_name().is_some_and(|f| f.to_string_lossy() == base)))
+            let base = Path::new(&argv[0])
+                .file_name()
+                .map(|b| b.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let app = cfg
+                .apps
+                .iter()
+                .find(|(_, a)| {
+                    a.get("command")
+                        .and_then(Value::as_array)
+                        .and_then(|c| c.first())
+                        .and_then(Value::as_str)
+                        .is_some_and(|c| {
+                            Path::new(c)
+                                .file_name()
+                                .is_some_and(|f| f.to_string_lossy() == base)
+                        })
+                })
                 .map(|(id, _)| id.clone());
             (argv, app)
         } else {
             match config::resolve_app(&cfg, name, &words[0]) {
-                Err(e) => die(&format!("{e}; to run it anyway: appzones run {name} -- {}", words.join(" "))),
-                Ok(None) => die(&format!("no app {} in [apps]; to run a command: appzones run {name} -- {}",
-                                         py_repr(&words[0]), words.join(" "))),
+                Err(e) => die(&format!(
+                    "{e}; to run it anyway: appzones run {name} -- {}",
+                    words.join(" ")
+                )),
+                Ok(None) => die(&format!(
+                    "no app {} in [apps]; to run a command: appzones run {name} -- {}",
+                    py_repr(&words[0]),
+                    words.join(" ")
+                )),
                 Ok(Some(mut base)) => {
                     base.extend(words[1..].iter().cloned());
                     (base, Some(words[0].clone()))
@@ -726,9 +985,13 @@ impl Cli {
         if self.answers(name) && self.stale(name, z) {
             // (a process list that cannot be had is not an idle zone)
             let n = agent::zone_procs(self.rt(), name).map(|p| p.len()).ok();
-            let n_text = n.map(|n| n.to_string()).unwrap_or_else(|| "an unknown number of".into());
+            let n_text = n
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "an unknown number of".into());
             if restart && n == Some(0) {
-                warn(&format!("zones.toml changed for {name}; restarting it (no app runs in it)"));
+                warn(&format!(
+                    "zones.toml changed for {name}; restarting it (no app runs in it)"
+                ));
                 self.restart_zone(name);
             } else if restart {
                 warn(&format!("zones.toml changed for {name}, but {n_text} process(es) run in it; not restarting \
@@ -742,7 +1005,14 @@ impl Cli {
         // the current folder, where the zone sees it (the host's is resolved: a bind written
         // through a symlink, ~/src -> /data/src, is compared by its real path too)
         let cwd = std::env::current_dir().map(|c| sh(&c)).unwrap_or_default();
-        let binds: Vec<(String, String)> = self.bind_paths(z).into_iter().map(|b| { let r = plan::rp(&b); (b, r) }).collect();
+        let binds: Vec<(String, String)> = self
+            .bind_paths(z)
+            .into_iter()
+            .map(|b| {
+                let r = plan::rp(&b);
+                (b, r)
+            })
+            .collect();
         let zcwd = zone_cwd(&cwd, &binds);
         let mut env = serde_json::Map::new();
         for k in ["TERM", "MOZ_HEADLESS", "COLUMNS", "LINES"] {
@@ -757,8 +1027,12 @@ impl Cli {
             if (0..3).any(|f| unsafe { libc::isatty(f) } == 1) {
                 die("--wait passes stdin/stdout/stderr into the zone and refuses a tty; use pipes, or `appzones shell`");
             }
-            let bad: Vec<&str> = ["stdin", "stdout", "stderr"].iter().enumerate().filter(|(f, _)| !stdio_fd_ok(*f as RawFd))
-                .map(|(_, n)| *n).collect();
+            let bad: Vec<&str> = ["stdin", "stdout", "stderr"]
+                .iter()
+                .enumerate()
+                .filter(|(f, _)| !stdio_fd_ok(*f as RawFd))
+                .map(|(_, n)| *n)
+                .collect();
             if !bad.is_empty() {
                 die(&format!("--wait passes only pipes, regular files and /dev/null into the zone; {} is something else (a \
                               directory or socket would hand the zone a way to the host)", bad.join(", ")));
@@ -770,11 +1044,20 @@ impl Cli {
         let s = s.unwrap_or_else(|e| die(&e));
         let (first, rest) = agent::readline(&s, Vec::new()).unwrap_or_else(|e| die(&e));
         if first.get("ok") != Some(&J::Bool(true)) {
-            die(first.get("error").and_then(J::as_str).unwrap_or("run failed"));
+            die(first
+                .get("error")
+                .and_then(J::as_str)
+                .unwrap_or("run failed"));
         }
         if !wait {
             drop(s);
-            return self.watch(name, first.get("pid").and_then(J::as_i64).unwrap_or(0), &argv, &bus, app.as_deref());
+            return self.watch(
+                name,
+                first.get("pid").and_then(J::as_i64).unwrap_or(0),
+                &argv,
+                &bus,
+                app.as_deref(),
+            );
         }
         match agent::readline(&s, rest) {
             Ok((v, _)) => v.get("exit").and_then(J::as_i64).unwrap_or(255) as i32,
@@ -784,14 +1067,22 @@ impl Cli {
 
     /// client.watch: a launched app watched for a few seconds; an error, said.
     fn watch(&self, name: &str, pid: i64, argv: &[String], bus: &str, app: Option<&str>) -> i32 {
-        let secs = config::env("RUN_CHECK").filter(|v| !v.is_empty()).map_or(Some(2.5), |v| v.trim().parse::<f64>().ok())
+        let secs = config::env("RUN_CHECK")
+            .filter(|v| !v.is_empty())
+            .map_or(Some(2.5), |v| v.trim().parse::<f64>().ok())
             .unwrap_or(2.5);
         let end = Instant::now() + Duration::from_secs_f64(secs.max(0.0));
         let mut st: Option<J> = None;
         while Instant::now() < end {
-            match agent::ask(self.rt(), name, &json!({"op": "status", "pid": pid}), Duration::from_secs(2)) {
+            match agent::ask(
+                self.rt(),
+                name,
+                &json!({"op": "status", "pid": pid}),
+                Duration::from_secs(2),
+            ) {
                 Ok(v) => {
-                    let done = v.get("ok") != Some(&J::Bool(true)) || v.get("running") != Some(&J::Bool(true));
+                    let done = v.get("ok") != Some(&J::Bool(true))
+                        || v.get("running") != Some(&J::Bool(true));
                     st = Some(v);
                     if done {
                         break;
@@ -801,34 +1092,64 @@ impl Cli {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        let Some(st) = st.filter(|s| s.get("ok") == Some(&J::Bool(true)) && s.get("running") != Some(&J::Bool(true))) else {
+        let Some(st) = st.filter(|s| {
+            s.get("ok") == Some(&J::Bool(true)) && s.get("running") != Some(&J::Bool(true))
+        }) else {
             return 0;
         };
         let code = st.get("exit").and_then(J::as_i64).unwrap_or(0) as i32;
-        let tail: Vec<String> = st.get("tail").and_then(J::as_array).map(|t| t.iter().filter_map(|l| l.as_str().map(String::from))
-            .collect()).unwrap_or_default();
-        let label = Path::new(&argv[0]).file_name().map(|b| b.to_string_lossy().into_owned()).unwrap_or_default();
-        let refused = tail.iter().any(|l| DBUS_OWN_FAILED.iter().any(|h| l.contains(h)));
+        let tail: Vec<String> = st
+            .get("tail")
+            .and_then(J::as_array)
+            .map(|t| {
+                t.iter()
+                    .filter_map(|l| l.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let label = Path::new(&argv[0])
+            .file_name()
+            .map(|b| b.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let refused = tail
+            .iter()
+            .any(|l| DBUS_OWN_FAILED.iter().any(|h| l.contains(h)));
         if code == 0 && !refused {
             return 0;
         }
-        let how = if code < 0 { format!("was killed by signal {}", -code) } else { format!("exited with status {code}") };
-        warn(&format!("{label} {how} right after it started in zone {name} (bus {bus}); its last output:"));
-        let shown: Vec<String> = if tail.is_empty() { vec!["(nothing)".into()] } else { tail[tail.len().saturating_sub(12)..].to_vec() };
+        let how = if code < 0 {
+            format!("was killed by signal {}", -code)
+        } else {
+            format!("exited with status {code}")
+        };
+        warn(&format!(
+            "{label} {how} right after it started in zone {name} (bus {bus}); its last output:"
+        ));
+        let shown: Vec<String> = if tail.is_empty() {
+            vec!["(nothing)".into()]
+        } else {
+            tail[tail.len().saturating_sub(12)..].to_vec()
+        };
         for l in shown {
             eprintln!("  {l}");
         }
         if bus == "host" && refused {
             let where_ = match app {
                 Some(a) => format!("bus = \"zone\" in [apps.{a}]"),
-                None => format!("an [apps] entry for it with bus = \"zone\" (command = [\"{label}\"])"),
+                None => {
+                    format!("an [apps] entry for it with bus = \"zone\" (command = [\"{label}\"])")
+                }
             };
             warn(&format!("hint: {label} could not own its D-Bus name. A single-instance app needs one, and a zone never owns \
                            names on the host bus. Give it the zone's own bus: add {where_} to {}, or once: appzones run \
                            --bus zone {name} -- {}", self.config_path(), argv.join(" ")));
         }
         eprintln!("  (the whole log: appzones logs {name})");
-        if code > 0 { code } else { 1 }
+        if code > 0 {
+            code
+        } else {
+            1
+        }
     }
 
     /// client.shell: a pty in the zone, this terminal raw until it ends.
@@ -844,17 +1165,31 @@ impl Cli {
             if unsafe { libc::ioctl(1, libc::TIOCGWINSZ, &mut ws) } == 0 && ws.ws_col > 0 {
                 (ws.ws_col as i64, ws.ws_row as i64)
             } else {
-                let env = |k: &str, d: i64| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+                let env = |k: &str, d: i64| {
+                    std::env::var(k)
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(d)
+                };
                 (env("COLUMNS", 80), env("LINES", 24))
             }
         };
         let (cols, rows) = size();
         let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into());
-        let s = agent::request(self.rt(), name, &json!({"op": "shell", "rows": rows, "cols": cols, "term": term}), &[], None)
-            .unwrap_or_else(|e| die(&e));
+        let s = agent::request(
+            self.rt(),
+            name,
+            &json!({"op": "shell", "rows": rows, "cols": cols, "term": term}),
+            &[],
+            None,
+        )
+        .unwrap_or_else(|e| die(&e));
         let (first, rest) = agent::readline(&s, Vec::new()).unwrap_or_else(|e| die(&e));
         if first.get("ok") != Some(&J::Bool(true)) {
-            die(first.get("error").and_then(J::as_str).unwrap_or("shell failed"));
+            die(first
+                .get("error")
+                .and_then(J::as_str)
+                .unwrap_or("shell failed"));
         }
         let pid = first.get("pid").cloned().unwrap_or(J::Null);
         let mut stdout = std::io::stdout();
@@ -913,13 +1248,31 @@ impl Cli {
             }
             if WINCH.swap(false, std::sync::atomic::Ordering::SeqCst) {
                 let (c, r) = size();
-                let _ = agent::ask(self.rt(), name, &json!({"op": "resize", "pid": pid, "rows": r, "cols": c}),
-                                   Duration::from_secs(1));
+                let _ = agent::ask(
+                    self.rt(),
+                    name,
+                    &json!({"op": "resize", "pid": pid, "rows": r, "cols": c}),
+                    Duration::from_secs(1),
+                );
             }
             let out = if pending.is_empty() { 0 } else { libc::POLLOUT };
-            let mut fds = [libc::pollfd { fd: if pending.is_empty() { 0 } else { -1 }, events: libc::POLLIN, revents: 0 },
-                           libc::pollfd { fd: sock, events: libc::POLLIN | out, revents: 0 },
-                           libc::pollfd { fd: wake_pipe[0], events: libc::POLLIN, revents: 0 }];
+            let mut fds = [
+                libc::pollfd {
+                    fd: if pending.is_empty() { 0 } else { -1 },
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: sock,
+                    events: libc::POLLIN | out,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: wake_pipe[0],
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+            ];
             // Safety: poll on stdin, our socket and the wake pipe.
             if unsafe { libc::poll(fds.as_mut_ptr(), 3, -1) } < 0 {
                 continue; // EINTR (a resize, a hangup)
@@ -927,16 +1280,29 @@ impl Cli {
             if fds[2].revents != 0 {
                 let mut drain = [0u8; 64];
                 // Safety: read from our own non-blocking pipe into a local buffer.
-                while unsafe { libc::read(wake_pipe[0], drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
+                while unsafe { libc::read(wake_pipe[0], drain.as_mut_ptr().cast(), drain.len()) }
+                    > 0
+                {}
                 continue; // (the flags are looked at first)
             }
             if !pending.is_empty() && fds[1].revents & libc::POLLOUT != 0 {
                 // Safety: a send from our buffer, never blocking.
-                let n = unsafe { libc::send(sock, pending.as_ptr().cast(), pending.len(), libc::MSG_DONTWAIT | libc::MSG_NOSIGNAL) };
+                let n = unsafe {
+                    libc::send(
+                        sock,
+                        pending.as_ptr().cast(),
+                        pending.len(),
+                        libc::MSG_DONTWAIT | libc::MSG_NOSIGNAL,
+                    )
+                };
                 if n > 0 {
                     pending.drain(..n as usize);
-                } else if n < 0 && !matches!(std::io::Error::last_os_error().kind(),
-                                             std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted) {
+                } else if n < 0
+                    && !matches!(
+                        std::io::Error::last_os_error().kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                    )
+                {
                     break 'outer;
                 }
             }
@@ -972,7 +1338,10 @@ impl Cli {
 
     fn zone_list(&self, as_json: bool) -> i32 {
         let cfg = self.load_cfg(true);
-        let mut rows = vec![["ZONE", "STATE", "NETWORK", "DNS", "DEVICES", "APPS", "COLOUR"].map(String::from)];
+        let mut rows = vec![[
+            "ZONE", "STATE", "NETWORK", "DNS", "DEVICES", "APPS", "COLOUR",
+        ]
+        .map(String::from)];
         let mut zones = Vec::new();
         for z in &cfg.zones {
             let n = &z.name;
@@ -980,23 +1349,66 @@ impl Cli {
             let project = cfg.projects.iter().find(|p| &p.name == n);
             let label = project.map_or_else(|| n.clone(), |p| p.shown.clone());
             let st = |k: &str| z.get(k).as_str().unwrap_or("").to_string();
-            let net = format!("{}{}", st("network"), if config::truthy(z.get("netbird")) { "+netbird" } else { "" });
+            let net = format!(
+                "{}{}",
+                st("network"),
+                if config::truthy(z.get("netbird")) {
+                    "+netbird"
+                } else {
+                    ""
+                }
+            );
             let (state, apps_t, apps_j) = if self.answers(n) {
                 let (t, j) = match agent::zone_procs(self.rt(), n) {
                     Ok(p) => (p.len().to_string(), json!(p.len())),
                     Err(_) => ("?".to_string(), J::Null),
                 };
-                (format!("running{}", if self.stale(n, z) { " (stale)" } else { "" }), t, j)
+                (
+                    format!("running{}", if self.stale(n, z) { " (stale)" } else { "" }),
+                    t,
+                    j,
+                )
             } else {
                 ("stopped".to_string(), "-".to_string(), J::Null)
             };
-            let usb: Vec<String> = z.get("usb").as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            let usb: Vec<String> = z
+                .get("usb")
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
-            let devs: Vec<String> = z.get("devices").as_array().map(|a| a.iter().filter_map(|x| x.as_str()).map(|d| {
-                if d == "usb" { format!("usb({})", usb.join("+")) } else { d.to_string() }
-            }).collect()).unwrap_or_default();
-            rows.push([label.clone(), state.clone(), net.clone(), st("dns"), if devs.is_empty() { "-".into() } else { devs.join(",") },
-                       apps_t, st("colour")]);
+            let devs: Vec<String> = z
+                .get("devices")
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str())
+                        .map(|d| {
+                            if d == "usb" {
+                                format!("usb({})", usb.join("+"))
+                            } else {
+                                d.to_string()
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            rows.push([
+                label.clone(),
+                state.clone(),
+                net.clone(),
+                st("dns"),
+                if devs.is_empty() {
+                    "-".into()
+                } else {
+                    devs.join(",")
+                },
+                apps_t,
+                st("colour"),
+            ]);
             let mut j = json!({"name": n, "state": state, "network": net, "dns": st("dns"), "devices": devs, "apps": apps_j,
                                "colour": st("colour")});
             if let Some(p) = project {
@@ -1008,9 +1420,15 @@ impl Cli {
             out(&py_json(&J::Array(zones)));
             return 0;
         }
-        let w: Vec<usize> = (0..7).map(|i| rows.iter().map(|r| r[i].chars().count()).max().unwrap_or(0)).collect();
+        let w: Vec<usize> = (0..7)
+            .map(|i| rows.iter().map(|r| r[i].chars().count()).max().unwrap_or(0))
+            .collect();
         for r in rows {
-            let line: Vec<String> = r.iter().enumerate().map(|(i, c)| format!("{c:<width$}", width = w[i])).collect();
+            let line: Vec<String> = r
+                .iter()
+                .enumerate()
+                .map(|(i, c)| format!("{c:<width$}", width = w[i]))
+                .collect();
             out(line.join("  ").trim_end());
         }
         0
@@ -1022,21 +1440,32 @@ impl Cli {
         if as_json {
             let mut settings = serde_json::Map::new();
             for (k, o) in &z.origin {
-                let v: serde_json::Value = serde_json::from_str(&json_dumps_unsorted(z.get(k))).unwrap();
+                let v: serde_json::Value =
+                    serde_json::from_str(&json_dumps_unsorted(z.get(k))).unwrap();
                 settings.insert(k.to_string(), json!({"value": v, "from": *o}));
             }
             out(&py_json(&json!({"name": name, "settings": settings})));
         } else {
             for (k, o) in &z.origin {
-                out(&format!("{k:15} {:45} ({o})", json_dumps_unsorted(z.get(k))));
+                out(&format!(
+                    "{k:15} {:45} ({o})",
+                    json_dumps_unsorted(z.get(k))
+                ));
             }
         }
         0
     }
 
     fn new_block(cfg: &Config, name: &str) -> String {
-        let used: Vec<String> = cfg.zones.iter().filter_map(|z| z.get("colour").as_str().map(str::to_lowercase)).collect();
-        let colour = PALETTE.iter().find(|c| !used.contains(&c.to_string())).map(|c| c.to_string())
+        let used: Vec<String> = cfg
+            .zones
+            .iter()
+            .filter_map(|z| z.get("colour").as_str().map(str::to_lowercase))
+            .collect();
+        let colour = PALETTE
+            .iter()
+            .find(|c| !used.contains(&c.to_string()))
+            .map(|c| c.to_string())
             .unwrap_or_else(|| format!("#{}", random_hex(3)));
         format!("\n[zones.{name}]                 # added by `appzones new`: internet only, gpu, nothing from your home\n\
                  colour    = \"{colour}\"\nnetwork   = \"internet\"\ndns       = \"host\"\ndevices   = [\"gpu\"]\nbinds     = []\n")
@@ -1048,55 +1477,117 @@ impl Cli {
         if !zone_name_ok(name) || RESERVED.contains(&name) {
             let mut r: Vec<&str> = RESERVED.to_vec();
             r.sort();
-            die(&format!("zone name {} must match {} and not be one of {}", py_repr(name), config::NAME_PATTERN,
-                         crate::pyfmt::repr_strs(&r)));
+            die(&format!(
+                "zone name {} must match {} and not be one of {}",
+                py_repr(name),
+                config::NAME_PATTERN,
+                crate::pyfmt::repr_strs(&r)
+            ));
         }
-        let empty = || Config { zones: vec![], apps: toml::Table::new(), errors: vec![], warnings: vec![], projects: vec![],
-                                projects_enabled: true, overrides: vec![] };
+        let empty = || Config {
+            zones: vec![],
+            apps: toml::Table::new(),
+            errors: vec![],
+            warnings: vec![],
+            projects: vec![],
+            projects_enabled: true,
+            overrides: vec![],
+        };
         if !write {
-            let cfg = if self.host.config.symlink_metadata().is_ok() { self.load_cfg(true) } else { empty() };
+            let cfg = if self.host.config.symlink_metadata().is_ok() {
+                self.load_cfg(true)
+            } else {
+                empty()
+            };
             if cfg.zone(name).is_some() {
                 die(&format!("zone {} already exists", py_repr(name)));
             }
             out(Self::new_block(&cfg, name).trim());
-            eprintln!("\n(not written; `appzones new {name} -y` appends it to {})", self.config_path());
+            eprintln!(
+                "\n(not written; `appzones new {name} -y` appends it to {})",
+                self.config_path()
+            );
             return 0;
         }
         let real = PathBuf::from(plan::rp(&self.config_path()));
-        let dir = real.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+        let dir = real
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
         let _ = std::fs::create_dir_all(&dir);
-        let fname = real.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
-        let lock = std::fs::OpenOptions::new().append(true).create(true).open(dir.join(format!(".{fname}.lock")))
+        let fname = real
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let lock = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(dir.join(format!(".{fname}.lock")))
             .unwrap_or_else(|e| die(&e.to_string()));
         // Safety: a blocking flock on our file.
         unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) };
-        let old = if real.exists() { std::fs::read_to_string(&real).unwrap_or_else(|e| die(&e.to_string())) } else { NEW_FILE.into() };
+        let old = if real.exists() {
+            std::fs::read_to_string(&real).unwrap_or_else(|e| die(&e.to_string()))
+        } else {
+            NEW_FILE.into()
+        };
         let shown = sh(&real);
-        let cfg = if old.trim().is_empty() { empty() } else { config::load_text(&old, &shown, self.host.here.as_os_str().to_owned()) };
+        let cfg = if old.trim().is_empty() {
+            empty()
+        } else {
+            config::load_text(&old, &shown, self.host.here.as_os_str().to_owned())
+        };
         if !cfg.errors.is_empty() {
-            die(&format!("{} is invalid:\n  {}", self.config_path(), cfg.errors.join("\n  ")));
+            die(&format!(
+                "{} is invalid:\n  {}",
+                self.config_path(),
+                cfg.errors.join("\n  ")
+            ));
         }
         if cfg.zone(name).is_some() {
             die(&format!("zone {} already exists", py_repr(name)));
         }
         let block = Self::new_block(&cfg, name);
-        let text = format!("{old}{}{block}", if old.ends_with('\n') { "" } else { "\n" });
+        let text = format!(
+            "{old}{}{block}",
+            if old.ends_with('\n') { "" } else { "\n" }
+        );
         let cfg2 = config::load_text(&text, &shown, self.host.here.as_os_str().to_owned());
         if !cfg2.errors.is_empty() {
-            die(&format!("the new block would make zones.toml invalid; nothing written:\n  {}", cfg2.errors.join("\n  ")));
+            die(&format!(
+                "the new block would make zones.toml invalid; nothing written:\n  {}",
+                cfg2.errors.join("\n  ")
+            ));
         }
         let tmp = dir.join(format!(".{fname}.{}", random_hex(4)));
-        let mode = std::fs::metadata(&real).ok().map(|m| m.permissions().mode() & 0o7777);
-        let r = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)
+        let mode = std::fs::metadata(&real)
+            .ok()
+            .map(|m| m.permissions().mode() & 0o7777);
+        let r = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)
             .and_then(|mut f| f.write_all(text.as_bytes()))
-            .and_then(|_| match mode { Some(m) => std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(m)), None => Ok(()) })
+            .and_then(|_| match mode {
+                Some(m) => std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(m)),
+                None => Ok(()),
+            })
             .and_then(|_| std::fs::rename(&tmp, &real));
         if let Err(e) = r {
             let _ = std::fs::remove_file(&tmp);
             die(&e.to_string());
         }
         out(block.trim());
-        eprintln!("{} {}", if old != NEW_FILE { "appended to" } else { "created" }, sh(&real));
+        eprintln!(
+            "{} {}",
+            if old != NEW_FILE {
+                "appended to"
+            } else {
+                "created"
+            },
+            sh(&real)
+        );
         0
     }
 
@@ -1119,12 +1610,33 @@ impl Cli {
         if !refused.is_empty() {
             return 1;
         }
-        let host: Vec<&str> = cfg.zones.iter().filter(|z| !z.project).map(|z| z.name.as_str()).collect();
-        let projects = if cfg.projects.is_empty() { String::new() } else {
-            format!("; {} project zones ({})", cfg.projects.len(), cfg.projects.iter().map(|p| p.shown.as_str()).collect::<Vec<_>>().join(", "))
+        let host: Vec<&str> = cfg
+            .zones
+            .iter()
+            .filter(|z| !z.project)
+            .map(|z| z.name.as_str())
+            .collect();
+        let projects = if cfg.projects.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; {} project zones ({})",
+                cfg.projects.len(),
+                cfg.projects
+                    .iter()
+                    .map(|p| p.shown.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         };
-        out(&format!("ok: {}: {} zones ({}), {} apps (this zone is release {}){projects}", self.config_path(), host.len(),
-                     host.join(", "), cfg.apps.len(), config::RELEASE));
+        out(&format!(
+            "ok: {}: {} zones ({}), {} apps (this zone is release {}){projects}",
+            self.config_path(),
+            host.len(),
+            host.join(", "),
+            cfg.apps.len(),
+            config::RELEASE
+        ));
         let Some(probe) = probe else { return 0 };
         let cfg = self.load_zone(probe, true);
         let z = cfg.zone(probe).expect("checked");
@@ -1136,36 +1648,80 @@ impl Cli {
         let exe = std::env::current_exe().unwrap_or_else(|e| die(&e.to_string()));
         let mut fails = 0;
         // (macOS: /bin/sh, as a zone there may not have bash in its PATH order)
-        let shell = if cfg!(target_os = "linux") { "/bin/bash" } else { "/bin/sh" };
+        let shell = if cfg!(target_os = "linux") {
+            "/bin/bash"
+        } else {
+            "/bin/sh"
+        };
         for (title, expect, cmd) in probes {
             // the probe says it ran first: a refusal counts only from a probe that ran
             let script = format!("echo appzones-probe-ran; {cmd}");
-            let o = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", shell, "-c", &script])
-                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
-            let ran = o.as_ref().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).lines().next() == Some("appzones-probe-ran"));
+            let o = Command::new(&exe)
+                .args(["cli", "run", "--wait", probe, "--", shell, "-c", &script])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output();
+            let ran = o.as_ref().is_ok_and(|o| {
+                String::from_utf8_lossy(&o.stdout).lines().next() == Some("appzones-probe-ran")
+            });
             // a refusal probe whose tool is not in the zone (126, 127) proves nothing: SKIP
-            if ran && expect == 1 && o.as_ref().is_ok_and(|o| matches!(o.status.code(), Some(126 | 127))) {
+            if ran
+                && expect == 1
+                && o.as_ref()
+                    .is_ok_and(|o| matches!(o.status.code(), Some(126 | 127)))
+            {
                 skipped.push(format!("{title} (its tool is not in the zone)"));
                 continue;
             }
-            let ok = ran && o.as_ref().is_ok_and(|o| o.status.success() == (expect == 0));
+            let ok = ran
+                && o.as_ref()
+                    .is_ok_and(|o| o.status.success() == (expect == 0));
             fails += i32::from(!ok);
-            out(&format!("{}  {title}{}", if ok { "PASS" } else { "FAIL" }, if ran { "" } else { " (the probe did not run)" }));
+            out(&format!(
+                "{}  {title}{}",
+                if ok { "PASS" } else { "FAIL" },
+                if ran { "" } else { " (the probe did not run)" }
+            ));
         }
         #[cfg(target_os = "linux")]
         {
-            let host_id = std::fs::read_to_string("/etc/machine-id").map(|m| m.trim().to_string()).unwrap_or_default();
-            let zone_id = Command::new(&exe).args(["cli", "run", "--wait", probe, "--", "/bin/bash", "-c", "cat /etc/machine-id"])
-                .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).output().ok()
-                .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+            let host_id = std::fs::read_to_string("/etc/machine-id")
+                .map(|m| m.trim().to_string())
+                .unwrap_or_default();
+            let zone_id = Command::new(&exe)
+                .args([
+                    "cli",
+                    "run",
+                    "--wait",
+                    probe,
+                    "--",
+                    "/bin/bash",
+                    "-c",
+                    "cat /etc/machine-id",
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
             let ok = match (&zone_id, z.get("machine_id").as_str() == Some("zone")) {
                 (Some(id), true) => !id.is_empty() && *id != host_id,
                 (Some(id), false) => *id == host_id,
                 (None, _) => false,
             };
             fails += i32::from(!ok);
-            out(&format!("{}  machine-id is the zone's{}", if ok { "PASS" } else { "FAIL" },
-                         if zone_id.is_some() { "" } else { " (the probe did not run)" }));
+            out(&format!(
+                "{}  machine-id is the zone's{}",
+                if ok { "PASS" } else { "FAIL" },
+                if zone_id.is_some() {
+                    ""
+                } else {
+                    " (the probe did not run)"
+                }
+            ));
             // the zone's resolvers, asked from here as its server asks them: refused on this
             // host fails (#171: a VPN's DNS leak protection); no answer may be offline: SKIP
             // (a zone started before zones.toml changed still asks the resolvers it started with)
@@ -1174,12 +1730,21 @@ impl Cli {
             } else if let Some(up) = plan::dns_upstreams(z) {
                 let dns = z.get("dns").as_str().unwrap_or("host");
                 match crate::host_dns::reach(&up) {
-                    Ok(()) => out(&format!("PASS  names resolve (dns = \"{dns}\": {} answers)", up.join(" or "))),
+                    Ok(()) => out(&format!(
+                        "PASS  names resolve (dns = \"{dns}\": {} answers)",
+                        up.join(" or ")
+                    )),
                     Err(m) if m.refused => {
                         fails += 1;
-                        out(&format!("FAIL  names resolve: {}", crate::host_dns::said(dns, &m)));
+                        out(&format!(
+                            "FAIL  names resolve: {}",
+                            crate::host_dns::said(dns, &m)
+                        ));
                     }
-                    Err(m) => skipped.push(format!("names resolve ({} on this host: offline?)", crate::host_dns::said(dns, &m))),
+                    Err(m) => skipped.push(format!(
+                        "names resolve ({} on this host: offline?)",
+                        crate::host_dns::said(dns, &m)
+                    )),
                 }
             }
         }
@@ -1210,7 +1775,11 @@ impl Cli {
         for p in policy.host_denied_paths().unwrap_or_default() {
             let p = String::from_utf8_lossy(&p).into_owned();
             if Path::new(&p).exists() && !(p == home || p.starts_with(&format!("{home}/"))) {
-                probes.push((format!("{p} absent"), 1, format!("ls -d {}", shell_quote(&p))));
+                probes.push((
+                    format!("{p} absent"),
+                    1,
+                    format!("ls -d {}", shell_quote(&p)),
+                ));
             }
         }
         // (the machine-id: the zone's read inside, compared here; the host's never goes in)
@@ -1218,25 +1787,41 @@ impl Cli {
         // would pass whatever the zone may do: SKIP, said so)
         let mut skipped: Vec<String> = Vec::new();
         if z.get("network").as_str() == Some("internet") {
-            probes.push(("nft flush refused".into(), 1, "nft flush ruleset 2>/dev/null".into()));
+            probes.push((
+                "nft flush refused".into(),
+                1,
+                "nft flush ruleset 2>/dev/null".into(),
+            ));
             if z.get("allow").as_array().is_some_and(|a| !a.is_empty()) {
                 // an allow list: only the proxy, which refuses a name off the list before any lookup
                 probes.push(("a name off the allow list refused by the proxy".into(), 0,
                              "[ \"$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://not-allowed.appzones.invalid/)\" = 403 ]".into()));
                 let addr: std::net::SocketAddr = "1.1.1.1:443".parse().expect("a literal address");
                 if std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok() {
-                    probes.push(("no direct internet, around the proxy".into(), 1, tcp("1.1.1.1", 443)));
+                    probes.push((
+                        "no direct internet, around the proxy".into(),
+                        1,
+                        tcp("1.1.1.1", 443),
+                    ));
                 } else {
-                    skipped.push("no direct internet (the host does not reach 1.1.1.1:443 either)".into());
+                    skipped.push(
+                        "no direct internet (the host does not reach 1.1.1.1:443 either)".into(),
+                    );
                 }
             }
-            for (title, host, port) in [("LAN 192.168.0.0/16 refused", "192.168.1.1", 53), ("tailnet 100.64.0.0/10 refused",
-                                        "100.64.0.1", 8443), ("host loopback refused", "127.0.0.1", 22)] {
-                let addr: std::net::SocketAddr = format!("{host}:{port}").parse().expect("a literal address");
+            for (title, host, port) in [
+                ("LAN 192.168.0.0/16 refused", "192.168.1.1", 53),
+                ("tailnet 100.64.0.0/10 refused", "100.64.0.1", 8443),
+                ("host loopback refused", "127.0.0.1", 22),
+            ] {
+                let addr: std::net::SocketAddr =
+                    format!("{host}:{port}").parse().expect("a literal address");
                 if std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok() {
                     probes.push((title.into(), 1, tcp(host, port)));
                 } else {
-                    skipped.push(format!("{title} (the host does not reach {host}:{port} either)"));
+                    skipped.push(format!(
+                        "{title} (the host does not reach {host}:{port} either)"
+                    ));
                 }
             }
         }
@@ -1250,7 +1835,9 @@ impl Cli {
     #[cfg(not(target_os = "linux"))]
     fn macos_probes(&self, name: &str, z: &Zone) -> (Vec<(String, i32, String)>, Vec<String>) {
         let q = |p: &str| shell_quote(p);
-        let home = std::fs::canonicalize(&self.host.home).map(|h| sh(&h)).unwrap_or_else(|_| sh(&self.host.home));
+        let home = std::fs::canonicalize(&self.host.home)
+            .map(|h| sh(&h))
+            .unwrap_or_else(|_| sh(&self.host.home));
         let mut probes: Vec<(String, i32, String)> = vec![
             ("your home is closed".into(), 1, format!("ls {}", q(&home))),
             // (the write's own status: a cleanup that fails never hides a write that worked)
@@ -1266,7 +1853,11 @@ impl Cli {
               [ -n \"$o\" ] || exit 0; echo \"$o\" | grep -q -e IOPlatformUUID -e IOPlatformSerialNumber".into()),
         ];
         if Path::new(&home).join(".ssh").exists() {
-            probes.push(("~/.ssh is closed".into(), 1, format!("ls -d {}/.ssh", q(&home))));
+            probes.push((
+                "~/.ssh is closed".into(),
+                1,
+                format!("ls -d {}/.ssh", q(&home)),
+            ));
         }
         let policy = config::policy(self.host.here.as_os_str().to_owned());
         for p in policy.denied_paths().unwrap_or_default() {
@@ -1277,62 +1868,130 @@ impl Cli {
         }
         // the zone's mark that it must not read (how its processes are told apart)
         let zdir = self.host.state.join(name);
-        let marks = std::fs::read_dir(&zdir).map(|it| it.flatten().map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "no")).collect::<Vec<_>>()).unwrap_or_default();
+        let marks = std::fs::read_dir(&zdir)
+            .map(|it| {
+                it.flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.extension().is_some_and(|x| x == "no"))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         for m in marks {
-            probes.push(("the zone's own mark is closed".into(), 1, format!("cat {}", q(&sh(&m)))));
+            probes.push((
+                "the zone's own mark is closed".into(),
+                1,
+                format!("cat {}", q(&sh(&m))),
+            ));
         }
         // its server and zone-init are outside its sandbox
         for pid in self.server_pids(name) {
-            probes.push((format!("its server (pid {pid}) cannot be signalled"), 1, format!("kill -0 {pid}")));
+            probes.push((
+                format!("its server (pid {pid}) cannot be signalled"),
+                1,
+                format!("kill -0 {pid}"),
+            ));
         }
-        if let Some(pid) = agent::ping(self.rt(), name).and_then(|v| v.get("pid").and_then(J::as_i64)) {
-            probes.push((format!("zone-init (pid {pid}) cannot be signalled"), 1, format!("kill -0 {pid}")));
+        if let Some(pid) =
+            agent::ping(self.rt(), name).and_then(|v| v.get("pid").and_then(J::as_i64))
+        {
+            probes.push((
+                format!("zone-init (pid {pid}) cannot be signalled"),
+                1,
+                format!("kill -0 {pid}"),
+            ));
         }
         let mut skipped = Vec::new();
-        let reaches = |h: &str, p: u16| format!("{h}:{p}").parse::<std::net::SocketAddr>().ok()
-            .is_some_and(|a| std::net::TcpStream::connect_timeout(&a, Duration::from_secs(2)).is_ok());
-        let direct = |title: &str, h: &str, p: u16, probes: &mut Vec<(String, i32, String)>, skipped: &mut Vec<String>| {
+        let reaches = |h: &str, p: u16| {
+            format!("{h}:{p}")
+                .parse::<std::net::SocketAddr>()
+                .ok()
+                .is_some_and(|a| {
+                    std::net::TcpStream::connect_timeout(&a, Duration::from_secs(2)).is_ok()
+                })
+        };
+        let direct = |title: &str,
+                      h: &str,
+                      p: u16,
+                      probes: &mut Vec<(String, i32, String)>,
+                      skipped: &mut Vec<String>| {
             if reaches(h, p) {
                 probes.push((title.into(), 1, format!("nc -z -G 3 {h} {p}")));
             } else {
                 skipped.push(format!("{title} (the host does not reach {h}:{p} either)"));
             }
         };
-        let gateway = Command::new("route").args(["-n", "get", "default"]).stdin(Stdio::null()).output().ok()
-            .and_then(|o| String::from_utf8_lossy(&o.stdout).lines()
-                .find_map(|l| l.trim().strip_prefix("gateway:").map(|g| g.trim().to_string())))
+        let gateway = Command::new("route")
+            .args(["-n", "get", "default"])
+            .stdin(Stdio::null())
+            .output()
+            .ok()
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout).lines().find_map(|l| {
+                    l.trim()
+                        .strip_prefix("gateway:")
+                        .map(|g| g.trim().to_string())
+                })
+            })
             .filter(|g| g.parse::<std::net::Ipv4Addr>().is_ok());
         let own = crate::proxy::host_nets().unwrap_or_default().into_iter()
             .find(|(a, _)| matches!(a, std::net::IpAddr::V4(v) if !v.is_loopback() && !v.is_link_local()))
             .map(|(a, _)| a.to_string());
         match z.get("network").as_str().unwrap_or("internet") {
             "none" => {
-                direct("no network: the internet", "1.1.1.1", 443, &mut probes, &mut skipped);
+                direct(
+                    "no network: the internet",
+                    "1.1.1.1",
+                    443,
+                    &mut probes,
+                    &mut skipped,
+                );
                 if let Some(g) = &gateway {
                     for port in [80, 53, 443] {
                         if reaches(g, port) {
-                            direct(&format!("no network: the LAN's gateway {g}"), g, port, &mut probes, &mut skipped);
+                            direct(
+                                &format!("no network: the LAN's gateway {g}"),
+                                g,
+                                port,
+                                &mut probes,
+                                &mut skipped,
+                            );
                             break;
                         }
                     }
                 }
             }
             "internet" => {
-                direct("no direct connection, around the proxy", "1.1.1.1", 443, &mut probes, &mut skipped);
-                if reaches("1.1.1.1", 443) && z.get("allow").as_array().is_none_or(|a| a.is_empty()) {
-                    probes.push(("the internet through the proxy".into(), 0,
-                                 "curl -sf -m 20 -o /dev/null https://example.com".into()));
+                direct(
+                    "no direct connection, around the proxy",
+                    "1.1.1.1",
+                    443,
+                    &mut probes,
+                    &mut skipped,
+                );
+                if reaches("1.1.1.1", 443) && z.get("allow").as_array().is_none_or(|a| a.is_empty())
+                {
+                    probes.push((
+                        "the internet through the proxy".into(),
+                        0,
+                        "curl -sf -m 20 -o /dev/null https://example.com".into(),
+                    ));
                 }
-                probes.push(("no names resolve in the zone".into(), 1, "nslookup -timeout=3 example.com".into()));
+                probes.push((
+                    "no names resolve in the zone".into(),
+                    1,
+                    "nslookup -timeout=3 example.com".into(),
+                ));
                 if z.get("allow").as_array().is_some_and(|a| !a.is_empty()) {
                     probes.push(("a name off the allow list refused by the proxy".into(), 0,
                                  "[ \"$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://not-allowed.appzones.invalid/)\" = 403 ]".into()));
                 }
                 let mut targets: Vec<(String, String)> = vec![
-                    ("the host's loopback".into(), "127.0.0.1:22".into()), ("a private range".into(), "10.0.0.1:80".into()),
-                    ("the tailnet range".into(), "100.64.0.1:8443".into()), ("link-local".into(), "169.254.169.254:80".into()),
-                    ("the IPv6 loopback".into(), "[::1]:22".into())];
+                    ("the host's loopback".into(), "127.0.0.1:22".into()),
+                    ("a private range".into(), "10.0.0.1:80".into()),
+                    ("the tailnet range".into(), "100.64.0.1:8443".into()),
+                    ("link-local".into(), "169.254.169.254:80".into()),
+                    ("the IPv6 loopback".into(), "[::1]:22".into()),
+                ];
                 if let Some(g) = &gateway {
                     targets.push((format!("the LAN's gateway {g}"), format!("{g}:80")));
                 }
@@ -1344,7 +2003,9 @@ impl Cli {
                                  format!("[ \"$(curl -s -m 10 -o /dev/null -w '%{{http_code}}' http://{t}/)\" = 403 ]")));
                 }
             }
-            _ => skipped.push("network refusals (network = \"host\": the zone has the host's network)".into()),
+            _ => skipped.push(
+                "network refusals (network = \"host\": the zone has the host's network)".into(),
+            ),
         }
         (probes, skipped)
     }
@@ -1355,18 +2016,26 @@ impl Cli {
     /// project's default zone or zone NAME. VERIFY (commands that start a zone): the project
     /// file must be the one trusted, byte for byte.
     fn zone_arg(&self, arg: &str, verify: bool) -> String {
-        let Some(want) = arg.strip_prefix('@') else { return arg.to_string() };
+        let Some(want) = arg.strip_prefix('@') else {
+            return arg.to_string();
+        };
         let cfg = self.load_cfg(true);
         if !cfg.projects_enabled {
-            die(&format!("project zones are off in {} ([projects] enabled = false)", self.config_path()));
+            die(&format!(
+                "project zones are off in {} ([projects] enabled = false)",
+                self.config_path()
+            ));
         }
-        let cwd = std::env::current_dir().unwrap_or_else(|e| die(&format!("the current folder: {e}")));
+        let cwd =
+            std::env::current_dir().unwrap_or_else(|e| die(&format!("the current folder: {e}")));
         // (stop, ps, logs: also when the project's file is gone, by the trusted project holding
         // this folder; starting a zone always needs the file)
         let root = match crate::project::find_root(&cwd, &self.host.home) {
             Ok(r) => r,
             Err(e) if verify => die(&e),
-            Err(e) => crate::project::trusted_holding(&self.host.home, &cwd).map(|t| t.root).unwrap_or_else(|| die(&e)),
+            Err(e) => crate::project::trusted_holding(&self.host.home, &cwd)
+                .map(|t| t.root)
+                .unwrap_or_else(|| die(&e)),
         };
         let shown_root = crate::project::shown(&sh(&root));
         let Some(t) = crate::project::trusted_at(&self.host.home, &root) else {
@@ -1379,19 +2048,36 @@ impl Cli {
                 die(&format!("{shown_root}/{} changed since you trusted it: `appzones trust` shows what changed", crate::project::FILE));
             }
         }
-        let file = crate::project::parse(&t.copy, crate::project::FILE)
-            .unwrap_or_else(|e| die(&format!("the trusted file of {shown_root}: {}; appzones trust it again", e.join("; "))));
-        let zone = if want.is_empty() { file.default.clone() } else { want.to_string() };
+        let file = crate::project::parse(&t.copy, crate::project::FILE).unwrap_or_else(|e| {
+            die(&format!(
+                "the trusted file of {shown_root}: {}; appzones trust it again",
+                e.join("; ")
+            ))
+        });
+        let zone = if want.is_empty() {
+            file.default.clone()
+        } else {
+            want.to_string()
+        };
         if !file.zones.iter().any(|(n, _)| *n == zone) {
-            die(&format!("the project at {shown_root} has no zone {} (zones: {})", py_repr(&crate::project::shown(&zone)),
-                         file.zones.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ")));
+            die(&format!(
+                "the project at {shown_root} has no zone {} (zones: {})",
+                py_repr(&crate::project::shown(&zone)),
+                file.zones
+                    .iter()
+                    .map(|(n, _)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
         let id = crate::project::zone_id(&root, &zone);
         if verify && !cfg.zones.iter().any(|z| z.name == id) {
             for w in &cfg.warnings {
                 warn(&format!("warning: {w}"));
             }
-            die(&format!("zone @{zone} of {shown_root} cannot be used now (see above)"));
+            die(&format!(
+                "zone @{zone} of {shown_root} cannot be used now (see above)"
+            ));
         }
         id
     }
@@ -1399,24 +2085,30 @@ impl Cli {
     /// `appzones trust [DIR]`: show what the project there asks for, and trust it on a yes
     /// typed at the terminal (never from a pipe or a script).
     fn trust(&self, dir: Option<&String>) -> i32 {
-        let start = dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|e| die(&e.to_string())));
+        let start = dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|e| die(&e.to_string())));
         let root = crate::project::find_root(&start, &self.host.home).unwrap_or_else(|e| die(&e));
         let shown_root = crate::project::shown(&sh(&root));
         let policy = config::policy(self.host.here.as_os_str().to_owned());
         if let Some(e) = policy.bind_error(root.as_os_str().as_bytes()) {
-            die(&format!("the project's folder cannot be a zone's: {}", crate::project::shown(&e)));
+            die(&format!(
+                "the project's folder cannot be a zone's: {}",
+                crate::project::shown(&e)
+            ));
         }
         // the bytes read once: those shown are those recorded
         let now = crate::project::read_file(&root).unwrap_or_else(|e| die(&e));
-        let file = match crate::project::parse(&now, &format!("{shown_root}/{}", crate::project::FILE)) {
-            Ok(f) => f,
-            Err(errs) => {
-                for e in errs {
-                    eprintln!("error: {e}");
+        let file =
+            match crate::project::parse(&now, &format!("{shown_root}/{}", crate::project::FILE)) {
+                Ok(f) => f,
+                Err(errs) => {
+                    for e in errs {
+                        eprintln!("error: {e}");
+                    }
+                    return 1;
                 }
-                return 1;
-            }
-        };
+            };
         if let Err(e) = crate::project::check_binds(&root, &file) {
             die(&e);
         }
@@ -1425,12 +2117,18 @@ impl Cli {
             out(&format!("{shown_root}: trusted already, unchanged"));
             return 0;
         }
-        let mut tty = std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty")
+        let mut tty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
             .unwrap_or_else(|_| die("appzones trust asks at the terminal, and there is none here"));
         let mut text = format!("\nProject {shown_root} ({})\n", crate::project::FILE);
         if let Some(o) = &old {
             text += "\nChanged since you trusted it:\n";
-            let (a, b) = (String::from_utf8_lossy(&o.copy), String::from_utf8_lossy(&now));
+            let (a, b) = (
+                String::from_utf8_lossy(&o.copy),
+                String::from_utf8_lossy(&now),
+            );
             let (al, bl): (Vec<&str>, Vec<&str>) = (a.lines().collect(), b.lines().collect());
             for l in al.iter().filter(|l| !bl.contains(l)) {
                 text += &format!("  - {}\n", crate::project::shown(l));
@@ -1465,29 +2163,50 @@ impl Cli {
         // zones the file had and has no more: stopped now (nothing else would find them)
         if let Some(o) = &old {
             let new: Vec<String> = file.zones.iter().map(|(n, _)| n.clone()).collect();
-            let gone: Vec<String> = crate::project::zone_names(&o.copy).into_iter().filter(|z| !new.contains(z)).collect();
+            let gone: Vec<String> = crate::project::zone_names(&o.copy)
+                .into_iter()
+                .filter(|z| !new.contains(z))
+                .collect();
             let failed = self.stop_project_zones(&root, &gone);
             if !failed.is_empty() {
                 die(&format!("trusted: {shown_root}; but zones it no longer has still run: {} (`appzones stop NAME` each, \
                               or `appzones stop --all`)", failed.join(", ")));
             }
         }
-        out(&format!("trusted: {shown_root}; its zones: {} (appzones run @ -- CMD, in that folder)",
-                     file.zones.iter().map(|(n, _)| format!("@{n}")).collect::<Vec<_>>().join(", ")));
+        out(&format!(
+            "trusted: {shown_root}; its zones: {} (appzones run @ -- CMD, in that folder)",
+            file.zones
+                .iter()
+                .map(|(n, _)| format!("@{n}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
         0
     }
 
     /// `appzones untrust [DIR]`: forget the project there and stop its zones (also when its
     /// folder is gone: DIR as it was).
     fn untrust(&self, dir: Option<&String>) -> i32 {
-        let start = dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|e| die(&e.to_string())));
+        let start = dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|e| die(&e.to_string())));
         // the project there: by its file, else the trusted project holding the folder, else
         // (the folder gone) the path as given
-        let t = crate::project::find_root(&start, &self.host.home).ok()
+        let t = crate::project::find_root(&start, &self.host.home)
+            .ok()
             .and_then(|r| crate::project::trusted_at(&self.host.home, &r))
             .or_else(|| crate::project::trusted_holding(&self.host.home, &start))
-            .or_else(|| (start.is_absolute() && !start.exists()).then(|| crate::project::trusted_at(&self.host.home, &start)).flatten())
-            .unwrap_or_else(|| die(&format!("{} is not in a trusted project", crate::project::shown(&sh(&start)))));
+            .or_else(|| {
+                (start.is_absolute() && !start.exists())
+                    .then(|| crate::project::trusted_at(&self.host.home, &start))
+                    .flatten()
+            })
+            .unwrap_or_else(|| {
+                die(&format!(
+                    "{} is not in a trusted project",
+                    crate::project::shown(&sh(&start))
+                ))
+            });
         let shown_root = crate::project::shown(&sh(&t.root));
         // forgotten first (nothing starts its zones again), then every one of them stopped
         crate::project::forget(&t.dir).unwrap_or_else(|e| die(&e));
@@ -1511,7 +2230,11 @@ impl Cli {
             if !(self.answers(&id) || !self.server_pids(&id).is_empty() || self.unit_runs(&id)) {
                 continue;
             }
-            let ok = Command::new(&exe).args(["cli", "stop", &id]).stdin(Stdio::null()).status().is_ok_and(|s| s.success());
+            let ok = Command::new(&exe)
+                .args(["cli", "stop", &id])
+                .stdin(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success());
             if !ok {
                 failed.push(id);
             }
@@ -1520,13 +2243,24 @@ impl Cli {
     }
 
     fn find_desktop(&self, name: &str) -> Vec<(String, String)> {
-        let mut dirs = vec![std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| sh(&self.host.home.join(".local/share")))];
-        let default = if plan::layout() == "nixos" { "/run/current-system/sw/share" } else { "/usr/local/share:/usr/share" };
-        dirs.extend(std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| default.into()).split(':').map(String::from));
+        let mut dirs = vec![std::env::var("XDG_DATA_HOME")
+            .unwrap_or_else(|_| sh(&self.host.home.join(".local/share")))];
+        let default = if plan::layout() == "nixos" {
+            "/run/current-system/sw/share"
+        } else {
+            "/usr/local/share:/usr/share"
+        };
+        dirs.extend(
+            std::env::var("XDG_DATA_DIRS")
+                .unwrap_or_else(|_| default.into())
+                .split(':')
+                .map(String::from),
+        );
         for d in dirs {
             let p = Path::new(&d).join("applications").join(name);
             if p.is_file() {
-                let text = String::from_utf8_lossy(&std::fs::read(&p).unwrap_or_default()).into_owned();
+                let text =
+                    String::from_utf8_lossy(&std::fs::read(&p).unwrap_or_default()).into_owned();
                 let mut entries: Vec<(String, String)> = Vec::new();
                 let mut section = String::new();
                 for line in crate::policy::split_lines(&text) {
@@ -1564,24 +2298,66 @@ impl Cli {
         let mut failed: Vec<String> = Vec::new();
         let mut n = 0;
         for (aid, a) in &cfg.apps {
-            let host_entry = a.get("desktop").and_then(Value::as_str).map(|d| self.find_desktop(d)).unwrap_or_default();
-            let get = |k: &str| host_entry.iter().find(|(e, _)| e == k).map(|(_, v)| v.clone()).filter(|v| !v.is_empty());
+            let host_entry = a
+                .get("desktop")
+                .and_then(Value::as_str)
+                .map(|d| self.find_desktop(d))
+                .unwrap_or_default();
+            let get = |k: &str| {
+                host_entry
+                    .iter()
+                    .find(|(e, _)| e == k)
+                    .map(|(_, v)| v.clone())
+                    .filter(|v| !v.is_empty())
+            };
             let mut cap = aid.chars();
-            let fallback = cap.next().map(|c| c.to_uppercase().collect::<String>() + &cap.as_str().to_lowercase()).unwrap_or_default();
+            let fallback = cap
+                .next()
+                .map(|c| c.to_uppercase().collect::<String>() + &cap.as_str().to_lowercase())
+                .unwrap_or_default();
             let name = get("Name").unwrap_or(fallback);
-            let cmd0 = a.get("command").and_then(Value::as_array).and_then(|c| c.first()).and_then(Value::as_str).unwrap_or("");
-            let icon = get("Icon").unwrap_or_else(|| Path::new(cmd0).file_name().map(|f| f.to_string_lossy().to_lowercase())
-                .unwrap_or_default());
-            for zn in a.get("zones").and_then(Value::as_array).map(|z| z.iter().filter_map(Value::as_str).collect::<Vec<_>>())
-                .unwrap_or_default() {
+            let cmd0 = a
+                .get("command")
+                .and_then(Value::as_array)
+                .and_then(|c| c.first())
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let icon = get("Icon").unwrap_or_else(|| {
+                Path::new(cmd0)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_lowercase())
+                    .unwrap_or_default()
+            });
+            for zn in a
+                .get("zones")
+                .and_then(Value::as_array)
+                .map(|z| z.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+                .unwrap_or_default()
+            {
                 let z = cfg.zone(zn).expect("validated");
-                let mut lines = vec!["[Desktop Entry]".to_string(), "Type=Application".into(), format!("Name={name} ({zn})"),
-                    format!("GenericName={} in zone {zn}", host_entry.iter().find(|(e, _)| e == "GenericName").map(|(_, v)| v.clone())
-                        .unwrap_or_else(|| name.clone())),
-                    format!("Comment=Runs in app zone {zn} ({}, colour {})", z.get("network").as_str().unwrap_or(""),
-                            z.get("colour").as_str().unwrap_or("")),
-                    format!("Exec=appzones run {zn} {aid} %U"), format!("Icon={icon}"), "Terminal=false".into(),
-                    format!("Keywords=zone;{zn};{aid};"), format!("X-Zone={zn}")];
+                let mut lines = vec![
+                    "[Desktop Entry]".to_string(),
+                    "Type=Application".into(),
+                    format!("Name={name} ({zn})"),
+                    format!(
+                        "GenericName={} in zone {zn}",
+                        host_entry
+                            .iter()
+                            .find(|(e, _)| e == "GenericName")
+                            .map(|(_, v)| v.clone())
+                            .unwrap_or_else(|| name.clone())
+                    ),
+                    format!(
+                        "Comment=Runs in app zone {zn} ({}, colour {})",
+                        z.get("network").as_str().unwrap_or(""),
+                        z.get("colour").as_str().unwrap_or("")
+                    ),
+                    format!("Exec=appzones run {zn} {aid} %U"),
+                    format!("Icon={icon}"),
+                    "Terminal=false".into(),
+                    format!("Keywords=zone;{zn};{aid};"),
+                    format!("X-Zone={zn}"),
+                ];
                 for k in ["Categories", "MimeType", "StartupNotify"] {
                     if let Some(v) = get(k) {
                         lines.push(format!("{k}={v}"));
@@ -1589,7 +2365,9 @@ impl Cli {
                 }
                 let file = format!("appzones-{aid}-{zn}.desktop");
                 let tmp = dir.join(format!(".{file}.new"));
-                match std::fs::write(&tmp, lines.join("\n") + "\n").and_then(|_| std::fs::rename(&tmp, dir.join(&file))) {
+                match std::fs::write(&tmp, lines.join("\n") + "\n")
+                    .and_then(|_| std::fs::rename(&tmp, dir.join(&file)))
+                {
                     Ok(()) => n += 1,
                     Err(e) => {
                         let _ = std::fs::remove_file(&tmp);
@@ -1602,7 +2380,10 @@ impl Cli {
         if let Ok(it) = std::fs::read_dir(&dir) {
             for e in it.filter_map(|e| e.ok()) {
                 let f = e.file_name().to_string_lossy().into_owned();
-                if (f.starts_with("appzones-") || f.starts_with("zone-")) && f.ends_with(".desktop") && !written.contains(&f) {
+                if (f.starts_with("appzones-") || f.starts_with("zone-"))
+                    && f.ends_with(".desktop")
+                    && !written.contains(&f)
+                {
                     let _ = std::fs::remove_file(e.path());
                 }
             }
@@ -1623,7 +2404,14 @@ impl Cli {
             if config::truthy(z.get("autostart")) {
                 out(&format!("autostart: zone {}", z.name));
                 if self.use_systemd(Some(z)) {
-                    self.systemctl(&["start", "--no-block", &format!("appzones@{}.service", z.name)], false);
+                    self.systemctl(
+                        &[
+                            "start",
+                            "--no-block",
+                            &format!("appzones@{}.service", z.name),
+                        ],
+                        false,
+                    );
                 } else if let Some(s) = self.claim(&z.name, true, false) {
                     starting.push((z.name.clone(), s));
                 }
@@ -1650,9 +2438,15 @@ impl Cli {
 
     fn logs(&self, name: &str, follow: bool) -> i32 {
         // (a project zone that cannot be built now, its file gone: its log all the same)
-        let cfg = if crate::project::is_internal_name(name) { self.load_cfg(true) } else { self.load_zone(name, true) };
+        let cfg = if crate::project::is_internal_name(name) {
+            self.load_cfg(true)
+        } else {
+            self.load_zone(name, true)
+        };
         let z = cfg.zone(name);
-        let err = if !self.unit_runs(name) && (!self.server_pids(name).is_empty() || !self.use_systemd(z)) {
+        let err = if !self.unit_runs(name)
+            && (!self.server_pids(name).is_empty() || !self.use_systemd(z))
+        {
             let mut c = Command::new("tail");
             c.args(["-n", "200"]);
             if follow {
@@ -1661,7 +2455,14 @@ impl Cli {
             c.arg(self.log_path(name)).exec()
         } else {
             let mut c = Command::new("journalctl");
-            c.args(["--user", "-u", &format!("appzones@{name}.service"), "-n", "200", "--no-pager"]);
+            c.args([
+                "--user",
+                "-u",
+                &format!("appzones@{name}.service"),
+                "-n",
+                "200",
+                "--no-pager",
+            ]);
             if follow {
                 c.arg("-f");
             }
@@ -1677,8 +2478,11 @@ impl Cli {
     }
 
     fn read_mounts(&self, name: &str) -> serde_json::Map<String, J> {
-        std::fs::read(self.mounts_file(name)).ok().and_then(|b| serde_json::from_slice::<J>(&b).ok())
-            .and_then(|v| v.as_object().cloned()).unwrap_or_default()
+        std::fs::read(self.mounts_file(name))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<J>(&b).ok())
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default()
     }
 
     fn write_mounts(&self, name: &str, m: &serde_json::Map<String, J>) {
@@ -1690,35 +2494,68 @@ impl Cli {
     }
 
     fn mount_helper(&self, args: &[&str]) -> (i32, String, String) {
-        let sudo = config::env("SUDO").filter(|v| !v.is_empty()).unwrap_or_else(|| {
-            if Path::new("/run/wrappers/bin/sudo").exists() { "/run/wrappers/bin/sudo".into() }
-            else { plan::which("sudo", None).unwrap_or_else(|| "/usr/bin/sudo".into()) }
-        });
-        let helper = config::env("MOUNT_HELPER").filter(|v| !v.is_empty())
+        let sudo = config::env("SUDO")
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| {
+                if Path::new("/run/wrappers/bin/sudo").exists() {
+                    "/run/wrappers/bin/sudo".into()
+                } else {
+                    plan::which("sudo", None).unwrap_or_else(|| "/usr/bin/sudo".into())
+                }
+            });
+        let helper = config::env("MOUNT_HELPER")
+            .filter(|v| !v.is_empty())
             .unwrap_or_else(|| sh(&self.host.here.join("appzones-mount-helper")));
-        match Command::new(sudo).arg("-n").arg(helper).args(args).stdin(Stdio::null()).output() {
-            Ok(o) => (o.status.code().unwrap_or(1), String::from_utf8_lossy(&o.stdout).into_owned(),
-                      String::from_utf8_lossy(&o.stderr).into_owned()),
+        match Command::new(sudo)
+            .arg("-n")
+            .arg(helper)
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+        {
+            Ok(o) => (
+                o.status.code().unwrap_or(1),
+                String::from_utf8_lossy(&o.stdout).into_owned(),
+                String::from_utf8_lossy(&o.stderr).into_owned(),
+            ),
             Err(e) => (1, String::new(), e.to_string()),
         }
     }
 
     fn helper_failed(&self, r: (i32, String, String), what: &str) -> ! {
-        let err = if r.2.trim().is_empty() { r.1.trim().to_string() } else { r.2.trim().to_string() };
-        if err.contains("password is required") || err.contains("not allowed") || err.contains("may not run sudo") {
+        let err = if r.2.trim().is_empty() {
+            r.1.trim().to_string()
+        } else {
+            r.2.trim().to_string()
+        };
+        if err.contains("password is required")
+            || err.contains("not allowed")
+            || err.contains("may not run sudo")
+        {
             die(&format!("{what}: sudo refused the mount helper ({}). It needs the NixOS module's sudo rule \
                           (programs.appzones.mountHelper = true, for programs.appzones.user) and a rebuilt system",
                          err.lines().last().unwrap_or("")));
         }
-        let e = err.strip_prefix("appzones-mount-helper: ").unwrap_or(&err).to_string();
-        die(&format!("{what}: {}", if e.is_empty() { r.0.to_string() } else { e }))
+        let e = err
+            .strip_prefix("appzones-mount-helper: ")
+            .unwrap_or(&err)
+            .to_string();
+        die(&format!(
+            "{what}: {}",
+            if e.is_empty() { r.0.to_string() } else { e }
+        ))
     }
 
     fn host_mounts(&self, name: &str) -> Vec<String> {
         let pre = format!("{}/", sh(&self.host.state.join(name).join("mnt")));
         let mut v: Vec<String> = Vec::new();
-        for line in std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default().lines() {
-            let Some(mp) = line.split_whitespace().nth(4) else { continue };
+        for line in std::fs::read_to_string("/proc/self/mountinfo")
+            .unwrap_or_default()
+            .lines()
+        {
+            let Some(mp) = line.split_whitespace().nth(4) else {
+                continue;
+            };
             let mp = crate::plan::mountinfo_path(mp);
             if let Some(rest) = mp.strip_prefix(&pre) {
                 if !rest.contains('/') && !v.iter().any(|x| x == rest) {
@@ -1746,7 +2583,10 @@ impl Cli {
             let point = crate::plan::mountinfo_path(f[4]);
             let inside = p == point || p.starts_with(&format!("{}/", point.trim_end_matches('/')));
             if inside && point.len() >= best.len() {
-                let opts: &[&str] = match f.iter().position(|x| *x == "-") { Some(i) => &f[6..i.max(6)], None => &[] };
+                let opts: &[&str] = match f.iter().position(|x| *x == "-") {
+                    Some(i) => &f[6..i.max(6)],
+                    None => &[],
+                };
                 shared = Some(opts.iter().any(|o| o.starts_with("shared:")));
                 best = point;
             }
@@ -1759,7 +2599,11 @@ impl Cli {
     /// mount is never made after the teardown has run (and mounts.json never loses one).
     fn mounts_lock(&self, name: &str) -> Option<std::fs::File> {
         self.mkdir_rt();
-        let f = open_lock(&self.rt().join(format!("{}.mounts.lock", zone_name_ok(name).then_some(name)?))).ok()?;
+        let f = open_lock(&self.rt().join(format!(
+            "{}.mounts.lock",
+            zone_name_ok(name).then_some(name)?
+        )))
+        .ok()?;
         // Safety: flock on our own descriptor; the others hold it only briefly.
         (unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } == 0).then_some(f)
     }
@@ -1772,7 +2616,9 @@ impl Cli {
             die(&format!("appzones mount works with the default state directory only ({} is set by $APPZONES_STATE)",
                          sh(&self.host.state)));
         }
-        let _held = self.mounts_lock(name).unwrap_or_else(|| die(&format!("zone {name}: cannot take its mounts lock")));
+        let _held = self
+            .mounts_lock(name)
+            .unwrap_or_else(|| die(&format!("zone {name}: cannot take its mounts lock")));
         if !self.answers(name) {
             die(&format!("zone {name} is not running; a mount lives only while the zone runs (`appzones up {name}` first)"));
         }
@@ -1781,13 +2627,20 @@ impl Cli {
             die(&format!("refused: {err}"));
         }
         let src = plan::rp(&String::from_utf8_lossy(&policy.expand(path.as_bytes())));
-        let nm = as_name.unwrap_or_else(|| Path::new(&src).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default());
+        let nm = as_name.unwrap_or_else(|| {
+            Path::new(&src)
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
         if !crate::policy::mount_name_ok(&nm) {
             die(&format!("{} cannot be a mount name (letters, digits, . _ -, not first; at most 64): give one with --as NAME",
                          py_repr(&nm)));
         }
         if self.host_mounts(name).contains(&nm) {
-            die(&format!("/mnt/host/{nm} is already mounted in zone {name} (appzones mounts {name})"));
+            die(&format!(
+                "/mnt/host/{nm} is already mounted in zone {name} (appzones mounts {name})"
+            ));
         }
         let target = self.host.state.join(name).join("mnt").join(&nm);
         let _ = std::fs::create_dir(&target);
@@ -1801,12 +2654,20 @@ impl Cli {
             self.helper_failed(r, "mount");
         }
         let mut m = self.read_mounts(name);
-        m.insert(nm.clone(), json!({"source": src, "mode": if ro { "ro" } else { "rw" }}));
+        m.insert(
+            nm.clone(),
+            json!({"source": src, "mode": if ro { "ro" } else { "rw" }}),
+        );
         self.write_mounts(name, &m);
         let inside = agent::zone_request(self.rt(), name, &json!({"op": "mounts"}));
         if inside.as_object().is_some_and(|o| !o.is_empty()) {
-            let seen = inside.get("mounts").and_then(J::as_array).is_some_and(|ms| ms.iter()
-                .any(|p| p.get(0).and_then(J::as_str) == Some(&format!("/mnt/host/{nm}"))));
+            let seen = inside
+                .get("mounts")
+                .and_then(J::as_array)
+                .is_some_and(|ms| {
+                    ms.iter()
+                        .any(|p| p.get(0).and_then(J::as_str) == Some(&format!("/mnt/host/{nm}")))
+                });
             if !seen {
                 if Self::propagation_shared(target.parent().unwrap_or(&target)) == Some(false) {
                     warn(&format!("mounted on the host, but zone {name} does not see /mnt/host/{nm}: the host's mounts do not \
@@ -1826,9 +2687,13 @@ impl Cli {
 
     fn umount(&self, name: &str, nm: &str, lazy: bool) -> i32 {
         self.load_zone(name, true);
-        let _held = self.mounts_lock(name).unwrap_or_else(|| die(&format!("zone {name}: cannot take its mounts lock")));
+        let _held = self
+            .mounts_lock(name)
+            .unwrap_or_else(|| die(&format!("zone {name}: cannot take its mounts lock")));
         if !self.host_mounts(name).iter().any(|m| m == nm) {
-            die(&format!("nothing is mounted at /mnt/host/{nm} in zone {name} (appzones mounts {name})"));
+            die(&format!(
+                "nothing is mounted at /mnt/host/{nm} in zone {name} (appzones mounts {name})"
+            ));
         }
         let mut args = vec!["umount", name, nm];
         if lazy {
@@ -1836,13 +2701,33 @@ impl Cli {
         }
         let r = self.mount_helper(&args);
         if r.0 == 3 {
-            let busy = agent::zone_request(self.rt(), name, &json!({"op": "busy", "path": format!("/mnt/host/{nm}")}));
-            let procs = busy.get("procs").and_then(J::as_array).cloned().unwrap_or_default();
-            warn(&format!("/mnt/host/{nm} is busy in zone {name}{}",
-                          if procs.is_empty() { " (zone-init could not say by what)" } else { ":" }));
+            let busy = agent::zone_request(
+                self.rt(),
+                name,
+                &json!({"op": "busy", "path": format!("/mnt/host/{nm}")}),
+            );
+            let procs = busy
+                .get("procs")
+                .and_then(J::as_array)
+                .cloned()
+                .unwrap_or_default();
+            warn(&format!(
+                "/mnt/host/{nm} is busy in zone {name}{}",
+                if procs.is_empty() {
+                    " (zone-init could not say by what)"
+                } else {
+                    ":"
+                }
+            ));
             for p in procs {
                 let pid = p.get(0).map(|x| x.to_string()).unwrap_or_default();
-                let cmd: String = p.get(1).and_then(J::as_str).unwrap_or("").chars().take(60).collect();
+                let cmd: String = p
+                    .get(1)
+                    .and_then(J::as_str)
+                    .unwrap_or("")
+                    .chars()
+                    .take(60)
+                    .collect();
                 let what = p.get(2).and_then(J::as_str).unwrap_or("");
                 eprintln!("  pid {pid} {cmd}: {what}");
             }
@@ -1857,8 +2742,14 @@ impl Cli {
         if self.rt().join(name).is_dir() {
             self.write_mounts(name, &m);
         }
-        out(&format!("/mnt/host/{nm} removed from zone {name}{}",
-                     if lazy { " (lazily: open files keep it until they close)" } else { "" }));
+        out(&format!(
+            "/mnt/host/{nm} removed from zone {name}{}",
+            if lazy {
+                " (lazily: open files keep it until they close)"
+            } else {
+                ""
+            }
+        ));
         0
     }
 
@@ -1874,25 +2765,56 @@ impl Cli {
         }
         let m = self.read_mounts(name);
         let inside = agent::zone_request(self.rt(), name, &json!({"op": "mounts"}));
-        let modes: Vec<(String, String)> = inside.get("mounts").and_then(J::as_array).map(|ms| ms.iter().filter_map(|p| {
-            let path = p.get(0)?.as_str()?;
-            Some((path.strip_prefix("/mnt/host/").unwrap_or(path).to_string(), p.get(1)?.as_str()?.to_string()))
-        }).collect()).unwrap_or_default();
+        let modes: Vec<(String, String)> = inside
+            .get("mounts")
+            .and_then(J::as_array)
+            .map(|ms| {
+                ms.iter()
+                    .filter_map(|p| {
+                        let path = p.get(0)?.as_str()?;
+                        Some((
+                            path.strip_prefix("/mnt/host/").unwrap_or(path).to_string(),
+                            p.get(1)?.as_str()?.to_string(),
+                        ))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut rows = vec![["NAME".to_string(), "MODE".into(), "SOURCE".into()]];
         for nm in &names {
             let rec = m.get(nm);
-            let mode = modes.iter().find(|(n, _)| n == nm).map(|(_, md)| md.clone())
-                .or_else(|| rec.and_then(|r| r.get("mode")).and_then(J::as_str).map(String::from)).unwrap_or_else(|| "?".into());
-            let source = rec.and_then(|r| r.get("source")).and_then(J::as_str).unwrap_or("?").to_string();
+            let mode = modes
+                .iter()
+                .find(|(n, _)| n == nm)
+                .map(|(_, md)| md.clone())
+                .or_else(|| {
+                    rec.and_then(|r| r.get("mode"))
+                        .and_then(J::as_str)
+                        .map(String::from)
+                })
+                .unwrap_or_else(|| "?".into());
+            let source = rec
+                .and_then(|r| r.get("source"))
+                .and_then(J::as_str)
+                .unwrap_or("?")
+                .to_string();
             rows.push([nm.clone(), mode, source]);
         }
         if rows.len() == 1 {
-            out(&format!("nothing mounted in zone {name} (appzones mount {name} DIR)"));
+            out(&format!(
+                "nothing mounted in zone {name} (appzones mount {name} DIR)"
+            ));
             return 0;
         }
-        let w: Vec<usize> = (0..3).map(|i| rows.iter().map(|r| r[i].chars().count()).max().unwrap_or(0)).collect();
+        let w: Vec<usize> = (0..3)
+            .map(|i| rows.iter().map(|r| r[i].chars().count()).max().unwrap_or(0))
+            .collect();
         for r in rows {
-            let line: Vec<String> = r.iter().enumerate().map(|(i, c)| format!("{c:<width$}", width = w[i])).collect();
+            let line: Vec<String> = r
+                .iter()
+                .enumerate()
+                .map(|(i, c)| format!("{c:<width$}", width = w[i]))
+                .collect();
             out(line.join("  ").trim_end());
         }
         0
@@ -1912,18 +2834,37 @@ impl Cli {
             Some(fd) => {
                 // Safety: fstat into a local struct.
                 let mut st: libc::stat = unsafe { std::mem::zeroed() };
-                let same = unsafe { libc::fstat(fd, &mut st) } == 0 && std::fs::symlink_metadata(&path)
-                    .is_ok_and(|m| m.dev() == st.st_dev as u64 && m.ino() == st.st_ino as u64);
+                let same = unsafe { libc::fstat(fd, &mut st) } == 0
+                    && std::fs::symlink_metadata(&path)
+                        .is_ok_and(|m| m.dev() == st.st_dev as u64 && m.ino() == st.st_ino as u64);
                 if !same {
-                    die(&format!("--lock-fd {fd}: not zone {name}'s lock ({})", sh(&path)));
+                    die(&format!(
+                        "--lock-fd {fd}: not zone {name}'s lock ({})",
+                        sh(&path)
+                    ));
                 }
                 fd
             }
         };
         if !flock_nb(fd) {
             let pids = self.server_pids(name);
-            die_code(&format!("zone {name} is already served{}", if pids.is_empty() { String::new() } else {
-                format!(" (pid {})", pids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")) }), ALREADY_SERVED);
+            die_code(
+                &format!(
+                    "zone {name} is already served{}",
+                    if pids.is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            " (pid {})",
+                            pids.iter()
+                                .map(|p| p.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    }
+                ),
+                ALREADY_SERVED,
+            );
         }
         if self.answers(name) {
             die_code(&format!("zone {name} already runs under a server without a lock (from before this version); stop it \
@@ -1933,7 +2874,9 @@ impl Cli {
     }
 
     fn serve(&self, rest: &[String]) -> i32 {
-        let Some(name) = rest.first() else { die("usage: appzones serve ZONE") };
+        let Some(name) = rest.first() else {
+            die("usage: appzones serve ZONE")
+        };
         let (mut notify, mut lock): (Option<RawFd>, Option<RawFd>) = (None, None);
         let mut opts = rest[1..].iter();
         while let Some(o) = opts.next() {
@@ -1941,11 +2884,16 @@ impl Cli {
                 Some((k, v)) => (k.to_string(), Some(v.to_string())),
                 None => (o.clone(), opts.next().cloned()),
             };
-            let ok = v.as_ref().is_some_and(|v| v.bytes().all(|b| b.is_ascii_digit()) && !v.is_empty() && v.len() <= 9);
+            let ok = v.as_ref().is_some_and(|v| {
+                v.bytes().all(|b| b.is_ascii_digit()) && !v.is_empty() && v.len() <= 9
+            });
             match (key.as_str(), ok) {
                 ("--notify-fd", true) => notify = v.and_then(|v| v.parse().ok()),
                 ("--lock-fd", true) => lock = v.and_then(|v| v.parse().ok()),
-                _ => die(&format!("usage: appzones serve ZONE [--notify-fd N] [--lock-fd N] (not {})", py_repr(o))),
+                _ => die(&format!(
+                    "usage: appzones serve ZONE [--notify-fd N] [--lock-fd N] (not {})",
+                    py_repr(o)
+                )),
             }
         }
         if notify.is_some() && notify == lock {
@@ -1953,7 +2901,9 @@ impl Cli {
         }
         if let Some(fd) = notify {
             if fd < 3 || !notify_fd_ok(fd) {
-                die(&format!("--notify-fd {fd}: not a pipe or file above 2, open for writing"));
+                die(&format!(
+                    "--notify-fd {fd}: not a pipe or file above 2, open for writing"
+                ));
             }
         }
         let lock = self.take_lock(name, lock);
@@ -1967,25 +2917,45 @@ impl Cli {
     fn old_things(&self) -> Vec<String> {
         let mut out = Vec::new();
         let lexists = |p: &Path| p.symlink_metadata().is_ok();
-        let mut vars: Vec<String> = std::env::vars_os().filter_map(|(k, _)| k.into_string().ok())
-            .filter(|k| k.starts_with("ZONES_")).collect();
+        let mut vars: Vec<String> = std::env::vars_os()
+            .filter_map(|(k, _)| k.into_string().ok())
+            .filter(|k| k.starts_with("ZONES_"))
+            .collect();
         vars.sort();
         for k in vars {
-            out.push(format!("${k} is from before appzones 0.6 and is not read: set $APPZONES_{} instead", &k["ZONES_".len()..]));
+            out.push(format!(
+                "${k} is from before appzones 0.6 and is not read: set $APPZONES_{} instead",
+                &k["ZONES_".len()..]
+            ));
         }
         let home = &self.host.home;
         if config::env("CONFIG").filter(|c| !c.is_empty()).is_none() {
-            let (old, new) = (home.join(".config/zones/zones.toml"), home.join(".config/appzones/zones.toml"));
+            let (old, new) = (
+                home.join(".config/zones/zones.toml"),
+                home.join(".config/appzones/zones.toml"),
+            );
             if lexists(&old) && lexists(&new) {
-                out.push(format!("{} is from before appzones 0.6 and is not read ({} is): remove it", sh(&old), sh(&new)));
+                out.push(format!(
+                    "{} is from before appzones 0.6 and is not read ({} is): remove it",
+                    sh(&old),
+                    sh(&new)
+                ));
             } else if lexists(&old) {
                 // (-n: never over a config made meanwhile)
-                out.push(format!("{} is from before appzones 0.6 and is not read: mkdir -p {} && mv -n {} {}", sh(&old),
-                                 shell_quote(&sh(&home.join(".config/appzones"))), shell_quote(&sh(&old)), shell_quote(&sh(&new))));
+                out.push(format!(
+                    "{} is from before appzones 0.6 and is not read: mkdir -p {} && mv -n {} {}",
+                    sh(&old),
+                    shell_quote(&sh(&home.join(".config/appzones"))),
+                    shell_quote(&sh(&old)),
+                    shell_quote(&sh(&new))
+                ));
             }
         }
         if config::env("STATE").filter(|s| !s.is_empty()).is_none() {
-            let (old, new) = (home.join(".local/share/zones"), home.join(".local/share/appzones"));
+            let (old, new) = (
+                home.join(".local/share/zones"),
+                home.join(".local/share/appzones"),
+            );
             if lexists(&old) && lexists(&new) {
                 out.push(format!("{} (zone homes from before appzones 0.6) is not used ({} is): move what you still need \
                                   from it, then remove it", sh(&old), sh(&new)));
@@ -1996,8 +2966,14 @@ impl Cli {
             }
         }
         // (alone there, it is an error of the configuration: config::validate)
-        let (new, old) = (crate::policy::HOST_DENIED_FILE, crate::policy::LEGACY_HOST_DENIED_FILE);
-        if config::env("DENIED_PATHS").is_none() && lexists(Path::new(old)) && lexists(Path::new(new)) {
+        let (new, old) = (
+            crate::policy::HOST_DENIED_FILE,
+            crate::policy::LEGACY_HOST_DENIED_FILE,
+        );
+        if config::env("DENIED_PATHS").is_none()
+            && lexists(Path::new(old))
+            && lexists(Path::new(new))
+        {
             out.push(format!("{old} is from before appzones 0.6 and is not read ({new} is): put the entries you still \
                               need into {new} (NixOS: programs.appzones.deniedPaths), then remove it"));
         }
@@ -2011,14 +2987,23 @@ impl Cli {
 fn zone_cwd(cwd: &str, binds: &[(String, String)]) -> Option<String> {
     let under = |dir: &str| -> Option<String> {
         let dir = dir.trim_end_matches('/');
-        if cwd == dir { Some(String::new()) } else { cwd.strip_prefix(&format!("{dir}/")).map(|r| format!("/{r}")) }
+        if cwd == dir {
+            Some(String::new())
+        } else {
+            cwd.strip_prefix(&format!("{dir}/"))
+                .map(|r| format!("/{r}"))
+        }
     };
     binds.iter().find_map(|(as_written, real)| {
         if let Some(rest) = under(as_written) {
             return Some(format!("{}{rest}", as_written.trim_end_matches('/')));
         }
         let rest = under(real)?;
-        Some(if cfg!(target_os = "linux") { format!("{}{rest}", as_written.trim_end_matches('/')) } else { cwd.to_string() })
+        Some(if cfg!(target_os = "linux") {
+            format!("{}{rest}", as_written.trim_end_matches('/'))
+        } else {
+            cwd.to_string()
+        })
     })
 }
 
@@ -2030,7 +3015,10 @@ fn random_hex(n: usize) -> String {
 
 /// shlex.quote.
 fn shell_quote(s: &str) -> String {
-    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "@%+=:,./-_".contains(c)) {
+    if !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "@%+=:,./-_".contains(c))
+    {
         return s.to_string();
     }
     format!("'{}'", s.replace('\'', "'\"'\"'"))
@@ -2044,7 +3032,8 @@ fn stdio_fd_ok(fd: RawFd) -> bool {
         return false;
     }
     let t = st.st_mode & libc::S_IFMT;
-    t == libc::S_IFIFO || t == libc::S_IFREG
+    t == libc::S_IFIFO
+        || t == libc::S_IFREG
         || (t == libc::S_IFCHR && crate::sys::is_dev_null(st.st_rdev))
 }
 
@@ -2066,13 +3055,20 @@ fn notify_fd_ok(fd: RawFd) -> bool {
 
 /// `appzones` itself: argv without the program's name.
 pub fn main(args: &[OsString]) -> i32 {
-    let argv: Vec<String> = args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+    let argv: Vec<String> = args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     if argv.is_empty() || matches!(argv[0].as_str(), "-h" | "--help" | "help") {
         println!("{HELP}");
         return if argv.is_empty() { 2 } else { 0 };
     }
     if argv == ["--version"] || argv == ["-V"] {
-        out(&format!("appzones {} (config release {})", env!("CARGO_PKG_VERSION"), config::RELEASE));
+        out(&format!(
+            "appzones {} (config release {})",
+            env!("CARGO_PKG_VERSION"),
+            config::RELEASE
+        ));
         return 0;
     }
     let cli = Cli::new(Host::new(crate::plan::exe_dir()));
@@ -2081,8 +3077,11 @@ pub fn main(args: &[OsString]) -> i32 {
     // configuration is checked
     #[cfg(not(target_os = "linux"))]
     match cmd {
-        "mount" | "umount" => die(&format!("{cmd}: not at run time on macOS: add a bind to the zone in {} and \
-                                             `appzones restart ZONE`", cli.config_path())),
+        "mount" | "umount" => die(&format!(
+            "{cmd}: not at run time on macOS: add a bind to the zone in {} and \
+                                             `appzones restart ZONE`",
+            cli.config_path()
+        )),
         "apps" | "_autostart" | "_cleanup" | "_link" => die(&format!("{cmd}: not on macOS yet")),
         _ => {}
     }
@@ -2092,17 +3091,28 @@ pub fn main(args: &[OsString]) -> i32 {
         }
     }
     let one = || -> String {
-        rest.first().cloned().unwrap_or_else(|| die(&format!("usage: appzones {cmd} ZONE")))
+        rest.first()
+            .cloned()
+            .unwrap_or_else(|| die(&format!("usage: appzones {cmd} ZONE")))
     };
     match cmd {
         "serve" | "_supervise" => cli.serve(rest),
         #[cfg(target_os = "linux")]
         "_netsetup" => {
-            let i = rest.iter().position(|a| a == "--").unwrap_or_else(|| die("usage: appzones _netsetup RULES INFO ZONE -- CMD"));
+            let i = rest
+                .iter()
+                .position(|a| a == "--")
+                .unwrap_or_else(|| die("usage: appzones _netsetup RULES INFO ZONE -- CMD"));
             if i < 3 {
                 die("usage: appzones _netsetup RULES INFO ZONE -- CMD");
             }
-            crate::netsetup::main(&cli.host, &rest[0], &rest[1], &rest[2], rest[i + 1..].to_vec())
+            crate::netsetup::main(
+                &cli.host,
+                &rest[0],
+                &rest[1],
+                &rest[2],
+                rest[i + 1..].to_vec(),
+            )
         }
         "_autostart" => cli.autostart(),
         "_sway-marks" => crate::active::sway_hook(),
@@ -2126,7 +3136,10 @@ pub fn main(args: &[OsString]) -> i32 {
         "which" => {
             let as_json = rest.iter().any(|a| a == "--json");
             let rest2: Vec<&String> = rest.iter().filter(|a| *a != "--json").collect();
-            let name = rest2.first().cloned().unwrap_or_else(|| die("usage: appzones which ZONE"));
+            let name = rest2
+                .first()
+                .cloned()
+                .unwrap_or_else(|| die("usage: appzones which ZONE"));
             cli.which(&cli.zone_arg(name, false), as_json)
         }
         "up" | "stop" | "restart" => cli.each_zone(cmd, rest),
@@ -2141,25 +3154,40 @@ pub fn main(args: &[OsString]) -> i32 {
                 Ok(procs) => {
                     for p in procs {
                         let pid = p.get(0).map(|x| x.to_string()).unwrap_or_default();
-                        let c = p.get(1).map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).unwrap_or_default();
+                        let c = p
+                            .get(1)
+                            .map(|x| {
+                                x.as_str()
+                                    .map(String::from)
+                                    .unwrap_or_else(|| x.to_string())
+                            })
+                            .unwrap_or_default();
                         out(&format!("{pid} {c}"));
                     }
                     0
                 }
-                Err(_) => die(&format!("zone {n} is not running (start it: appzones up {n})")),
+                Err(_) => die(&format!(
+                    "zone {n} is not running (start it: appzones up {n})"
+                )),
             }
         }
         "logs" => {
             let follow = rest.iter().any(|a| a == "-f" || a == "--follow");
-            let rest2: Vec<&String> = rest.iter().filter(|a| *a != "-f" && *a != "--follow").collect();
-            let Some(n) = rest2.first() else { die("usage: appzones logs ZONE") };
+            let rest2: Vec<&String> = rest
+                .iter()
+                .filter(|a| *a != "-f" && *a != "--follow")
+                .collect();
+            let Some(n) = rest2.first() else {
+                die("usage: appzones logs ZONE")
+            };
             cli.logs(&cli.zone_arg(n, false), follow)
         }
         "shell" => cli.shell(&cli.zone_arg(&one(), true)),
         "trust" => cli.trust(rest.first()),
         "untrust" => cli.untrust(rest.first()),
         "run" => {
-            let (mut wait, mut restart, mut bus): (bool, bool, Option<String>) = (false, false, None);
+            let (mut wait, mut restart, mut bus): (bool, bool, Option<String>) =
+                (false, false, None);
             let mut take = |ws: &mut Vec<String>| {
                 while let Some(f) = ws.first().cloned() {
                     if f == "--wait" {
@@ -2168,10 +3196,18 @@ pub fn main(args: &[OsString]) -> i32 {
                         restart = true;
                     } else if f == "--bus" || f.starts_with("--bus=") {
                         ws.remove(0);
-                        let v = if let Some(v) = f.strip_prefix("--bus=") { v.to_string() }
-                                else if ws.is_empty() { String::new() } else { ws.remove(0) };
+                        let v = if let Some(v) = f.strip_prefix("--bus=") {
+                            v.to_string()
+                        } else if ws.is_empty() {
+                            String::new()
+                        } else {
+                            ws.remove(0)
+                        };
                         if !config::BUSES.contains(&v.as_str()) {
-                            die(&format!("--bus must be one of {}", config::BUSES.join(", ")));
+                            die(&format!(
+                                "--bus must be one of {}",
+                                config::BUSES.join(", ")
+                            ));
                         }
                         bus = Some(v);
                         continue;
@@ -2199,19 +3235,32 @@ pub fn main(args: &[OsString]) -> i32 {
             if r.first().map(|a| a.as_str()) == Some("--config-only") {
                 r.remove(0);
             }
-            let probe = if r.first().map(|a| a.as_str()) == Some("--probe") { r.get(1).map(|a| a.as_str()) } else { None };
+            let probe = if r.first().map(|a| a.as_str()) == Some("--probe") {
+                r.get(1).map(|a| a.as_str())
+            } else {
+                None
+            };
             let probe = probe.map(|p| cli.zone_arg(p, true));
             cli.check(probe.as_deref())
         }
         "apps" => cli.apps(),
-        "active" => crate::active::main(rest.iter().any(|a| a == "--follow"), rest.iter().any(|a| a == "--json"), &cli.host.host_rt),
+        "active" => crate::active::main(
+            rest.iter().any(|a| a == "--follow"),
+            rest.iter().any(|a| a == "--json"),
+            &cli.host.host_rt,
+        ),
         "mount" | "umount" | "mounts" => {
-            let (mut ro, mut lazy, mut as_name): (bool, bool, Option<String>) = (false, false, None);
+            let (mut ro, mut lazy, mut as_name): (bool, bool, Option<String>) =
+                (false, false, None);
             let mut words = Vec::new();
             let mut it = rest.iter();
             while let Some(a) = it.next() {
                 if a == "--as" || a.starts_with("--as=") {
-                    as_name = if let Some(v) = a.strip_prefix("--as=") { Some(v.to_string()) } else { it.next().cloned() };
+                    as_name = if let Some(v) = a.strip_prefix("--as=") {
+                        Some(v.to_string())
+                    } else {
+                        it.next().cloned()
+                    };
                     if as_name.as_deref().is_none_or(str::is_empty) {
                         die("--as needs a NAME");
                     }
@@ -2235,8 +3284,15 @@ pub fn main(args: &[OsString]) -> i32 {
         }
         _ => {
             let near = close_match(cmd, COMMANDS.iter().copied(), 0.75);
-            die_code(&format!("unknown command {}{}; see appzones --help", py_repr(cmd),
-                              near.map(|n| format!(" (did you mean {}?)", py_repr(n))).unwrap_or_default()), 2)
+            die_code(
+                &format!(
+                    "unknown command {}{}; see appzones --help",
+                    py_repr(cmd),
+                    near.map(|n| format!(" (did you mean {}?)", py_repr(n)))
+                        .unwrap_or_default()
+                ),
+                2,
+            )
         }
     }
 }
@@ -2249,17 +3305,34 @@ impl Cli {
         }
         let cfg = self.load();
         let app = if cfg.errors.is_empty() {
-            cfg.apps.iter().find(|(_, a)| {
-                let cmd = a.get("command").and_then(Value::as_array).and_then(|c| c.first()).and_then(Value::as_str).unwrap_or("");
-                let base = Path::new(cmd).file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default();
-                a.get("zones").and_then(Value::as_array).is_some_and(|z| z.iter().any(|x| x.as_str() == Some(target)))
-                    && ["firefox", "chromium", "chrome", "librewolf", "brave"].iter().any(|b| base.contains(b))
-            }).map(|(id, _)| id.clone())
+            cfg.apps
+                .iter()
+                .find(|(_, a)| {
+                    let cmd = a
+                        .get("command")
+                        .and_then(Value::as_array)
+                        .and_then(|c| c.first())
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let base = Path::new(cmd)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().to_lowercase())
+                        .unwrap_or_default();
+                    a.get("zones")
+                        .and_then(Value::as_array)
+                        .is_some_and(|z| z.iter().any(|x| x.as_str() == Some(target)))
+                        && ["firefox", "chromium", "chrome", "librewolf", "brave"]
+                            .iter()
+                            .any(|b| base.contains(b))
+                })
+                .map(|(id, _)| id.clone())
         } else {
             None
         };
         let Some(app) = app else {
-            out(&format!("[zone] links: no browser declared for zone {target}"));
+            out(&format!(
+                "[zone] links: no browser declared for zone {target}"
+            ));
             return 1;
         };
         // Safety: fork in a process with no other threads; the child runs the browser and exits.
@@ -2299,7 +3372,10 @@ mod tests {
         let m = std::fs::metadata(&path).unwrap();
         let me = std::process::id().to_string();
         assert!(Cli::holds(&me, (m.dev(), m.ino())));
-        assert!(!Cli::holds_lock(&me, (m.dev(), m.ino())), "open, not locked");
+        assert!(
+            !Cli::holds_lock(&me, (m.dev(), m.ino())),
+            "open, not locked"
+        );
         assert!(flock_nb(f.as_raw_fd()));
         assert!(Cli::holds_lock(&me, (m.dev(), m.ino())), "locked");
         drop(f);
@@ -2320,17 +3396,33 @@ mod tests {
         assert_eq!(p("/home/alice/.local/share/appzones/z/mnt"), Some(false)); // the private /home
         assert_eq!(p("/home/alice/my dir/x"), Some(true));
         assert_eq!(p("/homeX/a"), Some(true)); // /homeX is not under /home
-        assert_eq!(Cli::propagation_shared_in(Path::new("/x"), &t.join("missing")), None);
+        assert_eq!(
+            Cli::propagation_shared_in(Path::new("/x"), &t.join("missing")),
+            None
+        );
         let _ = std::fs::remove_dir_all(&t);
     }
 
     #[test]
     fn current_folder_in_the_zone() {
-        let b = vec![("/home/u/src/app".to_string(), "/data/src/app".to_string()), ("/home/u/docs".into(), "/home/u/docs".into())];
-        assert_eq!(zone_cwd("/home/u/docs/x", &b).as_deref(), Some("/home/u/docs/x"));
-        assert_eq!(zone_cwd("/home/u/src/app", &b).as_deref(), Some("/home/u/src/app"));
+        let b = vec![
+            ("/home/u/src/app".to_string(), "/data/src/app".to_string()),
+            ("/home/u/docs".into(), "/home/u/docs".into()),
+        ];
+        assert_eq!(
+            zone_cwd("/home/u/docs/x", &b).as_deref(),
+            Some("/home/u/docs/x")
+        );
+        assert_eq!(
+            zone_cwd("/home/u/src/app", &b).as_deref(),
+            Some("/home/u/src/app")
+        );
         // through the symlink: the real folder, where the zone sees it
-        let want = if cfg!(target_os = "linux") { "/home/u/src/app/sub" } else { "/data/src/app/sub" };
+        let want = if cfg!(target_os = "linux") {
+            "/home/u/src/app/sub"
+        } else {
+            "/data/src/app/sub"
+        };
         assert_eq!(zone_cwd("/data/src/app/sub", &b).as_deref(), Some(want));
         assert_eq!(zone_cwd("/data/src/application", &b), None); // a prefix is not a folder
         assert_eq!(zone_cwd("/home/u", &b), None);

@@ -50,7 +50,14 @@ const USAGE: &str = "usage: appzones-helper cli ARGS... | zone-init | open-link 
 
 /// The commands this build implements (`--commands`).
 #[cfg(target_os = "linux")]
-const IMPLEMENTED: &[&str] = &["zone-wayland", "zone-init", "open-link", "serve", "plan", "cli"];
+const IMPLEMENTED: &[&str] = &[
+    "zone-wayland",
+    "zone-init",
+    "open-link",
+    "serve",
+    "plan",
+    "cli",
+];
 #[cfg(not(target_os = "linux"))]
 const IMPLEMENTED: &[&str] = &["zone-init", "open-link", "serve", "plan", "cli"];
 
@@ -58,7 +65,11 @@ fn main() -> ExitCode {
     // never a panic on an argument that is not UTF-8 (std::env::args would): lossy here,
     // and the commands that take paths say so
     let raw: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
-    if raw.first().map(|a| a == "check-mount-source").unwrap_or(false) {
+    if raw
+        .first()
+        .map(|a| a == "check-mount-source")
+        .unwrap_or(false)
+    {
         return ExitCode::from(check_mount_source(&raw[1..])); // paths as given, byte for byte
     }
     if raw.first().map(|a| a == "config-json").unwrap_or(false) {
@@ -76,7 +87,10 @@ fn main() -> ExitCode {
     if raw.first().map(|a| a == "serve").unwrap_or(false) {
         return ExitCode::from(serve::main(&raw[1..])); // the plan's path byte for byte
     }
-    let args: Vec<String> = raw.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+    let args: Vec<String> = raw
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     match args.first().map(String::as_str) {
         Some("--version") | Some("-V") => {
             println!("appzones-helper {}", env!("CARGO_PKG_VERSION"));
@@ -106,20 +120,29 @@ fn main() -> ExitCode {
 /// says it; with --list-denied first the never-list itself, as one JSON list.
 fn check_mount_source(args: &[std::ffi::OsString]) -> u8 {
     use std::os::unix::ffi::OsStrExt;
-    const USAGE: &str = "usage: appzones-helper check-mount-source --home H --code-dir C [--denied-file F] \
+    const USAGE: &str =
+        "usage: appzones-helper check-mount-source --home H --code-dir C [--denied-file F] \
                          [--list-denied] PATH...";
     let usage = || {
         eprintln!("{USAGE}");
         2
     };
-    let mut policy = policy::Policy { home: "".into(), code_dir: "".into(), denied_file: None, state_dir: None, extra: vec![] };
+    let mut policy = policy::Policy {
+        home: "".into(),
+        code_dir: "".into(),
+        denied_file: None,
+        state_dir: None,
+        extra: vec![],
+    };
     let (mut paths, mut list) = (Vec::new(), false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let key = a.to_str().unwrap_or("");
         if matches!(key, "--home" | "--code-dir" | "--denied-file") {
             // a value, never the next option (a file named so: ./--list-denied)
-            let Some(v) = it.next().filter(|v| !v.as_bytes().starts_with(b"--")) else { return usage() };
+            let Some(v) = it.next().filter(|v| !v.as_bytes().starts_with(b"--")) else {
+                return usage();
+            };
             match key {
                 "--home" => policy.home = v.clone(),
                 "--code-dir" => policy.code_dir = v.clone(),
@@ -136,13 +159,23 @@ fn check_mount_source(args: &[std::ffi::OsString]) -> u8 {
     }
     if list {
         let denied: Vec<String> = match policy.denied_paths() {
-            Ok(d) => d.iter().map(|p| String::from_utf8_lossy(p).into_owned()).collect(),
+            Ok(d) => d
+                .iter()
+                .map(|p| String::from_utf8_lossy(p).into_owned())
+                .collect(),
             Err(e) => vec![format!("error: {e}")],
         };
-        println!("{}", serde_json::to_string(&denied).unwrap_or_else(|_| "[]".into()));
+        println!(
+            "{}",
+            serde_json::to_string(&denied).unwrap_or_else(|_| "[]".into())
+        );
     }
     for p in paths {
-        println!("{}", serde_json::to_string(&policy.mount_source_error(p.as_bytes())).unwrap_or_else(|_| "null".into()));
+        println!(
+            "{}",
+            serde_json::to_string(&policy.mount_source_error(p.as_bytes()))
+                .unwrap_or_else(|_| "null".into())
+        );
     }
     0
 }

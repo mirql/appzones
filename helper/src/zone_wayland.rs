@@ -22,25 +22,46 @@ use wayland_client::globals::{registry_queue_init, GlobalListContents};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols::wp::security_context::v1::client::{
-    wp_security_context_manager_v1::WpSecurityContextManagerV1, wp_security_context_v1::WpSecurityContextV1,
+    wp_security_context_manager_v1::WpSecurityContextManagerV1,
+    wp_security_context_v1::WpSecurityContextV1,
 };
 
 struct State;
 
 impl Dispatch<WlRegistry, GlobalListContents> for State {
-    fn event(_: &mut Self, _: &WlRegistry, _: wl_registry::Event, _: &GlobalListContents, _: &Connection,
-             _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &WlRegistry,
+        _: wl_registry::Event,
+        _: &GlobalListContents,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<WpSecurityContextManagerV1, ()> for State {
-    fn event(_: &mut Self, _: &WpSecurityContextManagerV1,
-             _: <WpSecurityContextManagerV1 as wayland_client::Proxy>::Event, _: &(), _: &Connection,
-             _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &WpSecurityContextManagerV1,
+        _: <WpSecurityContextManagerV1 as wayland_client::Proxy>::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<WpSecurityContextV1, ()> for State {
-    fn event(_: &mut Self, _: &WpSecurityContextV1, _: <WpSecurityContextV1 as wayland_client::Proxy>::Event,
-             _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &WpSecurityContextV1,
+        _: <WpSecurityContextV1 as wayland_client::Proxy>::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 /// The exit status for a compositor without wp_security_context_manager_v1.
@@ -54,7 +75,9 @@ fn fail(msg: impl std::fmt::Display) -> u8 {
 /// SIGTERM unblocked (a blocked mask is inherited across exec), then PDEATHSIG, then the
 /// parent checked: no gap in which the server could die unnoticed.
 fn die_with_parent(parent: &str) -> Result<(), String> {
-    let want: i32 = parent.parse().map_err(|_| format!("ZONE_WAYLAND_PARENT {parent:?} is not a pid"))?;
+    let want: i32 = parent
+        .parse()
+        .map_err(|_| format!("ZONE_WAYLAND_PARENT {parent:?} is not a pid"))?;
     unblock_sigterm();
     set_parent_process_death_signal(Some(Signal::TERM)).map_err(|e| format!("prctl: {e}"))?;
     match getppid() {

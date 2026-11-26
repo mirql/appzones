@@ -37,12 +37,18 @@ fn write_to() -> Option<PathBuf> {
 fn write_golden(name: &str, v: &Value) {
     let dir = write_to().unwrap();
     fs::create_dir_all(&dir).unwrap();
-    let text = if name == "config.json" { serde_json::to_string(v).unwrap() } else { serde_json::to_string_pretty(v).unwrap() };
+    let text = if name == "config.json" {
+        serde_json::to_string(v).unwrap()
+    } else {
+        serde_json::to_string_pretty(v).unwrap()
+    };
     fs::write(dir.join(name), text + "\n").unwrap();
 }
 
 fn golden(name: &str) -> Value {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(name);
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden")
+        .join(name);
     serde_json::from_slice(&fs::read(&p).unwrap()).unwrap()
 }
 
@@ -82,7 +88,11 @@ impl Tmp {
 
 impl Drop for Tmp {
     fn drop(&mut self) {
-        let _ = Command::new("chmod").arg("-R").arg("u+rwx").arg(&self.0).status();
+        let _ = Command::new("chmod")
+            .arg("-R")
+            .arg("u+rwx")
+            .arg(&self.0)
+            .status();
         let _ = fs::remove_dir_all(&self.0);
     }
 }
@@ -107,13 +117,24 @@ fn build(root: &Path, tree: &Value) {
             modes.push((p, m.as_u64().unwrap() as u32));
         } else {
             let data = b64(e["data"].as_str().unwrap());
-            let data = String::from_utf8(data.clone()).map(|s| s.replace("{T}", t).into_bytes()).unwrap_or(data);
+            let data = String::from_utf8(data.clone())
+                .map(|s| s.replace("{T}", t).into_bytes())
+                .unwrap_or(data);
             fs::write(&p, data).unwrap();
-            fs::set_permissions(&p, fs::Permissions::from_mode(e["mode"].as_u64().unwrap() as u32)).unwrap();
+            fs::set_permissions(
+                &p,
+                fs::Permissions::from_mode(e["mode"].as_u64().unwrap() as u32),
+            )
+            .unwrap();
             let when = SystemTime::now() - Duration::from_secs(e["age"].as_u64().unwrap());
             // (both times: "unused" is by the later of them)
             let times = fs::FileTimes::new().set_accessed(when).set_modified(when);
-            fs::File::options().write(true).open(&p).unwrap().set_times(times).unwrap();
+            fs::File::options()
+                .write(true)
+                .open(&p)
+                .unwrap()
+                .set_times(times)
+                .unwrap();
         }
     }
     for (p, m) in modes.into_iter().rev() {
@@ -135,7 +156,8 @@ fn subst(v: &Value, from: &[(&str, &str)]) -> Value {
 }
 
 fn env_of(cmd: &mut Command, env: &Value, from: &[(&str, &str)]) {
-    cmd.env_clear().env("PATH", std::env::var_os("PATH").unwrap_or_default());
+    cmd.env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default());
     for (k, v) in env.as_object().unwrap() {
         let mut v = v.as_str().unwrap().to_string();
         for (a, b) in from {
@@ -168,13 +190,21 @@ fn same_configs() {
         fs::write(&file, &text).unwrap();
         let name = case["path"].as_str().unwrap().replace("{T}", t);
         let mut cmd = Command::new(HELPER);
-        cmd.arg("config-json").arg(&file).arg("--name").arg(&name).arg("--code-dir").arg(tmp.0.join("code"));
+        cmd.arg("config-json")
+            .arg(&file)
+            .arg("--name")
+            .arg(&name)
+            .arg("--code-dir")
+            .arg(tmp.0.join("code"));
         env_of(&mut cmd, &case["env"], &[("{T}", t)]);
         let out = cmd.output().unwrap();
         let got: Value = match serde_json::from_slice(&out.stdout) {
             Ok(v) => subst(&v, &[(t, "{T}")]),
             Err(_) => {
-                diffs.push(format!("{text}\n  no JSON: {}", String::from_utf8_lossy(&out.stderr)));
+                diffs.push(format!(
+                    "{text}\n  no JSON: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                ));
                 new_wants.push(case["want"].clone());
                 continue;
             }
@@ -183,14 +213,21 @@ fn same_configs() {
         // (a parse error, and an integer beyond 64 bits, keep Python's answer: the accepted
         // differences; anything else is this helper's answer now)
         let accepted = case["parsed"] == Value::Bool(false)
-            || (!want["errors"].as_array().unwrap().is_empty() && got["errors"].as_array().unwrap().len() == 1
-                && got["errors"][0].as_str().unwrap().contains("number too large"));
+            || (!want["errors"].as_array().unwrap().is_empty()
+                && got["errors"].as_array().unwrap().len() == 1
+                && got["errors"][0]
+                    .as_str()
+                    .unwrap()
+                    .contains("number too large"));
         new_wants.push(if accepted { want.clone() } else { got.clone() });
         if case["parsed"] == Value::Bool(false) {
             // the TOML parsers word their errors apart: both refuse it, naming the file
             let e = got["errors"].as_array().unwrap();
             let ok = e.len() == 1
-                && e[0].as_str().unwrap().starts_with(&format!("{}: ", case["path"].as_str().unwrap()))
+                && e[0]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(&format!("{}: ", case["path"].as_str().unwrap()))
                 && got["zones"].as_object().unwrap().is_empty();
             if !ok {
                 diffs.push(format!("{text}\n  python: {want}\n  rust:   {got}"));
@@ -199,16 +236,31 @@ fn same_configs() {
         }
         let too_large = !want["errors"].as_array().unwrap().is_empty()
             && got["errors"].as_array().unwrap().len() == 1
-            && got["errors"][0].as_str().unwrap().contains("number too large");
+            && got["errors"][0]
+                .as_str()
+                .unwrap()
+                .contains("number too large");
         if &got != want && !too_large {
             diffs.push(format!("{text}\n  python: {want}\n  rust:   {got}"));
         }
     }
     if write_to().is_some() {
         // (never a golden file with an old answer kept for a case that gave none)
-        let missing: Vec<&String> = diffs.iter().filter(|d| d.contains("\n  no JSON: ")).collect();
-        assert!(missing.is_empty(), "{} configurations gave no JSON, nothing written:\n{}", missing.len(),
-                missing.iter().take(3).map(|d| d.as_str()).collect::<Vec<_>>().join("\n"));
+        let missing: Vec<&String> = diffs
+            .iter()
+            .filter(|d| d.contains("\n  no JSON: "))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{} configurations gave no JSON, nothing written:\n{}",
+            missing.len(),
+            missing
+                .iter()
+                .take(3)
+                .map(|d| d.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
         for (c, w) in g["cases"].as_array_mut().unwrap().iter_mut().zip(new_wants) {
             c["want"] = w;
         }
@@ -219,7 +271,12 @@ fn same_configs() {
         eprintln!("--- differs:\n{d}");
     }
     assert!(cases.len() > 900, "{} configurations", cases.len());
-    assert!(diffs.is_empty(), "{} of {} configurations differ", diffs.len(), cases.len());
+    assert!(
+        diffs.is_empty(),
+        "{} of {} configurations differ",
+        diffs.len(),
+        cases.len()
+    );
 }
 
 /// Every file, link and directory the plan maker left (test_zonecfg._snapshot, as JSON).
@@ -238,11 +295,17 @@ fn snapshot(t: &Path) -> serde_json::Map<String, Value> {
     for root in [t.join("rt"), t.join("home/.local/share/appzones")] {
         let mut all = Vec::new();
         walk(&root, &mut all);
-        all.sort_by(|a, b| a.as_os_str().as_encoded_bytes().cmp(b.as_os_str().as_encoded_bytes()));
+        all.sort_by(|a, b| {
+            a.as_os_str()
+                .as_encoded_bytes()
+                .cmp(b.as_os_str().as_encoded_bytes())
+        });
         for p in all {
             let rel = p.strip_prefix(t).unwrap().to_str().unwrap().to_string();
             let name = p.file_name().unwrap().to_str().unwrap();
-            if name.starts_with(".colours.") || (name.ends_with(".lock") && rel.matches('/').count() == 2) {
+            if name.starts_with(".colours.")
+                || (name.ends_with(".lock") && rel.matches('/').count() == 2)
+            {
                 continue; // (a zone's lock: the plan command takes it, as the server does)
             }
             let md = fs::symlink_metadata(&p).unwrap();
@@ -252,9 +315,16 @@ fn snapshot(t: &Path) -> serde_json::Map<String, Value> {
             } else if md.is_dir() {
                 serde_json::json!(["dir", mode])
             } else if name == "plan.json" {
-                serde_json::json!(["plan", serde_json::from_slice::<Value>(&fs::read(&p).unwrap()).unwrap()])
+                serde_json::json!([
+                    "plan",
+                    serde_json::from_slice::<Value>(&fs::read(&p).unwrap()).unwrap()
+                ])
             } else {
-                serde_json::json!(["file", mode, String::from_utf8_lossy(&fs::read(&p).unwrap())])
+                serde_json::json!([
+                    "file",
+                    mode,
+                    String::from_utf8_lossy(&fs::read(&p).unwrap())
+                ])
             };
             out.insert(rel, v);
         }
@@ -280,7 +350,11 @@ fn same_plans() {
         let zone = case["zone"].as_str().unwrap();
         let mut cmd = Command::new(HELPER);
         cmd.arg("plan").arg(zone);
-        env_of(&mut cmd, &case["env"], &[("{T}", ts), ("{PATH}", &path), ("{HELPER}", HELPER)]);
+        env_of(
+            &mut cmd,
+            &case["env"],
+            &[("{T}", ts), ("{PATH}", &path), ("{HELPER}", HELPER)],
+        );
         let out = cmd.output().unwrap();
         let lines = |b: &[u8]| -> Vec<Value> {
             let s = String::from_utf8_lossy(b);
@@ -292,17 +366,27 @@ fn same_plans() {
             "stderr": lines(&out.stderr),
             "files": snapshot(&t),
         });
-        let got = subst(&got, &[(HELPER, "{HELPER}"), (&path, "{PATH}"), (ts, "{T}")]);
+        let got = subst(
+            &got,
+            &[(HELPER, "{HELPER}"), (&path, "{PATH}"), (ts, "{T}")],
+        );
         if write_to().is_some() {
             news.push(got);
             continue;
         }
         let want = &case["want"];
         let what = format!("{} {}", case["layout"], zone);
-        assert_eq!(got["rc"], want["rc"], "{what}: exit status; stderr {}", got["stderr"]);
+        assert_eq!(
+            got["rc"], want["rc"],
+            "{what}: exit status; stderr {}",
+            got["stderr"]
+        );
         assert_eq!(got["stdout"], want["stdout"], "{what}: stdout");
         assert_eq!(got["stderr"], want["stderr"], "{what}: stderr");
-        let (g, w) = (got["files"].as_object().unwrap(), want["files"].as_object().unwrap());
+        let (g, w) = (
+            got["files"].as_object().unwrap(),
+            want["files"].as_object().unwrap(),
+        );
         let mut keys: Vec<&String> = g.keys().chain(w.keys()).collect();
         keys.sort();
         keys.dedup();
@@ -333,11 +417,22 @@ fn same_policy() {
     let sub = |v: &Value| v.as_str().unwrap().replace("{T}", t);
     let args: Vec<String> = g["args"].as_array().unwrap().iter().map(sub).collect();
     let paths: Vec<String> = g["paths"].as_array().unwrap().iter().map(sub).collect();
-    let out = Command::new(HELPER).args(&args).args(&paths).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new(HELPER)
+        .args(&args)
+        .args(&paths)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let text = String::from_utf8(out.stdout).unwrap();
-    let lines: Vec<Value> = text.trim_end_matches('\n').split('\n')
-        .map(|l| subst(&serde_json::from_str(l).unwrap(), &[(t, "{T}")])).collect();
+    let lines: Vec<Value> = text
+        .trim_end_matches('\n')
+        .split('\n')
+        .map(|l| subst(&serde_json::from_str(l).unwrap(), &[(t, "{T}")]))
+        .collect();
     if write_to().is_some() {
         g["denied"] = lines[0].clone();
         g["want"] = Value::Array(lines[1..].to_vec());
@@ -347,7 +442,14 @@ fn same_policy() {
     assert_eq!(lines[0], g["denied"], "the never-list");
     let want = g["want"].as_array().unwrap();
     assert_eq!(lines.len() - 1, want.len());
-    let diffs: Vec<String> = g["paths"].as_array().unwrap().iter().zip(want).zip(&lines[1..])
-        .filter(|((_, w), r)| w != r).map(|((p, w), r)| format!("{p}:\n  python: {w}\n  rust:   {r}")).collect();
+    let diffs: Vec<String> = g["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(want)
+        .zip(&lines[1..])
+        .filter(|((_, w), r)| w != r)
+        .map(|((p, w), r)| format!("{p}:\n  python: {w}\n  rust:   {r}"))
+        .collect();
     assert!(diffs.is_empty(), "{}", diffs.join("\n"));
 }
