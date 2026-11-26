@@ -4,13 +4,44 @@
 default:
     @just --list
 
-# The Rust tests and clippy (fast, no Nix; the golden tests run in `just build`)
+# Every quick offline check, before a PR: the Rust tests and clippy, the examples, the secret scan
+check: test examples secret-scan
+
+# The Rust tests and clippy (no Nix; the golden tests run in `just build`)
 test:
     cd helper && cargo test --release -q && cargo clippy --release -q --all-targets -- -D warnings
 
-# Validate a zones.toml (default: the example)
-check file="examples/zones.toml":
+# Validate a zones.toml
+validate file:
     cd helper && APPZONES_CONFIG="$(realpath ../{{file}})" cargo run --release -q --bin appzones-helper -- cli check
+
+# The example configurations are valid, on any host: a home of their own (the folders
+# they bind), the NixOS layout with a stand-in nix-ld (`work` has nix_ld = true), no host
+# never-list or D-Bus names
+examples:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "$(uname -s)" != Linux ]; then
+        echo "examples: skipped, they are Linux configurations (macOS refuses nix_ld, devices, ...)"; exit 0
+    fi
+    t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+    mkdir -p "$t"/home/{Downloads,Pictures,Documents,code} "$t"/nix-ld/lib
+    touch "$t"/nix-ld/shim "$t"/nix-ld/lib/ld.so "$t"/denied-paths
+    for f in examples/zones.toml examples/minimal.toml; do
+        (cd helper && APPZONES_HOME_FOR_TESTS="$t/home" APPZONES_CONFIG="$(realpath ../$f)" \
+            APPZONES_LAYOUT=nixos APPZONES_NIX_LD_SHIM="$t/nix-ld/shim" APPZONES_NIX_LD_LIB="$t/nix-ld/lib" \
+            APPZONES_DENIED_PATHS="$t/denied-paths" APPZONES_DBUS_SERVICE_DIRS= \
+            cargo run --release -q --bin appzones-helper -- cli check)
+    done
+
+# Secrets in the history or the files (committed, changed or untracked): gitleaks, from `nix develop`
+# (rules: .gitleaks.toml). Without a readable history it fails: an empty scan finds nothing.
+secret-scan:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git rev-parse -q --verify HEAD >/dev/null || { echo "secret-scan: no git history here to scan" >&2; exit 1; }
+    gitleaks git --no-banner --redact --log-level warn .
+    gitleaks dir --no-banner --redact --log-level warn .
 
 # Build the package (every Rust test runs in its build, the golden files' too)
 build:

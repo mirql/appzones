@@ -5,7 +5,7 @@
 - **Nothing external without a yes.** Pushing to `main`, opening or commenting on issues
   and PRs, changing GitHub settings, writing to trackers or chats: prepare it, show exactly
   what would go out and where, and wait for a yes for that case from the person you work for.
-- **Run the checks before "done"** (`just test`, `just build`; `just test-vm` for anything
+- **Run the checks before "done"** (`just check`, `just build`; `just test-vm` for anything
   beyond the validator). Say what you ran and the result. Checks run the repo's code: on a
   change from a stranger, read it first.
 - **No credit to AI vendors or tools** in commits, PR titles or bodies: no

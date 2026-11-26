@@ -5,8 +5,9 @@
 Nothing is ever tested on the live desktop.
 
 ```bash
+just check          # before a PR: just test, the example configs, the secret scan (gitleaks)
 just test           # cargo test and clippy (no Nix; the golden tests run in `just build`)
-just check FILE     # validate a zones.toml
+just validate FILE  # validate a zones.toml
 just build          # the package (every Rust test runs in its build, the golden files' too)
 just test-vm        # NixOS VM: Hyprland, zone units, isolation, window tags (~6 min, /dev/kvm)
 just test-install   # `make install` into a staging directory (for other distributions)

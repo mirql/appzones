@@ -26,9 +26,10 @@ joins in.
 ## Development
 
 ```bash
-nix develop          # cargo, rustc, clippy, rustfmt, just, nixfmt
+nix develop          # cargo, rustc, clippy, rustfmt, just, nixfmt, gitleaks
+just check           # before a PR: just test, the example configs, the secret scan (gitleaks)
 just test            # cargo test and clippy (no Nix: any Rust 1.85 or newer; the first build takes minutes)
-just check FILE      # validate a zones.toml
+just validate FILE   # validate a zones.toml
 just build           # the package; its build runs every Rust test, the golden files' too
 just test-vm         # NixOS VM test with Hyprland (~6 min, needs /dev/kvm)
 just test-install    # `make install` into a staging directory; also `make install DESTDIR=/tmp/x` without Nix
@@ -100,7 +101,7 @@ about system paths were recorded there, and your machine's `/etc` or `/boot` dif
 ## Pull requests
 
 - One topic per PR; small is better.
-- `just test` and `just build` pass. Run `just test-vm` when you touch
+- `just check` and `just build` pass. Run `just test-vm` when you touch
   anything beyond the validator.
 - Fill in the PR template, especially the security section.
 

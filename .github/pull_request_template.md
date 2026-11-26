@@ -15,7 +15,7 @@ Closes #
 
 ## Checklist
 
-- [ ] `just test` and `just build` pass (say what ran)
+- [ ] `just check` and `just build` pass (say what ran)
 - [ ] `just test-vm` passes (needed for anything beyond the validator)
 - [ ] Tests added: unit tests for the validator, VM checks for isolation (asserting what is **refused**)
 - [ ] New config key/value: `RELEASE` and `SINCE` bumped

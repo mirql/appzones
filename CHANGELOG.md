@@ -5,6 +5,10 @@ The config schema has its own release number (`requires = N` in
 
 ## Unreleased
 
+- **For contributors: `just check` is every quick check** before a PR (`just test`, the
+  example configs, and `just secret-scan`, a gitleaks scan of the history and the files).
+  Validating a file is now `just validate FILE` (it was `just check FILE`).
+
 - **Your own additions to a project's zones** (config release 9): in your `zones.toml`,
   `[projects."~/src/my-app".zones.dev]` with any zone key but `colour`, `autostart` and
   `autostart_apps`: binds are added to the

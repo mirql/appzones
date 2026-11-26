@@ -162,6 +162,7 @@
               pkgs.rustfmt
               pkgs.just
               pkgs.nixfmt
+              pkgs.gitleaks
             ];
           };
         }
