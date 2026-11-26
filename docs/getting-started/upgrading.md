@@ -40,9 +40,12 @@ old one, then remove it.
 |---|---|---|
 | `~/.config/zones/zones.toml` | `~/.config/appzones/zones.toml` | `mkdir -p ~/.config/appzones && mv -n ~/.config/zones/zones.toml ~/.config/appzones/zones.toml` |
 | `~/.local/share/zones/` (zone homes) | `~/.local/share/appzones/` | `appzones stop --all && mv -T ~/.local/share/zones ~/.local/share/appzones` |
-| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` | NixOS: the module writes the new one from `deniedPaths`; put any entry of the old file that is not there into it first. Elsewhere: `sudo mkdir -p /etc/appzones && sudo mv -n /etc/zones/denied-paths /etc/appzones/`. While only the old file is there, `appzones check` fails and no zone starts, as its paths would enter zones (the same for a new one that is a symlink to nothing) |
+| `/etc/zones/denied-paths` | `/etc/appzones/denied-paths` | NixOS: the module writes the new one from `deniedPaths`; put any entry of the old file that is not there into it first. Elsewhere: `sudo mkdir -p /etc/appzones && sudo cp /etc/zones/denied-paths /etc/appzones/denied-paths && sudo rm /etc/zones/denied-paths` (`cp` copies the entries, also when the old file is a symlink). While only the old file is there, `appzones check` fails and no zone starts, as its paths would enter zones (the same for a new one that is a symlink to nothing) |
 | `$ZONES_*` | `$APPZONES_*` | rename the variables |
 | `contrib/hyprland/zones.lua` | `contrib/hyprland/appzones.lua` | load `appzones.lua` in your Hyprland config |
 
-If backups or an impermanence setup list the old paths, update them. The window
+If `appzones stop --all` says a zone still answers but no server of it was found, that
+zone runs under an older appzones: stop it where it runs (Ctrl-C in its terminal, or
+`systemctl --user stop appzones@NAME`), then move the folder. If backups or an
+impermanence setup list the old paths, update them. The window
 tag (`zone:NAME`) and `zones.toml` keep their names.
